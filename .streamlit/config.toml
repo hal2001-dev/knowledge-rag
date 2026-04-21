@@ -1,0 +1,10 @@
+[server]
+maxUploadSize = 200
+headless = true
+runOnSave = true
+# LAN/모바일 접근 시 업로드 차단 방지 (개발 환경 한정)
+enableXsrfProtection = false
+enableCORS = false
+
+[browser]
+gatherUsageStats = false

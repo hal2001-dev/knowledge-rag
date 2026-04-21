@@ -1,0 +1,43 @@
+# 서버
+fastapi
+uvicorn[standard]
+python-multipart
+pydantic>=2.0
+pydantic-settings>=2.0
+
+# LangChain
+langchain>=0.3
+langchain-openai>=0.2
+langchain-community>=0.3
+langchain-docling>=2.0
+langchain-qdrant>=1.0
+
+# 문서 파싱
+docling>=2.5
+transformers>=4.40
+
+# 벡터 DB
+qdrant-client>=1.9
+
+# 메타데이터 DB
+sqlalchemy>=2.0
+psycopg2-binary
+
+# OpenAI
+openai>=1.40
+tiktoken
+
+# Reranking (로컬, API키 불필요)
+flashrank
+
+# UI
+streamlit
+
+# 유틸리티
+python-dotenv
+
+# 테스트
+pytest
+pytest-asyncio
+httpx
+pytest-cov

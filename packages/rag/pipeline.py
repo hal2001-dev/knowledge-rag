@@ -1,0 +1,134 @@
+import time
+import uuid
+from pathlib import Path
+
+from langchain_openai import ChatOpenAI
+from langsmith import traceable
+
+from apps.config import Settings
+from packages.code.models import DocRecord
+from packages.code.logger import get_logger
+from packages.loaders.factory import get_loader
+from packages.rag.chunker import chunk_documents
+from packages.rag.retriever import retrieve
+from packages.rag.generator import generate
+from packages.vectorstore.qdrant_store import QdrantDocumentStore
+
+logger = get_logger(__name__)
+
+
+class RAGPipeline:
+    def __init__(
+        self,
+        store: QdrantDocumentStore,
+        llm: ChatOpenAI,
+        settings: Settings,
+    ):
+        self._store = store
+        self._llm = llm
+        self._settings = settings
+
+    @traceable(run_type="chain", name="rag.ingest")
+    def ingest(
+        self,
+        file_path: str,
+        title: str,
+        source: str = "",
+        doc_id: str | None = None,
+        content_hash: str | None = None,
+    ) -> DocRecord:
+        doc_id = doc_id or str(uuid.uuid4())
+        file_type = Path(file_path).suffix.lstrip(".").lower()
+        start = time.monotonic()
+
+        logger.info(f"수집 시작: doc_id={doc_id}, file={file_path}")
+
+        t0 = time.monotonic()
+        loader = get_loader(file_path, markdown_save_dir=self._settings.markdown_dir)
+        documents = loader.load(file_path=file_path, doc_id=doc_id, title=title)
+        parse_ms = int((time.monotonic() - t0) * 1000)
+
+        t0 = time.monotonic()
+        chunks = chunk_documents(documents)
+        chunk_ms = int((time.monotonic() - t0) * 1000)
+
+        has_tables = any(d.metadata.get("content_type") == "table" for d in chunks)
+        has_images = any(d.metadata.get("content_type") == "image" for d in chunks)
+
+        t0 = time.monotonic()
+        self._store.add_documents(chunks)
+        store_ms = int((time.monotonic() - t0) * 1000)
+
+        total_ms = int((time.monotonic() - start) * 1000)
+        record = DocRecord(
+            doc_id=doc_id,
+            title=title,
+            source=source or file_path,
+            file_type=file_type,
+            chunk_count=len(chunks),
+            has_tables=has_tables,
+            has_images=has_images,
+            indexed_at="",
+            status="done",
+            content_hash=content_hash,
+        )
+        logger.info(
+            f"수집 완료: {len(chunks)}개 청크 "
+            f"(파싱 {parse_ms}ms, 청킹 {chunk_ms}ms, 저장 {store_ms}ms, 총 {total_ms}ms, "
+            f"테이블: {has_tables}, 이미지: {has_images})"
+        )
+        return record
+
+    @traceable(run_type="chain", name="rag.query")
+    def query(
+        self,
+        question: str,
+        top_k: int | None = None,
+        initial_k: int | None = None,
+        score_threshold: float | None = None,
+        history: list[dict] | None = None,
+    ) -> dict:
+        top_k = top_k or self._settings.default_top_k
+        initial_k = initial_k or self._settings.default_initial_k
+        score_threshold = score_threshold if score_threshold is not None else self._settings.default_score_threshold
+
+        logger.info(f"질의: '{question}' (history={len(history or [])}턴)")
+        start = time.monotonic()
+
+        chunks = retrieve(
+            store=self._store,
+            query=question,
+            initial_k=initial_k,
+            top_n=top_k,
+            score_threshold=score_threshold,
+        )
+
+        if not chunks:
+            return {
+                "answer": "관련 문서를 찾지 못했습니다.",
+                "sources": [],
+                "latency_ms": int((time.monotonic() - start) * 1000),
+            }
+
+        answer = generate(
+            llm=self._llm,
+            question=question,
+            chunks=chunks,
+            history=history,
+        )
+        latency_ms = int((time.monotonic() - start) * 1000)
+
+        sources = [
+            {
+                "doc_id": c.metadata.get("doc_id"),
+                "title": c.metadata.get("title"),
+                "page": c.metadata.get("page"),
+                "content_type": c.metadata.get("content_type", "text"),
+                "score": round(c.score, 4),
+                "excerpt": c.content[:200],
+            }
+            for c in chunks
+        ]
+
+        logger.info(f"질의 완료: {latency_ms}ms, {len(sources)}개 소스")
+        return {"answer": answer, "sources": sources, "latency_ms": latency_ms}

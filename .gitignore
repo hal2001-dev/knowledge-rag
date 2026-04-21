@@ -1,0 +1,48 @@
+# 가상환경
+.venv/
+venv/
+env/
+
+# 환경변수 (실제 시크릿은 절대 커밋 금지, .env.example만 커밋)
+.env
+.env.*
+!.env.example
+
+# 데이터 (런타임 생성)
+data/qdrant_storage/
+data/pg_data/
+data/uploads/
+data/markdown/
+data/faiss_index/
+
+# Python 캐시
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+
+# 테스트 결과
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Claude Code 로컬 설정 (개인 머신 경로·권한 목록 포함)
+.claude/
+
+# macOS
+.DS_Store
+**/.DS_Store
+
+# 로그
+*.log
+nohup.out

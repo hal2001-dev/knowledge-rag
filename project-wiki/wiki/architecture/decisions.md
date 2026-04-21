@@ -1,0 +1,293 @@
+# Architecture Decision Records (ADR)
+
+**마지막 업데이트**: 2026-04-21
+
+설계에서 중요한 결정을 내릴 때마다 여기에 기록합니다.
+"왜 이렇게 했지?" 를 나중에 찾아보기 위한 파일입니다.
+
+---
+
+## ADR 형식
+
+```
+## ADR-NNN: 결정 제목
+**날짜**: YYYY-MM-DD
+**상태**: [proposed|accepted|deprecated|superseded by ADR-NNN]
+
+### 배경
+왜 이 결정이 필요했는가
+
+### 선택지
+1. 옵션 A — 장단점
+2. 옵션 B — 장단점
+
+### 결정
+무엇을 선택했고 왜
+
+### 결과
+이 결정의 영향 및 트레이드오프
+```
+
+---
+
+## ADR-001: 벡터 DB — Qdrant 선택
+**날짜**: 2026-04-19
+**상태**: accepted
+
+### 배경
+문서 임베딩을 저장하고 유사도 검색을 수행할 벡터 DB가 필요.
+
+### 선택지
+1. **FAISS** — 로컬, 빠름, 별도 서버 불필요, persistence 직접 관리 / 삭제 미지원
+2. **Chroma** — 로컬 DB, 메타데이터 필터링 편리
+3. **Qdrant** — Docker 기반, doc_id 필터 삭제 지원, langchain-qdrant 공식 통합
+4. **Pinecone** — 관리형 클라우드, 비용 발생
+
+### 결정
+**Qdrant** 선택. Docker로 로컬 운영 가능하고 doc_id 필터 기반 삭제를 네이티브로 지원해 문서 삭제 요구사항 충족. LangChain 공식 통합 패키지(`langchain-qdrant`) 제공.
+
+### 결과
+- Docker 의존성 추가 (`docker-compose.yml`)
+- FAISS 대비 삭제·필터링 기능 우수
+- 로컬 개발 시 포트 6333 사용
+
+---
+
+## ADR-002: Chunking 전략
+**날짜**: 2026-04-19
+**상태**: accepted
+
+### 배경
+PDF를 어떻게 쪼갤 것인가. chunk size와 overlap이 검색 품질에 직접 영향.
+
+### 선택지
+1. **Fixed size** (512 tokens, overlap 50) — 단순, 문맥 단절 가능
+2. **Sentence-based** — 문장 경계 존중, 크기 불균일
+3. **Recursive character** (LangChain) — 단락 → 문장 → 단어 순서로 분할
+4. **Semantic chunking** — 의미 기반, 비용 높음
+
+### 결정
+**RecursiveCharacterTextSplitter (512자, overlap 50)** 채택. Docling이 1차 청킹한 결과를 그대로 사용하되, 512자 초과 청크만 재분할. 한국어·영어 혼합 문서에서 토큰 기반보다 문자 기반이 안정적.
+
+### 결과
+- `langchain-text-splitters` 패키지 사용
+- 테이블·이미지 청크는 분할하지 않고 원본 유지 (content_type 태깅)
+
+---
+
+## ADR-003: 임베딩 모델 선택
+**날짜**: 2026-04-19
+**상태**: accepted
+
+### 배경
+한국어 문서를 포함할 경우 다국어 모델 필요 여부 검토.
+
+### 선택지
+1. **OpenAI text-embedding-3-small** — 성능 좋음, API 비용 발생, 1536차원
+2. **OpenAI text-embedding-3-large** — 더 높은 성능, 더 높은 비용
+3. **BGE-M3** — 오픈소스, 다국어 지원, 로컬 실행 가능
+4. **ko-sroberta-multitask** — 한국어 특화
+
+### 결정
+**OpenAI text-embedding-3-small** 선택. 한국어·영어 혼합 문서에서 충분한 성능, 빠른 프로토타이핑에 적합. 추후 BGE-M3으로 교체 가능하도록 embeddings 계층 추상화.
+
+### 결과
+- Qdrant 컬렉션 vector size: 1536
+- API 비용 발생 (usage 모니터링 필요)
+
+---
+
+## ADR-004: 문서 파서 선택
+**날짜**: 2026-04-19
+**상태**: accepted
+
+### 배경
+PDF의 텍스트뿐 아니라 테이블·이미지까지 구조화 추출 필요.
+
+### 선택지
+1. **pdfplumber** — 텍스트·표 추출, 이미지 미지원
+2. **PyMuPDF** — 빠름, 이미지 추출 가능, 표 구조화 약함
+3. **Docling (IBM)** — 텍스트·테이블·이미지 통합 추출, LangChain 공식 통합
+
+### 결정
+**Docling 2.x** 선택. 테이블을 Markdown으로 변환하고 이미지 캡션 추출 지원. `langchain-docling` 패키지로 LangChain 파이프라인에 직접 통합.
+
+### 결과
+- 파싱 시 `data/markdown/{doc_id}.md`에 전체 문서 저장
+- content_type 메타데이터로 text/table/image 청크 구분
+- Docling 모델 최초 실행 시 다운로드 필요 (약 1~2GB)
+
+---
+
+## ADR-005: 중복 업로드 감지 — L1(파일 해시)부터 적용
+**날짜**: 2026-04-21
+**상태**: accepted
+
+### 배경
+`/ingest`가 매 호출마다 `uuid.uuid4()`로 새 `doc_id`를 생성해 동일 파일을 재업로드하면 벡터·메타데이터·마크다운이 전부 중복 생성되던 문제 (실제로 `data/markdown/` 내 동일 내용 파일 2벌 확인).
+
+### 선택지
+1. **L1 파일 해시** — 업로드 바이트의 SHA-256을 `documents.content_hash`(UNIQUE)에 저장, 충돌 시 409
+2. **L2 정규화 텍스트 해시** — Docling 파싱 후 마크다운 텍스트의 해시. 포맷만 다른 동일 내용도 감지 가능하나 파싱 비용을 일단 지불해야 함
+3. **L3 의미 유사도** — 대표 청크 임베딩의 코사인 유사도 ≥0.95 경고. 리비전 차이 감지 가능, 구현 비용 최고
+
+### 결정
+**L1 먼저 단독 적용.** 구현이 단순하고 "동일 바이트 재업로드" 80%+ 케이스를 막을 수 있음. L2/L3는 필요 시 후속 도입.
+
+### 결과
+- `ALTER TABLE documents ADD COLUMN content_hash VARCHAR(64)` + UNIQUE INDEX 적용
+- `apps/routers/ingest.py`에서 `hashlib.sha256(content).hexdigest()` 후 `get_document_by_hash()` 조회 → 충돌 시 `409 Conflict` + 기존 `doc_id`/`title`/`content_hash` 반환 (idempotent)
+- 기존 레코드는 `content_hash=NULL` — UNIQUE 인덱스는 NULL 중복을 허용하므로 호환성 문제 없음
+- 한계: 파싱·포맷 차이가 있는 동일 내용은 감지 불가 → L2 도입 시 해결
+
+---
+
+## ADR-006: 대화 히스토리 — 최근 N턴만 DB에서 로드해 주입
+**날짜**: 2026-04-21
+**상태**: accepted
+
+### 배경
+단일 턴 QA만 지원하던 상태에서, 후속 질문의 대명사/지시어(예: "그게 뭔데?", "그럼 다른 경우는?")를 해결할 필요가 생김. 히스토리를 어디에 저장하고 얼마나 주입할지 결정 필요.
+
+### 선택지
+1. **In-memory 딕셔너리** — 간단. 서버 재시작 시 소실, 다중 워커 부적합
+2. **DB 저장 + 매 요청마다 최근 N개 로드** — 영속성·다중 워커 안전, 토큰 비용·컨텍스트 길이 제어 가능
+3. **LangChain `ConversationBufferMemory` / summary 메모리** — 추상화 이득은 있으나 본 프로젝트는 이미 얇은 파이프라인이라 오버엔지니어링
+
+### 결정
+**옵션 2 채택, `N = 20`**. `conversations`/`messages` 테이블을 만들고 매 `/query`마다 현재 턴 저장 **전**에 최근 20개 메시지 스냅샷을 LLM에 주입 (`SystemMessage → Human/AIMessage× → 현재 질문`).
+
+### 결과
+- 신규 테이블: `conversations`, `messages(session_id, created_at IDX)`
+- `/query`에 `session_id` 옵션 추가, 응답에도 `session_id` 포함 (없으면 서버가 신규 발급)
+- `/conversations` CRUD 추가
+- Streamlit이 `st.session_state["session_id"]`를 유지
+- 20턴 = 사용자 10 + 어시스턴트 10 정도의 근사. 필요 시 `MAX_HISTORY` 상수로 쉽게 조정 가능
+- 한계: 긴 세션에서 초기 문맥은 유실됨 → 추후 요약(summary) 메모리 또는 슬라이딩 윈도우 + 핵심 턴 고정 검토
+
+---
+
+## ADR-007: 관측 플랫폼 — LangSmith 채택
+**날짜**: 2026-04-21
+**상태**: accepted
+
+### 배경
+질의 품질 튜닝(청킹·임베딩·score threshold) 시 실제 retrieve 결과·LLM 입출력·지연시간을 눈으로 확인할 수단이 필요. 또한 인덱싱 소요시간을 기록해 문서 크기/유형별 병목을 파악해야 함.
+
+### 선택지
+1. **LangSmith** — LangChain 생태 네이티브, `@traceable` 한 줄로 임의 함수 래핑, 대화 세션 필터/테그 지원
+2. **OpenTelemetry + Jaeger/Tempo** — 벤더 중립, 데이터 파이프라인(Docling·Qdrant) 포함 전 구간 관측 가능. 운영 복잡도 높음
+3. **Langfuse** — 오픈소스 셀프호스트, LangSmith 대안
+
+### 결정
+**LangSmith**. 코드베이스가 이미 LangChain 체인을 사용하고, 현재 단계에선 관측 대상이 LLM 호출·retrieve 정도라 OTel 수준의 전 구간 추적은 과잉. 추후 필요 시 OTel 병행 고려.
+
+### 결과
+- `.env`의 `LANGCHAIN_TRACING_V2/API_KEY/PROJECT/ENDPOINT` 4개 변수로 활성/비활성 토글
+- LangChain이 `os.environ`을 직접 읽으므로 `apps/main.py` lifespan에서 Pydantic 값을 환경변수로 export하는 `_configure_langsmith()` 호출
+- `RAGPipeline.ingest`/`query`에 `@traceable(run_type="chain", name="rag.*")` 부착
+- 질의 시 `tracing_context(tags=["session:<id>"], metadata={"session_id", "history_turns"})`로 run 태깅 → 대시보드에서 세션별 필터링 가능
+- `ingest` 내부에 단계별 타이머 추가 (파싱/청킹/저장 ms) — LangSmith에는 부모 run elapsed로, 서버 로그에는 분해된 시간으로 기록
+- 보안: API 키는 `.env`에만, `.gitignore`로 제외. 채팅/PR에 평문 노출 시 즉시 revoke
+
+---
+
+## ADR-008: 파싱 품질 개선 — 파싱 후 정규화를 로더 계층에 삽입
+**날짜**: 2026-04-21
+**상태**: accepted
+
+### 배경
+Docling 출력이 대체로 깨끗하지만 (1) 단어 중간에서 줄바꿈된 하이픈(`robot-\nics`), (2) 숫자만 있는 페이지 번호 줄, (3) 테이블 정렬용 연속 공백, (4) NBSP/ZWSP 등 비정상 공백이 누적. 이들이 청크 토큰 낭비·검색 recall 저하·청크 분할 오염을 유발.
+
+### 선택지
+1. **파싱 후 정규화** (로더 계층) — Docling 출력을 한 번 cleanup하고 저장·임베딩
+2. **Docling 파싱 옵션 조정** — `PdfPipelineOptions`로 해결 시도. 현 아티팩트에는 효과 제한적
+3. **HybridChunker로 교체** — docling-core의 구조 인식 청커. 효과 크지만 전체 재인덱싱 필요
+4. **임베딩 모델 교체** (BGE-M3 등) — 컬렉션 재생성 필요
+
+### 결정
+**옵션 1 단독 적용.** 최소 침습·최고 ROI. 옵션 3/4는 별도 ADR로 분리해 단계적 평가.
+
+### 결과
+- `packages/loaders/docling_loader.py`에 `_normalize`(청크용)와 `_normalize_markdown`(저장 파일용) 유틸
+  - NFC 유니코드 정규화
+  - `(\w)-\s*\n\s*(\w)` → 단어 연결 복구
+  - `^\s*\d{1,4}\s*$` 페이지 번호 라인 제거
+  - `[\u00A0\u2000-\u200B\u202F\u205F\u3000]` 비정상 공백 → 일반 공백
+  - 연속 공백 2+ → 단일, 연속 개행 3+ → 2
+- **테이블 보존**: 청크에서는 `content_type=="table"`이면 skip, 저장 마크다운에서는 `|...|` 행은 건드리지 않음
+- 효과 측정(기존 1619청크 PDF에 후향적 적용): 503,765→502,949자(−816), 11,816→11,610줄(−206, ≈페이지 번호 제거분)
+- 기존 인덱스 무영향. 새 업로드부터 적용. 기존 문서 재색인은 `pipeline/rebuild_index.py`로 수동
+- 후속 과제: HybridChunker 도입(별도 ADR), FlashRank 재순위 실제 활성화
+
+---
+
+## ADR-009: 청킹 — HybridChunker 명시 + 전체 heading 경로 breadcrumb 주입
+**날짜**: 2026-04-21
+**상태**: accepted
+
+### 배경
+Qdrant payload 분석 결과 `dl_meta.headings`가 항상 **1개 원소**(최하위 heading)만 담겨 있었고, `page`는 전부 0이었음. 실제로는 langchain-docling 내부가 기본 `HybridChunker()`를 사용하고 있었지만 기본 옵션이 상위 계층을 유지하지 않았고, 페이지 번호 추출은 잘못된 키를 보고 있었다. 결과: 청크 단독으로 "어느 장/절의 내용인지" 판단 불가 → retrieval 정확도 저하.
+
+### 선택지
+1. 기존 `DOC_CHUNKS` 기본 유지 — 아무 변화 없음
+2. **HybridChunker 명시 인스턴스화**, 옵션 `always_emit_headings=True`·`omit_header_on_overflow=False` 주고 `langchain-docling`의 `chunker=` 파라미터로 주입
+3. HybridChunker 대신 `HierarchicalChunker` 직접 사용 — 저수준 제어 가능하나 커스텀 코드 다량
+4. langchain-docling 우회하고 `DocumentConverter` + `HybridChunker.chunk()`를 직접 호출
+
+### 결정
+**옵션 2 채택.** 옵션 3/4는 유지보수 비용만 늘고 기능적 이득이 작음.
+
+추가로 **breadcrumb 수동 주입**: `heading_path`를 `" > "`로 연결해 청크 content 앞에 prepend. HybridChunker `contextualize()`가 이미 본문 앞에 말단 heading을 넣어두므로, 정확히 그만큼을 제거해 중복 방지 (`_strip_leading_headings`).
+
+### 결과
+- 청크 콘텐츠 형태: `"Chapter 1 > Section 1.1\n\n본문..."`
+- ROS PDF 기준 **1619 → 800 청크 (−51%)** — 같은 부모 heading 아래 작은 청크가 merge_peers로 병합됨
+- 각 청크가 "어느 장·어느 절"인지 단독으로 파악 가능 → 임베딩 문맥화 ↑, LLM 프롬프트도 자연스러워짐
+- 페이지 번호 복구: `_extract_page_no()`가 `dl_meta.doc_items[*].prov[0].page_no`에서 추출. 단, 마크다운 입력 시 `prov` 없음 → `page=0` 유지
+- 2차 청커(`RecursiveCharacterTextSplitter`) 상한은 512→2000자로 완화하고 방어 역할로만 유지
+- 한계: 임베딩 모델의 512 토큰 상한을 넘는 청크가 5~10% 발생 (경고 로그). 토큰 기반 상한 설정은 후속 과제
+
+---
+
+## ADR-010: 원본 파일 영구 보관 — 재인덱싱 가능 구조
+**날짜**: 2026-04-21
+**상태**: accepted
+
+### 배경
+기존 `apps/routers/ingest.py`는 `try/finally: upload_path.unlink()`로 업로드 후 원본을 즉시 삭제. HybridChunker 옵션 튜닝·임베딩 모델 교체 등의 실험을 위한 재인덱싱 시 입력 소스가 없어 마크다운 fallback만 가능 → Docling의 구조 인식·페이지 번호 등 일부 이점 손실.
+
+### 선택지
+1. **원본 보관** (`data/uploads/{doc_id}{ext}`) — 디스크 사용 증가, 하지만 재인덱싱·감사·오류 재현에 필수
+2. 마크다운만 보관 — 디스크 소형, 하지만 Docling 파싱 재현 불가
+3. 보관 기간 정책(예: 90일 TTL) — 복잡도 증가
+
+### 결정
+**옵션 1 단독.** 개인 프로젝트 규모에서 디스크 우려는 작고, 재인덱싱 필요성이 실제로 반복해서 발생 중.
+
+### 결과
+- `ingest.py`: 성공 시 원본 보존, **인덱싱 실패 시에만** 정리
+- 기존에 업로드되어 이미 소실된 6개 문서는 이번 재인덱싱에서 마크다운 fallback으로 진행. 이후 업로드부터는 원본 보존
+- 후속 과제: 업로드 디렉터리 용량 모니터링, DELETE 시 원본 파일도 동반 삭제 여부 검토 (현재 미삭제)
+
+---
+
+## ADR-011: 재순위 — FlashRank 실제 활성화 + 관찰된 한계
+**날짜**: 2026-04-21
+**상태**: accepted (후속 과제 있음)
+
+### 배경
+`packages/rag/retriever.py`에 `build_reranking_retriever()`가 존재했으나 **실제로는 호출되지 않고** `retrieve()`가 Qdrant 점수 정렬만 수행. 즉 "reranking을 한다"고 문서화되어 있었으나 실제 동작 안 함.
+
+### 결정
+- `retrieve()`를 재작성해 Qdrant에서 `initial_k` 후보 조회 → FlashRank로 재순위 → `top_n` 반환
+- `Ranker(model_name="ms-marco-MiniLM-L-12-v2")`를 프로세스 전역 싱글톤으로 관리 (모델 로드 수 초 지연)
+- 반환 `ScoredChunk.score`를 FlashRank 점수(0~1, 관련도)로 교체
+
+### 결과 & 관찰
+- 모델 로드 로그 확인, 점수 분포가 Qdrant 코사인(0.3~0.5)과 전혀 다른 범위(0.05~0.99)로 바뀜 → 재순위 동작 확인
+- **한계**: MS MARCO가 영어 코퍼스이므로 **한국어 질의 + 영문 문서** 크로스에서 오동작. 예: "ROS의 주요 구성요소는?" → 한국어 딥러닝 문서의 "CONTENTS" 섹션이 0.988점을 받고 실제 관련 ROS 청크는 0.059점
+- 후속 과제:
+  - 다국어 rerank 모델 평가 (`ms-marco-MultiBERT-L-12`, `bge-reranker-v2-m3` 등)
+  - 질의 언어 감지 후 영어 문서용/한국어 문서용 분리 처리
+  - 또는 재순위 전 질의 번역 (query translation) 도입
