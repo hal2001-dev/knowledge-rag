@@ -6,8 +6,9 @@ from apps.config import get_settings
 from packages.db.connection import get_session
 from packages.llm.embeddings import build_embeddings
 from packages.llm.chat import build_chat
-from packages.vectorstore.qdrant_store import QdrantDocumentStore
 from packages.rag.pipeline import RAGPipeline
+from packages.rag.reranker import get_reranker
+from packages.vectorstore.qdrant_store import QdrantDocumentStore
 
 
 @lru_cache
@@ -20,7 +21,11 @@ def get_pipeline() -> RAGPipeline:
         embeddings=embeddings,
     )
     llm = build_chat(settings)
-    return RAGPipeline(store=store, llm=llm, settings=settings)
+    reranker = get_reranker(
+        backend=settings.reranker_backend,
+        model_name=settings.reranker_model_name or None,
+    )
+    return RAGPipeline(store=store, llm=llm, reranker=reranker, settings=settings)
 
 
 def get_db() -> Generator[Session, None, None]:

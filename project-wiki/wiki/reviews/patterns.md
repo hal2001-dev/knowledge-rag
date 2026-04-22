@@ -1,7 +1,7 @@
 # 코드 리뷰 패턴 & 팀 컨벤션
 
 **마지막 업데이트**: 2026-04-17
-**관련 페이지**: [[architecture/decisions.md]]
+**관련 페이지**: [decisions.md](../architecture/decisions.md)
 
 리뷰에서 반복되는 지적이나 팀이 합의한 규칙을 누적합니다.
 새 코드를 작성하기 전에 이 파일을 먼저 확인하세요.
@@ -19,7 +19,7 @@
 - (예시) FAISS 인덱스 저장 시 메타데이터(docstore)도 반드시 함께 저장
 
 ### Retrieval
-- (예시) retrieval 결과에 score threshold 적용 — 기준값은 [[features/retrieval.md]] 참고
+- (예시) retrieval 결과에 score threshold 적용 — 기준값은 `retrieval.md` _(미작성)_ 참고
 
 ### Chunking
 - (예시) chunk 생성 후 empty string 필터링 누락 주의

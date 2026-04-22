@@ -287,7 +287,291 @@ Qdrant payload 분석 결과 `dl_meta.headings`가 항상 **1개 원소**(최하
 ### 결과 & 관찰
 - 모델 로드 로그 확인, 점수 분포가 Qdrant 코사인(0.3~0.5)과 전혀 다른 범위(0.05~0.99)로 바뀜 → 재순위 동작 확인
 - **한계**: MS MARCO가 영어 코퍼스이므로 **한국어 질의 + 영문 문서** 크로스에서 오동작. 예: "ROS의 주요 구성요소는?" → 한국어 딥러닝 문서의 "CONTENTS" 섹션이 0.988점을 받고 실제 관련 ROS 청크는 0.059점
-- 후속 과제:
+- 후속 과제 (→ ADR-012에서 해결):
   - 다국어 rerank 모델 평가 (`ms-marco-MultiBERT-L-12`, `bge-reranker-v2-m3` 등)
   - 질의 언어 감지 후 영어 문서용/한국어 문서용 분리 처리
   - 또는 재순위 전 질의 번역 (query translation) 도입
+
+---
+
+## ADR-012: 재순위 다국어화 — BGE-reranker-v2-m3 채택 + 백엔드 토글
+**날짜**: 2026-04-22
+**상태**: accepted (supersedes ADR-011 한계)
+**관련**: ADR-011, TASK-001, [evaluation.md](../features/evaluation.md)
+
+### 배경
+ADR-011에서 관찰된 FlashRank 한↔영 크로스 실패를 해결하기 위해 다국어 cross-encoder를 평가·도입. 추가로 실험 재현·회귀 가능성을 위해 백엔드를 런타임 토글로 구성.
+
+### 선택지
+1. **BGE-reranker-v2-m3** (`BAAI/bge-reranker-v2-m3`, 100+ 언어 학습, 568MB)
+2. `ms-marco-MultiBERT-L-12` — FlashRank 경로 유지. 성능 보고 편차 큼
+3. 질의 번역 + 기존 FlashRank 유지 — 번역 비용·지연
+4. 언어 감지 → 문서군별 분기 — 복잡도 증가
+
+### 결정
+**옵션 1 채택 + 백엔드 토글**. 단일 모델이 한/영 모두 커버해 구현이 단순. 토글로 A/B 회귀 가능.
+
+### 구현
+- `packages/rag/reranker.py` 신설: `Reranker` 프로토콜 + `FlashRankReranker` + `BgeM3Reranker`. `get_reranker(backend, model_name)` 팩토리가 싱글톤 관리.
+- BGE는 `sentence_transformers.CrossEncoder`로 로드하고 logit→sigmoid로 0~1 스케일링.
+- `packages/rag/retriever.py`를 reranker 주입형으로 재작성. `apps/dependencies.py`에서 설정값 기반 인스턴스화.
+- `.env`: `RERANKER_BACKEND`, `RERANKER_MODEL_NAME`, `RERANKER_WARMUP`. 기본 `bge-m3`, warmup on.
+- `apps/main.py` lifespan에서 `reranker_warmup=true`일 때 더미 rerank 호출로 모델 preload (첫 사용자 지연 제거).
+- `RAGPipeline.query`에 `tracing_context(tags=["reranker:<backend>"], metadata={"reranker_backend": ...})` 태깅으로 LangSmith에서 backend별 필터링 가능.
+
+### 결과
+| 질의(한국어) | FlashRank 1위 | BGE-M3 1위 |
+|------|---------|---------|
+| ROS의 주요 구성요소는? | 밑바닥부터_시작하는_딥러닝 ❌ | **Learning ROS** ✅ |
+| navigation stack은 무엇인가? | Learning ROS | Learning ROS (score↑) |
+| 자율 주행 | 딥러닝(정답) | 딥러닝(정답) |
+| 오차역전파법 | 딥러닝(정답) | 딥러닝(정답) |
+| Robotics Programming을 하는 방법은? | Learning ROS | Learning ROS |
+
+- **완료 기준 충족**: ROS 영문 청크가 한국어 질의 top-3 전원 진입, 무관한 한국어 딥러닝 목차가 1위로 올라가는 사례 제거
+- 점수 분포: BGE-M3가 0.5~0.7로 더 의미 있는 스펙트럼, FlashRank는 0.99+로 overconfident
+- 비용: 로드 ~4초(캐시 후), 추론 50~150ms/청크 on CPU
+- `features/evaluation.md`에 A/B 표 기록
+
+### 한계 / 후속
+- BGE도 CPU 추론이라 `initial_k=20`에서 총 1~3초 추가. GPU 또는 `initial_k=10`으로 완화 가능
+- 매우 긴 청크(>512 토큰)는 내부에서 잘림 — 구조 인식 청킹과 결합해 영향 최소화
+- 한국어 임베딩 품질 자체가 병목이 될 경우 TASK-002(BGE-M3 임베딩 교체)로 확장
+
+---
+
+## ADR-013: LLM 공급자 — gpt-4o-mini 유지 (GLM 교체 안 함)
+**날짜**: 2026-04-22
+**상태**: accepted
+
+### 배경
+GLM(Zhipu) 계열 모델이 OpenAI-호환 엔드포인트로 쉽게 대체 가능한 상황에서, 성능·비용 관점에서 교체 여부 검토가 요청됨.
+
+### 비교 요약
+| 축 | gpt-4o-mini | GLM-4.6 / GLM-4-Flash |
+|----|---|---|
+| 한국어 답변 품질 | 안정 최상위 | GLM-4.6 근접, Flash는 한 단계 낮고 출력에 중국어 혼입 사례 |
+| 컨텍스트 준수(hallucination 억제) | 강함 | GLM은 컨텍스트 외 추측 경향이 상대적으로 높다는 보고 |
+| 지시/시스템 프롬프트 준수 | 안정 | 일부 질의에서 출력이 짧아지는 사례 |
+| 가격 | $0.15 / $0.60 per 1M 토큰 | Flash 사실상 무료, 4.6 저가 |
+| 안전 필터 | 표준 | 중국 규제로 특정 주제 필터 강함 — RAG 문서가 걸릴 가능성 |
+| 지연시간/SLA (국내) | 일관 | 리전·피크 편차 |
+
+### 결정
+**gpt-4o-mini 유지.** 이 프로젝트의 주 과업은 "검색된 청크 3개를 한국어로 성실히 재구성"으로 단순하고, 이 과업에서 두 모델 체감 차이는 크지 않지만 **컨텍스트 준수·안전 필터·생태계 안정성**에서 OpenAI가 더 예측 가능. 비용도 현재 규모에서 월 수 달러 수준이라 교체 유인이 약함.
+
+### 결과
+- 코드 변경 없음
+- 추후 비용 폭증 시나리오, 또는 데이터 주권 요구가 생기면 재평가 (재평가 시 이미 설계된 "백엔드 토글" 패턴을 LLM에도 적용해 A/B로 결정)
+- 모델 교체는 [packages/llm/chat.py](../../../packages/llm/chat.py) 한 파일 + `.env` 키 교체로 가능하다는 점을 유지보수 메모로 기록
+
+---
+
+## ADR-014: LLM 백엔드 토글 인프라 (ADR-013 후속)
+**날짜**: 2026-04-22
+**상태**: accepted
+**관련**: ADR-013 (gpt-4o-mini 유지 결정), TASK-003
+
+### 배경
+ADR-013에서 gpt-4o-mini 유지로 결론 났지만, 향후 비용·데이터 주권·A/B 실험 요구가 생겼을 때 코드 수정 없이 `.env`만으로 공급자를 바꿀 수 있는 토글 인프라가 필요. Reranker에서 이미 검증된 패턴(ADR-012)을 LLM에도 이식.
+
+### 선택지
+1. **OpenAI-호환 토글만** (`ChatOpenAI` 한 클래스로 base_url/api_key/model만 교체)
+2. 공급자별 네이티브 SDK 지원 (langchain-zhipuai 등) — 패키지 호환성 부담
+3. 추상화 인터페이스 + 2종 구현 (reranker와 동일)
+
+### 결정
+**옵션 1.** GLM/DeepSeek/Qwen 등 주요 중국계/오픈 공급자가 전부 OpenAI-호환 엔드포인트를 제공하므로 `ChatOpenAI` 단일 클래스로 충분. 타입 힌트·LangChain·LangSmith 호환성 완벽 유지.
+
+### 구현
+- `.env`: `LLM_BACKEND`, `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL`, `LLM_TEMPERATURE` 5개 변수 (모두 빈 값 허용)
+- `apps/config.py`: 5개 필드 + 기존 `openai_chat_model`·`openai_chat_temperature`를 legacy fallback으로 유지
+- `packages/llm/chat.py` 재작성:
+  - `_BACKENDS` 맵: `openai`(`api.openai.com/v1`, `gpt-4o-mini`), `glm`(`open.bigmodel.cn/api/paas/v4/`, `glm-4-flash`), `custom`(완전 수동)
+  - `_resolve(settings)`: `LLM_*` → (openai 한정) `OPENAI_*` → backend 기본값 우선순위로 해석
+  - `LLM_TEMPERATURE`는 `str`로 받아 빈 문자열이면 legacy 파라미터로 fallback (Pydantic 빈 문자열 → float 파싱 실패 방지)
+  - `ChatOpenAI(model, temperature, openai_api_key, openai_api_base)` 반환 (타입·동작 불변)
+- `packages/rag/pipeline.py`: `RAGPipeline.query`의 `tracing_context`에 `llm:<backend>` 태그 + `llm_backend`·`llm_model` 메타 추가 (LangSmith에서 backend별 필터링)
+- 기본값: `LLM_BACKEND=openai`, 실효 모델 `gpt-4o-mini` — ADR-013 결론 준수 (회귀 0)
+
+### 결과
+- 스모크 테스트: 기본 `LLM_BACKEND=openai`로 `/query` 정상(답변·출처·지연 이전과 동일)
+- 로그: `질의: ... (reranker=bge-m3, llm=openai:gpt-4o-mini)` 형태로 backend·모델 가시성 확보
+- LangSmith: `llm:openai` 태그 + 메타 기록 확인
+- 모델 교체는 이제 다음 한 줄이면 완료:
+  ```
+  LLM_BACKEND=glm
+  LLM_API_KEY=<glm key>
+  # LLM_MODEL 비우면 glm-4-flash 사용, 다른 모델 원하면 LLM_MODEL=glm-4.6 등
+  ```
+
+### 한계 / 후속
+- `custom` backend는 반드시 `LLM_BASE_URL`·`LLM_API_KEY`·`LLM_MODEL` 전부 필요 (에러 메시지로 안내)
+- OpenAI 완벽 호환이 아닌 공급자는 `n`, `logprobs`, `tool_choice` 등 일부 파라미터 미지원 가능 — 현재 코드는 이들 파라미터를 쓰지 않으므로 영향 없음
+- GLM에서 `temperature=0.0` 시 출력이 짧아지는 경향이 있다는 보고 — 실제 전환 시 0.3~0.5 시도 권장 (`.env`의 `LLM_TEMPERATURE=0.3`)
+- A/B 정량 비교는 TASK-004에서 제공할 Ragas/LangSmith 평가 프레임워크로 수행
+
+---
+
+## ADR-015: 평가 프레임워크 — Ragas + 자체 Retrieval 벤치 + LangSmith
+**날짜**: 2026-04-22
+**상태**: accepted
+**관련**: TASK-004, [evaluation.md](../features/evaluation.md)
+
+### 배경
+지금까지의 개선(HybridChunker, FlashRank→BGE-m3, heading breadcrumb, LLM 토글)이 **정성 판단**으로만 진행. 이후 실험(임베딩 교체, 하이브리드 검색, 프롬프트 튜닝)도 수치 없이는 결정이 어렵고, 회귀 탐지도 불가.
+
+### 선택지
+1. **수동 라벨 + 자체 스크립트만** — Precision@K / Recall@K / MRR. 빠름, 답변 품질 제한
+2. **Ragas 통합** — RAG 전용 표준 지표 (faithfulness, answer_relevancy, context_precision/recall)
+3. **LangSmith Evaluators 단독** — 기존 트레이스 위에서 dataset·evaluator 정의. built-in이 제한적
+4. **옵션 1 + 2 + 3 결합**
+
+### 결정
+**옵션 4 결합.**
+- Phase 1(Retrieval, 빠름): 자체 스크립트로 Hit/Precision/Recall/MRR. reranker A/B에 최적
+- Phase 2(Answer, 느림): Ragas로 답변 품질 4종 지표. LLM-as-judge
+- LangSmith: 두 스크립트의 실행 이력을 자동 수집 (기존 `@traceable`에 의해)
+
+### 구현
+- `tests/eval/dataset.jsonl` — 12개 질의 (ko/en/mixed) + `expected_doc_ids` 라벨
+- `scripts/bench_retrieval.py`:
+  - argparse `--backend flashrank bge-m3` 로 A/B 가능
+  - unique-document 기반 Precision/Recall (청크 중복 카운트 버그 수정)
+  - `data/eval_runs/retrieval_<ts>.json` 저장
+- `scripts/bench_answers.py`:
+  - `retrieve()`를 직접 호출해 **전체 청크 content를 Ragas에 전달** (기존 pipeline.query의 200자 excerpt 사용 시 faithfulness가 0.15로 급락하는 버그 발견 후 수정)
+  - metrics: `Faithfulness`, `ResponseRelevancy`, `LLMContextPrecisionWithoutReference`, `LLMContextRecall`
+  - judge: gpt-4o-mini (비용 고려). 중요 의사결정 시 gpt-4o로 교체 권장
+  - LangSmith에 run 자동 기록
+- `requirements.txt`에 `ragas>=0.2`, `datasets>=4.0` 추가
+
+### 결과 (기반선, 2026-04-22)
+**Phase 1 A/B** (12 질의):
+
+| 지표 | FlashRank | BGE-M3 |
+|------|-----------|--------|
+| Hit@3 | 0.917 | **1.000** |
+| Precision@3 | 0.847 | **1.000** |
+| Recall@3 | 0.861 | **0.944** |
+| MRR | 0.833 | **1.000** |
+
+**Phase 2** (BGE-M3 + gpt-4o-mini):
+
+| 지표 | 값 |
+|------|-----|
+| faithfulness | 0.886 |
+| answer_relevancy | 0.648 |
+| context_precision | 0.986 |
+| context_recall | 0.942 (self-reference) |
+
+### 후속 원칙 (강제)
+1. 모든 품질 관련 ADR은 **before/after 수치 동반**
+2. reranker/LLM backend 교체 시 Phase 1+2 모두 재실행 후 결정
+3. 튜닝·평가 질의 분리 (현재는 공용, 향후 hold-out 5개 분리)
+
+### 한계 / 후속
+- judge LLM이 답변 LLM과 동일 — 편향 가능. 중요 판정은 judge를 gpt-4o로 고정
+- `answer_relevancy` 0.648이 낮게 보이는데 답변이 길어 주변 정보가 많아서 — 프롬프트 간결화가 다음 실험 후보
+- reference(정답 문자열) 미라벨 — Phase 2 context_recall 해석 주의
+- Ragas judge 비용: 한 번 전체 실행 ≈ $0.05~0.1
+
+---
+
+## ADR-016: Embedding 백엔드 — OpenAI 유지, BGE-M3 토글 확보
+**날짜**: 2026-04-22
+**상태**: accepted (supersedes TASK-002의 "교체" 가정)
+**관련**: TASK-002, ADR-012, ADR-015
+
+### 배경
+reranker를 다국어(BGE-M3)로 바꾼 뒤에도 임베딩은 `text-embedding-3-small`(영어 위주 학습)로 남아있어 retrieval 1단계(후보 수집)에서 한↔영 크로스 약점이 여전할 가능성이 있었다. 다국어 임베딩(BGE-M3, 1024-d, 로컬)으로 교체 시 이득이 있는지 **정량 A/B**로 검증.
+
+### 선택지
+1. **OpenAI 유지** — 변동 없음, 기반선 유지
+2. **BGE-M3 단독 채택** — 비용 0, 다국어 특화, Qdrant 컬렉션 재생성 필요
+3. **토글 추가 + 기본 OpenAI** — 확장성만 확보, 기본은 보수적
+
+### 실험 (TASK-004 프레임워크로 A/B)
+**조건**: 동일 dataset 12개 질의, reranker=bge-m3 고정, LLM=gpt-4o-mini 고정. 임베딩만 교체.
+
+| 지표 | OpenAI (text-embedding-3-small, 1536-d) | BGE-M3 (1024-d, 로컬) | Δ |
+|------|---|---|---|
+| Hit@3 | 1.000 | 1.000 | = |
+| Precision@3 | 1.000 | 1.000 | = |
+| Recall@3 | 0.944 | 0.944 | = |
+| MRR | 1.000 | 1.000 | = |
+| Retrieval latency | 580ms | **423ms** | −27% |
+| faithfulness | 0.886 | 0.857 | −3% |
+| answer_relevancy | 0.648 | 0.618 | −5% |
+| context_precision | 0.986 | 0.924 | −6% |
+| context_recall | 0.942 | 0.917 | −3% |
+
+### 결정
+**옵션 3 채택: OpenAI 기본 유지 + BGE-M3 토글 제공.**
+- Retrieval 4종 지표는 이미 상한(1.0 근처) — 교체 이득 없음
+- Answer 지표는 **소폭 하락**. 임베딩이 바뀌면 후보 분포도 달라지고 LLM이 본 context도 미묘히 바뀌는데 그 결과가 자 ROS/딥러닝 dataset에서는 OpenAI 쪽이 약간 더 유리
+- Retrieval latency 27% 개선은 장점이나 전체 `/query` latency(5초) 대비 미미
+- ADR-013(LLM OpenAI 유지)의 보수적 원칙 일관성
+
+### 구현
+- `apps/config.py`: `embedding_backend`, `embedding_model_name`, `embedding_warmup` 3개 필드
+- `.env(.example)`: `EMBEDDING_BACKEND=openai|bge-m3`, `EMBEDDING_MODEL_NAME`, `EMBEDDING_WARMUP`
+- `packages/llm/embeddings.py` 재작성: `_EmbeddingWithDim` 래퍼가 `embedding_dim`·`backend`·`model` 속성 노출
+- `packages/vectorstore/qdrant_store.py`:
+  - `VECTOR_SIZE` 상수 제거 → 임베딩의 `embedding_dim` 속성 기반
+  - 기존 컬렉션의 차원이 현재 임베딩과 다르면 `CollectionDimensionMismatch` 예외 (재인덱싱 유도)
+- `pipeline/rebuild_index.py`: reranker 주입으로 `RAGPipeline` 생성자 갱신 — 차원 변경 재인덱싱도 지원
+- `requirements.txt`: `langchain-huggingface` 추가 (HuggingFaceEmbeddings 계열)
+
+### 결과
+- 기본값 `EMBEDDING_BACKEND=openai` 유지 → **회귀 0**
+- `EMBEDDING_BACKEND=bge-m3 && python pipeline/rebuild_index.py`로 즉시 전환 가능
+- 본 실험에서 전환과 복원 사이클 2회 무장애 수행(Qdrant 컬렉션 차원 자동 감지·검증 동작 확인)
+
+### 한계 / 후속
+- 한국어·영어 혼합 dataset이 12개 소규모라 모델 간 작은 차이를 감지하기에 통계적 힘이 약함. 더 큰 실사용자 질의가 누적되면 재평가
+- GPU 없는 CPU 환경에서는 BGE-M3 인덱싱이 OpenAI 대비 느림(약 5배). 본 프로젝트 규모에선 수용 가능하나 대량 업로드 시 고려
+- 한국어 문서가 주를 이루는 dataset이 새로 들어오면 BGE-M3가 역전할 가능성 있음 — TASK-004 프레임워크로 언제든 재검증 가능
+
+---
+
+## ADR-017: 관리자 UI 단계적 도입 (1단계 = Streamlit 탭)
+**날짜**: 2026-04-22
+**상태**: accepted
+**관련**: TASK-005, [admin_ui.md](../features/admin_ui.md), ISSUE-001
+
+### 배경
+문서·대화·설정·벤치 결과가 분산되어 운영 가시성이 낮고, 대화 세션은 UI 없이 CRUD API만 있어 누적만 됨. 설정 백엔드가 현재 어떤 값인지 UI에서 확인 불가 — 실험 중 안전장치가 없음.
+
+### 선택지
+1. **1단계: 현 Streamlit 앱 내 `st.tabs` 추가** — 최소 침습, LAN 전용
+2. 2단계: `ui/pages/admin.py` 분리 + `ADMIN_PASSWORD`
+3. 3단계: FastAPI+Jinja 또는 React 전용 대시보드
+
+### 결정
+**1단계부터 순차 도입.** 2단계는 HTTPS 배포·ISSUE-001 해결과 묶어 승격. 3단계는 규모 확장 시.
+
+### 구현 (1단계, TASK-005)
+- `ui/app.py`를 `st.tabs(["채팅","문서","대화","시스템","평가"])` 구조로 재작성
+- **채팅**: 기존 기능 유지, `session_id` 뱃지 표시
+- **문서**: 업로드/목록/삭제 + **청크 미리보기** (`GET /documents/{id}/chunks?limit=10`)
+- **대화**: `GET /conversations` 목록, 선택 시 `GET /conversations/{id}` 메시지 뷰, 삭제
+- **시스템**: Reranker/LLM/Embedding/Qdrant/Health/LangSmith 6개 카드 — **읽기 전용**
+- **평가**: `data/eval_runs/*.json` 최신 Retrieval + Answer 지표 카드, 최근 10개 히스토리 테이블
+- 백엔드 신규: `QdrantDocumentStore.scroll_by_doc_id()` + `GET /documents/{doc_id}/chunks` 엔드포인트 + `ChunkPreview`·`ChunkPreviewResponse` 스키마
+
+### 의도적으로 제외
+- 설정 변경 UI (서버 재시작 필요, 경쟁 상태) → `.env` 편집 + 재시작 안내
+- 재인덱싱/벤치 실행 버튼 (블로킹, 비용) → CLI로 수행
+- 인증 (1단계는 LAN 전용)
+- 자세한 내용은 [admin_ui.md](../features/admin_ui.md)
+
+### 결과
+- 탭 전환으로 채팅 `session_id`·`messages` 유실 없음 (세션 상태 명시적 키 사용)
+- 문서·대화 CRUD + 청크 미리보기 스모크 통과
+- 시스템 탭이 `get_settings()` + `QdrantClient.get_collection()`을 실시간 반영
+- 평가 탭이 `data/eval_runs/`의 최신 결과를 자동 로드
+
+### 후속 (2/3단계 예정 ADR은 실제 승격 시 신규 작성)
+- 2단계: ISSUE-001 동반 해결, HTTPS 배포, `ADMIN_PASSWORD`
+- 3단계: 청크 검색 디버거, 벤치 시계열 차트, 설정 토글 UI

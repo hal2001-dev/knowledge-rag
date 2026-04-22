@@ -2,7 +2,7 @@
 
 **상태**: active
 **마지막 업데이트**: 2026-04-21
-**관련 페이지**: [[overview.md]], [[requirements/features.md]]
+**관련 페이지**: [overview.md](overview.md), [features.md](wiki/requirements/features.md)
 
 ---
 
@@ -20,7 +20,15 @@
 
 ## 단기 (이번 스프린트)
 
-### TASK-001: BGE-reranker-v2-m3 도입 (재순위 다국어화)
+### 실행 순서 원칙
+**태스크를 병렬로 진행하지 않는다.** 앞 태스크(문서화·ADR·위키 반영 포함)가 완전히 종료된 뒤 다음 태스크를 시작한다.
+현재 실행 큐: **TASK-001 ✅ → TASK-003 ✅ → TASK-004 ✅ → TASK-002 ✅ → TASK-005 ✅ (모두 완료)**
+
+대기 중: **🛑 보류 (사용자 지시 대기)** — ISSUE-001 + 관리자 UI 2단계 (HTTPS 배포 시점에 묶어 처리). 사용자가 지시할 때까지 자동 진행 금지
+
+### ~~TASK-001: BGE-reranker-v2-m3 도입 (재순위 다국어화)~~ — ✅ 완료 (2026-04-22)
+→ ADR-012, changelog [0.6.0], [evaluation.md](wiki/features/evaluation.md) 참고
+
 **우선순위**: 최우선
 **배경**: 현재 FlashRank `ms-marco-MiniLM-L-12-v2`는 영어 학습 cross-encoder라 한국어 질의 + 영문 문서 크로스에서 오작동. "ROS의 주요 구성요소는?" 질의가 한국어 딥러닝 문서의 "CONTENTS" 섹션을 0.988점, 실제 ROS 청크를 0.059점으로 평가한 사례 확인 (ADR-011)
 **목표**: 한↔영 크로스 retrieval 품질을 가시적으로 개선
@@ -50,12 +58,143 @@
 - GPU 없으면 청크당 100~300ms 추가 latency — `initial_k=20`이면 +2~6초. `initial_k`를 10으로 낮추는 옵션도 같이 고려
 - 메모리 ~2GB 추가 점유
 
-### TASK-002: BGE-M3 임베딩 도입 (선택, TASK-001 결과 보고 결정)
-TASK-001로도 부족하면 임베딩 자체를 다국어 BGE-M3(1024-d, 로컬, 비용 0)으로 교체. **Qdrant 컬렉션 재생성 + 전체 재인덱싱 필요**. 별도 ADR로 분리. 우선순위: 보류.
+### ~~TASK-002: BGE-M3 임베딩 도입~~ — ✅ 완료 (2026-04-22)
+→ ADR-016, changelog [0.9.0]
+결과: A/B 비교 후 **OpenAI 기본 유지 + BGE-M3 토글 확보**. Retrieval 지표 동률, Answer 소폭 하락, 기본 전환은 보류. 토글 인프라는 구축됨.
 
----
+### ~~TASK-003: LLM 백엔드 토글 (OpenAI ↔ GLM 등 OpenAI-호환 엔드포인트)~~ — ✅ 완료 (2026-04-22)
+→ ADR-014, changelog [0.7.0]
 
-## 중기 (1~3개월)
+**우선순위**: 중 (ADR-013에 이어 인프라만 선제 구축)
+**배경**: ADR-013에서 gpt-4o-mini 유지로 결론 — 단, 향후 비용/데이터 주권/A-B 실험 필요 시 1시간 내 교체 가능한 **토글 인프라**를 지금 만들어 두면 결정만 `.env` 한 줄로 바뀜. 이미 Reranker에서 성공적으로 쓴 패턴(ADR-012)을 LLM에도 동일하게 적용.
+**목표**: `.env`의 `LLM_BACKEND` 값만 바꿔 OpenAI / GLM / DeepSeek / Qwen 등 OpenAI-호환 엔드포인트로 즉시 전환 가능
+**범위**: LLM 호출 경로만. 임베딩·Qdrant·Reranker 건드리지 않음 → **재인덱싱 불필요**, 품질 저하 위험 최소
+
+**서브태스크**:
+- [ ] `.env(.example)`에 추가:
+  - `LLM_BACKEND=openai`  # `openai|glm|custom` (OpenAI-호환 전용)
+  - `LLM_BASE_URL=`       # 빈 값이면 backend별 기본값
+  - `LLM_API_KEY=`        # 빈 값이면 `OPENAI_API_KEY` fallback (OpenAI 호환용)
+  - `LLM_MODEL=`          # 빈 값이면 backend별 기본값
+  - `LLM_TEMPERATURE=0.0`
+- [ ] `apps/config.py`에 동일 필드 추가. 기존 `openai_chat_model`/`openai_chat_temperature`는 **legacy**로 남기고 `build_chat`가 신규 필드 우선, 비어있으면 legacy로 fallback
+- [ ] `packages/llm/chat.py` 재작성:
+  - backend별 기본값 맵 (예: `openai → https://api.openai.com/v1, gpt-4o-mini`; `glm → https://open.bigmodel.cn/api/paas/v4/, glm-4-flash`)
+  - `ChatOpenAI(model=..., openai_api_base=..., openai_api_key=..., temperature=...)` 하나로 통일 (GLM·DeepSeek·Qwen 모두 OpenAI-호환이라 타입 힌트·의존성 유지)
+- [ ] 타입 힌트 확인 — [packages/rag/pipeline.py](../packages/rag/pipeline.py), [packages/rag/generator.py](../packages/rag/generator.py)의 `ChatOpenAI` 힌트는 유지 가능 (반환형이 동일)
+- [ ] LangSmith 태깅 — `RAGPipeline.query`의 `tracing_context`에 `llm_backend`·`llm_model` 메타 추가 (ADR-012의 reranker 태깅과 동일 패턴)
+- [ ] 기본값: **`LLM_BACKEND=openai`, 모델 `gpt-4o-mini` 유지** (ADR-013 결론)
+- [ ] 스모크 테스트: `LLM_BACKEND=openai`에서 기존 동작 회귀 없음 확인. GLM 키가 있다면 `LLM_BACKEND=glm`으로 동일 질의 1건 테스트
+- [ ] (선택) A/B 비교 — TASK-001과 동일 5개 질의로 `features/evaluation.md`에 추가 (GLM 키 없으면 skip)
+- [ ] ADR-014 신규 작성 (토글 인프라 결정 + 기본값 유지 논리 + 확장 경로)
+- [ ] changelog.md `[0.7.0]` 항목 추가
+- [ ] `tests/conftest.py`의 `patch("langchain_openai.ChatOpenAI")` 확인 — 경로 불변이라 수정 불필요할 것 (재검증만)
+
+**완료 기준**:
+1. `.env`의 `LLM_BACKEND=openai`로 기존과 동일 동작 (회귀 없음)
+2. `LLM_BACKEND=glm` + GLM 키로 `/query` 정상 응답 (스모크만)
+3. LangSmith 트레이스에 `llm_backend=openai|glm` 메타 가시성
+4. ADR-014·changelog 반영
+
+**주의사항**:
+- GLM 프롬프트에서 `temperature=0.0`일 때 출력 매우 짧아지는 경향 보고 — GLM 선택 시 0.3~0.5 권장. 토글 시 `LLM_TEMPERATURE` 기본값 분기 고려
+- GLM은 안전 필터가 강해 특정 주제(정치·역사·일부 기술)가 응답 거부될 수 있음 — 문서 전반에 해당 주제가 있다면 기본값 유지가 맞음
+- 공식 OpenAI-호환이 아닌 공급자는 `n`, `logprobs`, `tool_choice` 등 일부 파라미터 미지원 — `ChatOpenAI`가 보내는 기본 파라미터만 쓰는지 확인
+- API 키는 절대 채팅·커밋에 평문 공유 금지 ([security.md](security.md))
+
+### ~~TASK-004: 품질 측정 프레임워크 — Retrieval 지표 + LLM-judge (Ragas + LangSmith)~~ — ✅ 완료 (2026-04-22)
+→ ADR-015, changelog [0.8.0], [evaluation.md](wiki/features/evaluation.md)
+
+**우선순위**: 중 (TASK-003 완료 후 착수)
+**전제**: TASK-003이 완전히 끝난 상태여야 함. 그래야 LLM 백엔드별 품질 차이를 동일 측정 도구로 A/B 가능.
+**배경**: 지금까지의 개선(HybridChunker, FlashRank→BGE-m3, heading breadcrumb, 정규화)이 체감은 좋아졌지만 **정량 근거가 없음**. 앞으로의 실험(임베딩 교체, 하이브리드 검색, 프롬프트 튜닝)도 수치 없이는 판단이 어렵다.
+**목표**: 단일 명령으로 Precision@3 / MRR / Faithfulness / Answer Relevance / Context Precision 을 산출, LangSmith에 축적
+**범위**: 측정 인프라만. 품질 개선 시도는 별도 태스크
+
+**Phase 1 — 레벨 1 (Retrieval 정량 기반선, 2~3시간)**:
+- [ ] `tests/eval/dataset.jsonl` 신설 — 질의 10~20개 + 각 질의의 정답 `doc_id` 리스트
+  - 현재 인덱싱된 문서군(ROS 영문 / 한국어 딥러닝) 기준으로 TASK-001 5개 질의를 베이스로 확장
+  - 필드: `{"question": ..., "expected_doc_ids": [...], "language": "ko|en|mixed", "note": ...}`
+- [ ] `scripts/bench_retrieval.py` 작성:
+  - dataset을 읽고 각 질의를 `retrieve()`로 실행 → top-3 doc_id 수집
+  - Precision@3, Recall@3, MRR 계산
+  - reranker backend별로 표 출력 (flashrank vs bge-m3 회귀 감시용)
+  - 결과를 `data/eval_runs/{YYYY-MM-DD_HHmmss}.json`에 저장
+- [ ] `features/evaluation.md`의 "현재 최신 지표" 표를 실제 수치로 갱신
+- [ ] 완료 기준: 동일 명령(`python scripts/bench_retrieval.py`) 재실행 시 수치 재현 가능
+
+**Phase 2 — 레벨 2 (답변 품질, Ragas + LangSmith, 반나절)**:
+- [ ] 의존성 추가 — `ragas` + `datasets` (requirements.txt)
+- [ ] `scripts/bench_answers.py` 작성:
+  - 동일 dataset 사용, `/query` 호출 결과의 `{question, answer, sources}`를 Ragas 입력 포맷으로 변환
+  - Ragas metric: `faithfulness`, `answer_relevance`, `context_precision` (정답 doc_id 있으므로 `context_recall`도)
+  - judge LLM은 `gpt-4o-mini` 기본 (비용·일관성)
+  - LangSmith Dataset에 자동 업로드 (`client.create_examples`, `client.evaluate`)
+- [ ] LangSmith UI에서 실행 이력 확인 — 같은 Dataset에 대한 reranker/LLM backend별 실험이 누적
+- [ ] `features/evaluation.md`에 Phase 2 지표 섹션 추가
+- [ ] 완료 기준: 한 번의 명령으로 5종 지표 + LangSmith run 업로드까지 자동 수행
+
+**공통 — 문서화**:
+- [ ] ADR-015 신규 — "측정 프레임워크 채택: Ragas + LangSmith Evaluators"
+- [ ] changelog.md `[0.8.0]` 항목
+- [ ] `features/evaluation.md` 전면 개편 (레벨 1·2 실행 방법 + 최신 지표 + 해석 가이드)
+- [ ] roadmap.md TASK-004 완료 처리
+
+**완료 기준(전체)**:
+1. `bench_retrieval.py` 1회 실행으로 Precision@3·Recall@3·MRR 산출 재현
+2. `bench_answers.py` 1회 실행으로 Ragas 5종 지표 산출 + LangSmith Dataset에 기록
+3. 이후 TASK 실행 시 before/after 수치 비교가 표준 관행이 됨 (후속 모든 ADR에 수치 첨부 원칙)
+
+**주의사항**:
+- Ragas 지표 계산 자체가 LLM 호출을 다수 유발 — 10개 질의 × 5개 metric ≈ 50+ API call. 비용 모니터링
+- judge LLM이 gpt-4o-mini면 편향·자기평가 경향 주의 — 가능하면 judge는 gpt-4o 또는 별도 모델로 고정
+- dataset은 과적합 위험 — 튜닝에 사용한 질의가 그대로 평가 세트면 수치는 좋아 보여도 현실 성능은 아님. 평가 전용 질의 5~10개는 실험에서 제외
+- 라벨 수작업 비용이 병목 — 초기 10~20개부터 시작하고 점진 확대
+
+### ~~TASK-005: 관리자 UI (1단계, Streamlit 탭 기반)~~ — ✅ 완료 (2026-04-22)
+→ ADR-017, changelog [0.10.0], [admin_ui.md](wiki/features/admin_ui.md)
+
+**우선순위**: 중 (ISSUE-001/운영 배포와 연계되나 단독으로도 이득 큼)
+**배경**: 문서·대화·설정·벤치 결과가 분산되어 (`.env`, Qdrant 대시보드, `data/eval_runs/*`, LangSmith) 운영 가시성 낮음. 대화 세션은 CRUD API만 있고 UI가 없어 누적만 된다. 설정 백엔드(Reranker/LLM/Embedding 토글)가 현재 어떤 값인지 UI에서 확인 불가.
+**범위**: 1단계(옵션 A) — **현 Streamlit 앱에 탭 추가만**, 별도 페이지·인증·React 없음. 2단계(B, `/admin` 분리 + 패스워드)는 HTTPS 배포/ISSUE-001 해결 시점에 승격
+
+**서브태스크**:
+- [ ] `ui/app.py` 레이아웃 개편 — `st.tabs(["채팅", "문서", "대화", "시스템", "평가"])` 구조로 전환. 기존 사이드바 업로드는 유지
+- [ ] 탭 **문서**: `/documents` 목록 + 삭제 + 업로드(현 기능 이전) + **청크 미리보기** (Qdrant scroll API로 해당 doc_id의 청크 5~10개 표시, heading_path·page·content_type·score 컬럼)
+- [ ] 탭 **대화**: `/conversations` 목록 (최근 업데이트 순) + 선택 시 `/conversations/{id}` 메시지 뷰 + 삭제 버튼. 빈 세션·오래된 세션 일괄 정리 도우미
+- [ ] 탭 **시스템**: 현재 설정 카드 출력
+  - Reranker(`reranker_backend`), LLM(`llm_backend:llm_model`), Embedding(`embedding_backend`·`embedding_dim`) 3개
+  - Qdrant 컬렉션 이름·dim·포인트 수·상태 (`QdrantClient.get_collection`)
+  - `/health` 상태
+  - LangSmith 프로젝트 링크 버튼 (`langchain_project`)
+  - **변경 UI는 포함하지 않음** — `.env` 편집 후 서버 재시작 안내만 (읽기 전용)
+- [ ] 탭 **평가**: `data/eval_runs/` 최신 `retrieval_*.json` / `answers_*.json` 파싱 → 최신 지표 카드 + 최근 5회 히스토리 표. "지금 실행" 버튼은 1단계에서 제외(블로킹 이슈)
+- [ ] 읽기 API 보완 확인 — 청크 미리보기에 필요한 `QdrantDocumentStore.scroll_by_doc_id(doc_id, limit)` 메서드 있는지 점검, 없으면 추가
+- [ ] 세션 상태 설계 — `st.session_state["active_tab"]`, `st.session_state["selected_session_id"]`, 탭 전환 시 상태 유실 방지
+- [ ] UI 스모크: 문서·대화 CRUD 전체 플로우 1회 클릭 시나리오 통과
+- [ ] 스크린샷 2~3장 → `wiki/features/admin_ui.md` 신규 (간단한 사용법 가이드)
+- [ ] ADR-017 신규 — "관리자 UI 단계적 도입: 1단계=탭, 2단계=/admin 분리+인증, 3단계=전용 대시보드"
+- [ ] changelog `[0.10.0]` 항목
+- [ ] roadmap TASK-005 완료 처리, overview·log 반영
+
+**완료 기준**:
+1. Streamlit 좌측 탭 5개가 정상 전환되고 각 탭이 기능 동작
+2. 문서 탭에서 업로드/삭제/청크 미리보기까지 막힘 없음
+3. 대화 탭에서 세션 목록·메시지 뷰·삭제 동작
+4. 시스템 탭이 현재 설정값을 올바르게 반영 (reranker/llm/embedding/Qdrant 4개 카드)
+5. 평가 탭이 `data/eval_runs/`의 최신 결과를 표시
+
+**주의사항**:
+- 1단계는 **인증 없음** — LAN 내부에서만 접속해야 함 (HTTPS/인증은 옵션 B로 미루기)
+- Qdrant `scroll`은 `metadata.doc_id` 필터로 호출해야 함 (ADR-005 참고)
+- `data/eval_runs/*.json`은 계속 커지므로 최근 N개만 표시 (오래된 것 자동 삭제는 별도 태스크)
+- UI 개편이 세션 상태에 영향 — 기존 채팅 `messages`·`session_id`는 **채팅 탭 안에서** 유지되어야 함. 탭 전환으로 유실되면 안 됨
+- 배포 단계로 가면 옵션 B(/admin 분리 + 패스워드)로 승격 필요 — 1단계를 운영에 그대로 노출 금지
+
+**후속(옵션 B로 승격될 때 추가될 것)**:
+- `ui/pages/admin.py`로 분리, `ADMIN_PASSWORD` 환경변수 게이트
+- 재인덱싱·벤치 실행 비동기 버튼
+- 설정 토글(수정 후 서버 재시작 예약)
 
 - [ ] 
 - [ ] 
@@ -73,7 +212,7 @@ TASK-001로도 부족하면 임베딩 자체를 다국어 BGE-M3(1024-d, 로컬,
 - [x] FlashRank 재순위 실제 활성화 (2026-04-21) — 단 한↔영 크로스 모델 평가 필요
 - [x] HybridChunker(docling-core) 도입 + 전체 heading 경로 breadcrumb 주입 (2026-04-21)
 - [x] 원본 파일 영구 보관 (2026-04-21)
-- [ ] **다국어 rerank 모델 평가** (bge-reranker-v2-m3 등) — 최우선
+- [x] 다국어 rerank 모델 도입 (bge-reranker-v2-m3, 2026-04-22, TASK-001)
 - [ ] HybridChunker 토큰 상한 설정 (512 토큰 초과 청크 방지)
 - [ ] 중복 감지 L2 (정규화 텍스트 해시) / L3 (임베딩 유사도 경고)
 - [ ] 하이브리드 검색 (키워드 + 벡터) — 형태소 분석(Kiwi) 동반 검토
@@ -100,3 +239,8 @@ TASK-001로도 부족하면 임베딩 자체를 다국어 BGE-M3(1024-d, 로컬,
 | 원본 파일 영구 보관 (재인덱싱 가능 구조) | 2026-04-21 |
 | FlashRank 재순위 실제 활성화 | 2026-04-21 |
 | 기존 6개 문서 마크다운 fallback으로 재인덱싱 완료 (ROS PDF 1619→800청크) | 2026-04-21 |
+| TASK-001 BGE-reranker-v2-m3 도입 + 토글 + A/B 비교 | 2026-04-22 |
+| TASK-003 LLM 백엔드 토글 인프라 (openai/glm/custom, ADR-014) | 2026-04-22 |
+| TASK-004 평가 프레임워크 (Ragas + 자체 벤치, 기반선 수립, ADR-015) | 2026-04-22 |
+| TASK-002 BGE-M3 임베딩 토글 + A/B (OpenAI 기본 유지, ADR-016) | 2026-04-22 |
+| TASK-005 관리자 UI 1단계 (5개 탭, 청크 미리보기, ADR-017) | 2026-04-22 |

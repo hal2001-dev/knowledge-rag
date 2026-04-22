@@ -2,7 +2,7 @@
 
 **상태**: draft
 **마지막 업데이트**: 2026-04-21
-**관련 페이지**: [[features/generation.md]], [[config/environments.md]]
+**관련 페이지**: `generation.md` _(미작성)_, `environments.md` _(미작성)_
 
 ---
 
@@ -166,7 +166,7 @@
 ## 인증
 
 현재: 없음 (개발 환경)
-향후: API Key 헤더 방식 검토 → [[security.md]]
+향후: API Key 헤더 방식 검토 → [security.md](../../security.md)
 
 ---
 

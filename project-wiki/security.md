@@ -2,7 +2,7 @@
 
 **상태**: active
 **마지막 업데이트**: 2026-04-21
-**관련 페이지**: [[config/environments.md]], [[onboarding/setup.md]]
+**관련 페이지**: `environments.md` _(미작성)_, [setup.md](wiki/onboarding/setup.md)
 
 ---
 
@@ -47,7 +47,7 @@ LOG_LEVEL=INFO
 ## 의존성 보안
 
 - `pip audit` 또는 `safety check` 로 주기적 취약점 점검
-- 주요 라이브러리 보안 업데이트 시 즉시 반영 → [[config/dependencies.md]]
+- 주요 라이브러리 보안 업데이트 시 즉시 반영 → `dependencies.md` _(미작성)_
 
 ---
 

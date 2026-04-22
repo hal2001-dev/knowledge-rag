@@ -4,14 +4,16 @@ from pathlib import Path
 
 from langchain_openai import ChatOpenAI
 from langsmith import traceable
+from langsmith.run_helpers import tracing_context
 
 from apps.config import Settings
 from packages.code.models import DocRecord
 from packages.code.logger import get_logger
 from packages.loaders.factory import get_loader
 from packages.rag.chunker import chunk_documents
-from packages.rag.retriever import retrieve
 from packages.rag.generator import generate
+from packages.rag.reranker import Reranker
+from packages.rag.retriever import retrieve
 from packages.vectorstore.qdrant_store import QdrantDocumentStore
 
 logger = get_logger(__name__)
@@ -22,10 +24,12 @@ class RAGPipeline:
         self,
         store: QdrantDocumentStore,
         llm: ChatOpenAI,
+        reranker: Reranker,
         settings: Settings,
     ):
         self._store = store
         self._llm = llm
+        self._reranker = reranker
         self._settings = settings
 
     @traceable(run_type="chain", name="rag.ingest")
@@ -92,16 +96,33 @@ class RAGPipeline:
         initial_k = initial_k or self._settings.default_initial_k
         score_threshold = score_threshold if score_threshold is not None else self._settings.default_score_threshold
 
-        logger.info(f"질의: '{question}' (history={len(history or [])}턴)")
+        llm_model = getattr(self._llm, "model_name", None) or getattr(self._llm, "model", "")
+        llm_backend = self._settings.llm_backend or "openai"
+        logger.info(
+            f"질의: '{question}' (history={len(history or [])}턴, "
+            f"reranker={self._reranker.backend}, llm={llm_backend}:{llm_model})"
+        )
         start = time.monotonic()
 
-        chunks = retrieve(
-            store=self._store,
-            query=question,
-            initial_k=initial_k,
-            top_n=top_k,
-            score_threshold=score_threshold,
-        )
+        with tracing_context(
+            tags=[
+                f"reranker:{self._reranker.backend}",
+                f"llm:{llm_backend}",
+            ],
+            metadata={
+                "reranker_backend": self._reranker.backend,
+                "llm_backend": llm_backend,
+                "llm_model": llm_model,
+            },
+        ):
+            chunks = retrieve(
+                store=self._store,
+                query=question,
+                reranker=self._reranker,
+                initial_k=initial_k,
+                top_n=top_k,
+                score_threshold=score_threshold,
+            )
 
         if not chunks:
             return {

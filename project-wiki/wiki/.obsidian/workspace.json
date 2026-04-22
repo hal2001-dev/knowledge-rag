@@ -183,8 +183,11 @@
       "bases:새 베이스 생성하기": false
     }
   },
-  "active": "51961e3467386087",
+  "active": "0063ce4fdf38db9b",
   "lastOpenFiles": [
+    "features/admin_ui.md",
+    "data/schema.md",
+    "issues/open/ISSUE-001-mobile-file-uploader-no-preview.md",
     "security.md",
     "onboarding/setup.md",
     "requirements/features.md",

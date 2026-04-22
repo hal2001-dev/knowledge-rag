@@ -5,6 +5,250 @@
 
 ---
 
+## [2026-04-22] hold | ISSUE-001 + 관리자 UI 2단계 — 사용자 지시 대기
+
+- ISSUE-001 페이지 상태를 "open · 🛑 보류 (사용자 지시 대기)"로 전환
+- overview 열린 이슈·다음 할 일, roadmap 실행 큐 하단에 **자동 진행 금지** 명시
+- 재개 조건: 사용자가 명시적으로 지시할 때까지 착수 금지
+- 향후 착수 시 범위: 원인 확정(진단 로그 수집 또는 ngrok HTTPS 테스트) → HTTPS 리버스 프록시 배포 → 관리자 UI 2단계(`/admin` 분리 + `ADMIN_PASSWORD`) 묶어 처리
+
+---
+
+## [2026-04-22] impl | TASK-005 완료 — 관리자 UI 1단계 (ADR-017)
+
+### 코드
+- `ui/app.py` 전면 재작성: `st.tabs(["채팅","문서","대화","시스템","평가"])` 5개 탭 구조, 기존 사이드바 업로드·문서목록은 "문서" 탭으로 이전
+- 세션 상태 명시화(`messages`, `session_id`, `documents_cache`, `conversations_cache`, `selected_doc_id`, `selected_session_id`) — 탭 전환 시 채팅 상태 유실 방지
+- 신규 백엔드:
+  - `QdrantDocumentStore.scroll_by_doc_id(doc_id, limit)` (payload filter scroll, chunk_index 정렬)
+  - `GET /documents/{doc_id}/chunks?limit=N` 엔드포인트
+  - `ChunkPreview`, `ChunkPreviewResponse` 스키마 (content 500자로 자름)
+- 시스템 탭은 `apps.config.get_settings()` + `QdrantClient.get_collection()` 직접 호출로 실시간 반영
+
+### 기능
+- 채팅: 기존 유지 + session_id 뱃지
+- 문서: 업로드/목록/삭제 + **청크 미리보기 (상위 10개)** — heading_path·page·content_type 포함
+- 대화: `/conversations` 목록, 선택 시 메시지 뷰, 세션 삭제. 최근 업데이트순
+- 시스템: Reranker/LLM/Embedding/Qdrant/Health/LangSmith 6개 카드 읽기 전용
+- 평가: `data/eval_runs/*.json` 최신 Retrieval·Answer 지표 + 최근 10개 히스토리 테이블
+
+### 검증
+- API+UI 재시작 후 `/documents/{id}/chunks?limit=3` smoke 통과 (heading_path·chunk_index·content 정상)
+- UI 8501 포트 LISTEN 확인
+
+### 1단계에서 제외 (옵션 B로 승격)
+- 설정 변경 UI, 재인덱싱/벤치 실행 버튼, 인증, 청크 검색 디버거, LangSmith 임베드
+
+### 관련 페이지
+- architecture/decisions.md ADR-017 신규
+- changelog.md [0.10.0]
+- roadmap.md TASK-005 완료 처리, 실행 큐 전부 완료 마킹
+- overview.md 다음 할 일 갱신 (5번 완료, 6번 "ISSUE-001 + 관리자 2단계" 대기)
+- features/admin_ui.md 상태 draft → active
+
+### 다음 큐
+**대기**: ISSUE-001 근본 해결 + 관리자 UI 2단계 (HTTPS 배포 + `/admin` 분리 + `ADMIN_PASSWORD`) — 운영 배포 시점에 착수
+
+---
+
+## [2026-04-22] docs | 관리자 UI 기능 명세 페이지 신규 + ISSUE-001 후속 처리 지정
+
+- `wiki/features/admin_ui.md` 신설 — 1·2·3단계 로드맵, 각 탭의 필드·데이터 출처·세션 상태 설계·보안 주의·1단계 제외 항목·완료 기준까지 명세
+- ISSUE-001 헤더에 "**TASK-005 이후 HTTPS 배포와 묶어 해결**" 명시 — 관리자 UI 2단계(옵션 B) 승격 시점과 동일 스프린트로 처리
+- index.md Features 섹션에 admin_ui.md 추가 (총 페이지 18→19), overview 열린 이슈·다음 할 일 반영
+
+---
+
+## [2026-04-22] queue | TASK-005 — 관리자 UI 1단계(Streamlit 탭) 큐잉
+
+- 1단계(옵션 A): 현 Streamlit 앱에 `채팅/문서/대화/시스템/평가` 5개 탭 추가. 인증·페이지 분리 없음. LAN 전용
+- 범위: 문서 CRUD + 청크 미리보기, 대화 CRUD + 메시지 뷰, 시스템 설정값(reranker/llm/embedding/Qdrant) 읽기 전용 카드, 평가 지표 최신 결과 카드
+- 산출물: `ui/app.py` 탭 구조 + `wiki/features/admin_ui.md` + ADR-017 + changelog [0.10.0]
+- 완료 기준 5개 명시 ([roadmap.md](roadmap.md))
+- 2단계(옵션 B: `/admin` 분리 + 패스워드)는 HTTPS 배포·ISSUE-001 해결 시점에 승격
+- 실행 큐: TASK-001/002/003/004 ✅ → **TASK-005 (다음)**
+
+---
+
+## [2026-04-22] docs | DB 스키마 문서화 — wiki/data/schema.md 신규
+
+- 대상 저장소 3종 전부 정리: PostgreSQL(`documents`/`conversations`/`messages`), Qdrant(컬렉션/payload), 파일시스템(`data/uploads`/`data/markdown`/`data/eval_runs`)
+- 실제 DB에서 컬럼·인덱스·Qdrant 컬렉션 config 라이브로 추출해 문서화(현재 포인트 4037개, dim 1536)
+- 조인 키(`documents.doc_id` ↔ Qdrant `metadata.doc_id` ↔ 파일시스템 `{doc_id}.*`) 및 논리 ERD 포함
+- 마이그레이션 이력(content_hash 추가 등) 기록, 알려진 기술 부채 나열
+- index.md·data/spec.md에 링크 추가, 총 페이지 수 17 → 18
+
+---
+
+## [2026-04-22] impl | TASK-002 완료 — Embedding 토글 + A/B (OpenAI 유지, BGE-M3 옵트인, ADR-016)
+
+### 코드
+- `apps/config.py`: `embedding_backend`, `embedding_model_name`, `embedding_warmup` 3개 필드
+- `.env(.example)`: `EMBEDDING_BACKEND=openai|bge-m3`, `EMBEDDING_MODEL_NAME`, `EMBEDDING_WARMUP`
+- `packages/llm/embeddings.py` 전면 재작성: `_EmbeddingWithDim` 래퍼가 `embedding_dim`·`backend`·`model` 속성 노출
+- `packages/vectorstore/qdrant_store.py`:
+  - `VECTOR_SIZE` 상수 제거 → `embeddings.embedding_dim`에서 읽음
+  - 기존 컬렉션 차원과 현재 임베딩 차원이 다르면 `CollectionDimensionMismatch` 예외
+- `pipeline/rebuild_index.py`: `RAGPipeline(reranker=...)` 생성자 맞춤 (차원 변경 재인덱싱 지원)
+- `requirements.txt`: `langchain-huggingface` 추가
+
+### 실험 (TASK-004 프레임워크로 A/B, 12 질의)
+| 지표 | OpenAI | BGE-M3 | Δ |
+|------|--------|--------|---|
+| Hit@3 / Precision@3 / MRR | 1.000 | 1.000 | = |
+| Recall@3 | 0.944 | 0.944 | = |
+| Retrieval latency | 580ms | 423ms | −27% |
+| faithfulness | 0.886 | 0.857 | −3% |
+| answer_relevancy | 0.648 | 0.618 | −5% |
+| context_precision | 0.986 | 0.924 | −6% |
+| context_recall | 0.942 | 0.917 | −3% |
+
+### 결정
+**OpenAI 기본 유지 + BGE-M3 토글 확보** (ADR-016). 전환 이득 없음. dataset 성격이 크게 바뀌면 재평가.
+
+### 실행 안정성
+- 컬렉션 차원 1536→1024 전환 후 복원(1024→1536)까지 무장애 수행 — 자동 감지·재인덱싱 동작 검증
+
+### 관련 페이지
+- architecture/decisions.md ADR-016
+- changelog.md [0.9.0]
+- roadmap.md TASK-002 완료 처리, 실행 큐 전부 완료 마킹
+- overview.md 기술 스택·최근 결정·다음 할 일
+- features/evaluation.md 실험 2026-04-22-c 추가
+
+### 다음
+실행 큐의 모든 태스크(001~004) 완료. 추가 실험 후보:
+- `answer_relevancy 0.648` 개선을 위한 프롬프트 간결화 (저비용, TASK-005 후보)
+- reference(정답 답변 문자열) 라벨 추가로 context_recall 진짜 값 확보 (TASK-004 Phase 2 개선)
+
+---
+
+## [2026-04-22] impl | TASK-004 완료 — 평가 프레임워크 (Ragas + 자체 벤치) + 기반선 수립 (ADR-015)
+
+### 코드
+- `tests/eval/dataset.jsonl` 신설 — 12개 질의 + `expected_doc_ids` 라벨 (ko 7 / en 4 / mixed 2)
+- `scripts/bench_retrieval.py` — Hit@K/Precision@K/Recall@K/MRR, reranker A/B 지원, JSON 저장
+- `scripts/bench_answers.py` — Ragas 4종 지표(faithfulness, answer_relevancy, context_precision, context_recall) + LangSmith run 자동 기록
+- `requirements.txt`에 `ragas>=0.2`, `datasets>=4.0` 추가
+
+### 버그 수정 (초기 구현 중 발견)
+- bench_retrieval: recall 공식이 청크 중복을 카운트해 1 초과 → unique-doc 기반으로 수정
+- bench_answers: pipeline.query의 200자 excerpt를 Ragas에 넘겨 faithfulness 0.15 → retrieve() 직접 호출 + 전체 청크 전달로 0.886 복구
+
+### 기반선 수치 (2026-04-22)
+- Phase 1 A/B (12 질의):
+  - FlashRank: Hit@3=0.917, P@3=0.847, R@3=0.861, MRR=0.833
+  - **BGE-M3 : Hit@3=1.000, P@3=1.000, R@3=0.944, MRR=1.000** ← 기본
+- Phase 2 (BGE-M3 + gpt-4o-mini):
+  - faithfulness 0.886, answer_relevancy 0.648, context_precision 0.986, context_recall 0.942 (self-reference)
+
+### 원칙 (강제)
+이후 모든 품질 관련 ADR은 **before/after 수치 첨부**. reranker/LLM backend 교체 시 Phase 1+2 재실행 후 결정.
+
+### 관련 페이지
+- architecture/decisions.md ADR-015 신규
+- changelog.md [0.8.0]
+- roadmap.md TASK-004 완료 처리, 실행 큐 `TASK-001 ✅ → TASK-003 ✅ → TASK-004 ✅ → (필요 시) TASK-002`
+- features/evaluation.md 전면 개편 (최신 지표 + 실행 방법 + 해석 가이드 + 취약점)
+- overview.md 진행표·최근 결정·다음 할 일
+
+### 다음
+- TASK-002(BGE-M3 임베딩 교체)는 현재 지표로 필요성이 **강하지 않음** (Hit@3=1.0, faithfulness 0.886). 즉시 착수 권장 대상 아님
+- 낮은 지표는 **answer_relevancy 0.648** → 프롬프트 간결화가 저비용 후속 실험 후보 (별도 태스크로 제안 가능)
+
+---
+
+## [2026-04-22] impl | TASK-003 완료 — LLM 백엔드 토글 인프라 (ADR-014)
+
+### 코드
+- `apps/config.py`: `llm_backend`, `llm_base_url`, `llm_api_key`, `llm_model`, `llm_temperature(str)` 5개 필드 추가. 기존 `openai_chat_*`는 legacy fallback으로 유지
+- `.env(.example)`: `LLM_BACKEND`, `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL`, `LLM_TEMPERATURE` 추가 (기본값 비움 → openai/gpt-4o-mini)
+- `packages/llm/chat.py` 재작성:
+  - `_BACKENDS` 맵(openai/glm/custom), `_resolve()`로 우선순위 해석
+  - `ChatOpenAI(base_url=..., api_key=..., model=..., temperature=...)` 하나로 모든 OpenAI-호환 공급자 처리
+- `packages/rag/pipeline.py`: `tracing_context` 태그·메타에 `llm:<backend>`, `llm_backend`, `llm_model` 추가. query 로그 포맷에 `llm=backend:model` 포함
+- `llm_temperature`는 Pydantic 빈 문자열 → float 파싱 실패를 피하려 `str`로 받고 내부 파싱
+
+### 검증
+- 기본 `LLM_BACKEND=openai`로 `/query` 정상 응답 (gpt-4o-mini, 이전 동작 회귀 없음)
+- 로그: `질의: '...' (reranker=bge-m3, llm=openai:gpt-4o-mini)`
+- LangSmith: `llm:openai` 태그 + `llm_model=gpt-4o-mini` 메타 확인
+
+### 관련 페이지
+- architecture/decisions.md ADR-014 신규
+- changelog.md [0.7.0], roadmap.md(TASK-003 완료 처리 + 실행 큐 진행), overview.md(기술 스택·다음 할 일·최근 결정)
+
+### 다음
+- 실행 큐: **TASK-003 ✅ → TASK-004 (다음)** — 품질 측정 프레임워크
+- GLM 실전 전환은 TASK-004 수치로 근거 확보 후 별도 결정
+
+---
+
+## [2026-04-22] queue | TASK-004 — 품질 측정 프레임워크 큐잉 + 실행 순서 원칙 명시
+
+- 실행 원칙: 태스크 순차 진행, 병렬 금지. 앞 태스크 종료(문서화 포함) 후 다음 착수
+- 현재 큐: TASK-001 ✅ → TASK-003 (다음) → TASK-004 → (필요 시) TASK-002
+- TASK-004 구성:
+  - Phase 1: `bench_retrieval.py` — Precision@3 / Recall@3 / MRR (2~3시간)
+  - Phase 2: `bench_answers.py` — Ragas(faithfulness, answer_relevance, context_precision/recall) + LangSmith Dataset 자동 업로드 (반나절)
+  - 산출물: `features/evaluation.md` 전면 개편, ADR-015, changelog [0.8.0]
+- 이후 모든 품질 실험의 정량 근거로 사용 (ADR에 before/after 수치 첨부 원칙)
+- 재인덱싱 불필요, 저위험
+
+---
+
+## [2026-04-22] queue | TASK-003 — LLM 백엔드 토글 큐잉
+
+- ADR-013의 연장선에서 교체 자체는 보류, **교체 가능성만 선제로 확보**하는 인프라 작업
+- 서브태스크·완료 기준·주의사항 → roadmap.md 단기 섹션
+- 기본값 `LLM_BACKEND=openai` 유지 (회귀 0 보장)
+- 재인덱싱 불필요, 저위험
+
+---
+
+## [2026-04-22] decision | LLM 공급자 — gpt-4o-mini 유지 (ADR-013)
+
+- GLM으로의 교체 검토: 한국어 품질·비용면에서 매력 있으나 컨텍스트 준수·안전 필터·생태 안정성에서 OpenAI 우위
+- 코드 변경 없음. 추후 비용/데이터 주권 이슈 생기면 `.env` 토글 패턴으로 쉽게 교체 가능 (설계 메모 유지)
+
+---
+
+## [2026-04-22] issue | ISSUE-001 등록 — 모바일 파일 업로더 미동작
+
+- 증상: 모바일 브라우저에서 Streamlit `file_uploader`가 선택한 파일을 표시/전송하지 못함
+- 원인 가설: HTTP 평문 + WebSocket 업로드, 또는 Streamlit 1.56.0 모바일 회귀, 또는 MIME 정책
+- 임시 회피: PC 업로드, 모바일은 `/query`만 사용
+- 해결 방향: HTTPS 리버스 프록시 배포 후 재검증이 우선 조치
+- 관련 페이지: `wiki/issues/open/ISSUE-001-...md`, `wiki/troubleshooting/common.md`, `overview.md` 열린 이슈
+
+---
+
+## [2026-04-22] impl | TASK-001 완료 — Reranker 다국어화 (BGE-reranker-v2-m3)
+
+### 코드
+- `packages/rag/reranker.py` 신설: `Reranker` 프로토콜 + `FlashRankReranker` + `BgeM3Reranker` + `get_reranker()` 팩토리 싱글톤
+- `packages/rag/retriever.py` 재작성: reranker 주입형
+- `packages/rag/pipeline.py`: `RAGPipeline(reranker=...)` 생성자에 추가, `query()`에 `tracing_context(tags=["reranker:<backend>"])` 태깅
+- `apps/dependencies.py`: 설정값 기반 reranker 생성
+- `apps/main.py`: `reranker_warmup=true`일 때 lifespan에서 더미 rerank로 모델 preload
+- `apps/config.py` + `.env(.example)`: `RERANKER_BACKEND`, `RERANKER_MODEL_NAME`, `RERANKER_WARMUP` 3개 변수
+- `requirements.txt`: `sentence-transformers>=3.0` 추가
+
+### 검증
+- 5개 질의 A/B 비교 완료 → [evaluation.md](wiki/features/evaluation.md)
+- 완료 기준 충족: "ROS의 주요 구성요소는?" 질의가 BGE-M3에서 Learning ROS를 1위(0.588)로, 기존 FlashRank는 한국어 딥러닝 목차를 1위(0.998)로 오인하던 문제 해결
+- E2E `/query` 답변 정확도 확인 ("파일 시스템 레벨 / 계산 그래프 레벨 / 커뮤니티 레벨")
+- LangSmith 트레이스에 backend 태그 기록 확인
+
+### 관련 페이지
+- architecture/decisions.md ADR-012 신규, ADR-011 한계가 ADR-012에서 해결됨으로 연결
+- changelog.md [0.6.0], overview.md 진행표·기술 부채 개정, roadmap.md TASK-001 완료 처리
+
+### OpenAI/LangSmith 키
+- 이전 세션에서 평문 노출된 키들 revoke·교체 완료. 새 OpenAI 키로 스모크 테스트 성공
+
+---
+
 ## [2026-04-21] impl | 청킹·검색 품질 대폭 업그레이드 (재인덱싱 전제)
 
 ### HybridChunker + 전체 heading 경로 주입

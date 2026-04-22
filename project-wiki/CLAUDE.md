@@ -77,7 +77,7 @@ project/
 
 **상태**: [active|draft|deprecated]
 **마지막 업데이트**: YYYY-MM-DD
-**관련 페이지**: [[다른 페이지 링크]]
+**관련 페이지**: `다른 페이지 링크`
 
 ## 요약
 (2~3줄 핵심 설명)
@@ -99,7 +99,7 @@ project/
 **상태**: [open|in-progress|resolved]
 **발생일**: YYYY-MM-DD
 **해결일**: YYYY-MM-DD
-**관련 기능**: [[features/xxx.md]]
+**관련 기능**: `features/xxx.md`
 
 ## 증상
 ## 원인 분석
@@ -117,7 +117,7 @@ project/
 **날짜**: YYYY-MM-DD
 **리뷰어**:
 **상태**: [open|approved|changes-requested|merged]
-**관련 기능**: [[features/xxx.md]]
+**관련 기능**: `features/xxx.md`
 
 ## 변경 내용
 ## 리뷰 의견
@@ -134,11 +134,11 @@ project/
 # YYYY-MM-DD: 회의 제목
 
 **참석자**:
-**관련 페이지**: [[xxx.md]]
+**관련 페이지**: `xxx.md`
 
 ## 논의 내용
 ## 결정 사항
-- 결정 1 → [[architecture/decisions.md]] 반영 필요
+- 결정 1 → [decisions.md](wiki/architecture/decisions.md) 반영 필요
 ## 액션 아이템
 - [ ] 담당자: 할 일 (기한)
 ## 다음 회의

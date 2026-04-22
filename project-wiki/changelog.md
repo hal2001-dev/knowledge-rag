@@ -22,6 +22,110 @@
 
 ---
 
+## [0.10.0] - 2026-04-22
+
+### Added
+- **관리자 UI 1단계** (TASK-005, ADR-017): Streamlit `st.tabs`로 5개 탭 구조 — 채팅/문서/대화/시스템/평가
+- 문서 탭: 업로드·목록·삭제 + **청크 미리보기** (상위 10개, heading_path·page·content_type 표시)
+- 대화 탭: `/conversations` 목록 + 메시지 뷰 + 세션 삭제
+- 시스템 탭: Reranker·LLM·Embedding·Qdrant·Health·LangSmith 6개 카드 (읽기 전용)
+- 평가 탭: 최신 Retrieval/Answer 지표 + 최근 10개 히스토리
+- 신규 API: `GET /documents/{doc_id}/chunks?limit=N`
+- 신규 메서드: `QdrantDocumentStore.scroll_by_doc_id(doc_id, limit)`
+- 스키마: `ChunkPreview`, `ChunkPreviewResponse`
+
+### Changed
+- `ui/app.py` 전면 재작성 (탭 구조)
+- 사이드바의 업로드·문서 목록을 "문서" 탭으로 이전
+
+### Notes
+- 1단계는 **인증 없음, LAN 전용**. 2단계 승격 시 `ADMIN_PASSWORD`+HTTPS 리버스 프록시 + ISSUE-001 해결
+
+---
+
+## [0.9.0] - 2026-04-22
+
+### Added
+- **Embedding 백엔드 토글** (TASK-002, ADR-016): `EMBEDDING_BACKEND=openai|bge-m3`
+- `apps/config.py`: `embedding_backend`, `embedding_model_name`, `embedding_warmup` 필드
+- `packages/llm/embeddings.py` 전면 재작성: `_EmbeddingWithDim` 래퍼가 `embedding_dim` 속성 노출 (Qdrant 컬렉션 자동 차원 감지)
+- `packages/vectorstore/qdrant_store.py`: 기존 컬렉션 차원 검증 + `CollectionDimensionMismatch` 예외
+- `requirements.txt`: `langchain-huggingface` 추가
+- `pipeline/rebuild_index.py`: reranker 주입 적용(차원 변경 시 재인덱싱 지원)
+
+### Changed
+- Qdrant 컬렉션 하드코딩된 `VECTOR_SIZE=1536` 제거 → 임베딩 객체의 `embedding_dim` 기반
+- 기본값 `EMBEDDING_BACKEND=openai` 유지 (ADR-016, 회귀 0)
+
+### A/B 실험 기록
+BGE-M3 vs OpenAI(동일 reranker·LLM, dataset 12개):
+- Retrieval 4종 지표 동률 (이미 상한)
+- Retrieval latency: 580 → 423ms (−27%)
+- faithfulness 0.886→0.857, answer_relevancy 0.648→0.618, context_precision 0.986→0.924, context_recall 0.942→0.917 (소폭 하락)
+- **결정: OpenAI 기본 유지, BGE-M3 토글 확보** (ADR-016)
+
+---
+
+## [0.8.0] - 2026-04-22
+
+### Added
+- **평가 프레임워크** (TASK-004, ADR-015)
+- `tests/eval/dataset.jsonl` — 12개 질의 + `expected_doc_ids` 라벨 (ko 7 / en 4 / mixed 2)
+- `scripts/bench_retrieval.py` — Hit@K / Precision@K / Recall@K / MRR, reranker A/B 지원, JSON 저장
+- `scripts/bench_answers.py` — Ragas 4종 지표 (faithfulness, answer_relevancy, context_precision, context_recall), LangSmith 자동 기록
+- `requirements.txt`에 `ragas>=0.2`, `datasets>=4.0` 추가
+
+### Fixed
+- `bench_answers.py` 초기 버전이 `pipeline.query`의 200자 excerpt를 Ragas에 넘겨 faithfulness가 0.15로 급락하던 문제 → `retrieve()` 직접 호출로 전체 청크 전달 (0.886 복구)
+- `bench_retrieval.py`의 recall 공식이 청크 중복을 카운트해 1을 초과하던 버그 → unique-document 기반으로 수정
+
+### 기반선 수치 (2026-04-22)
+- Retrieval (BGE-M3): Hit@3 = 1.000, Precision@3 = 1.000, MRR = 1.000, Recall@3 = 0.944
+- Answer (gpt-4o-mini): faithfulness = 0.886, answer_relevancy = 0.648, context_precision = 0.986
+- 이후 모든 품질 ADR은 before/after 수치 첨부 의무화
+
+---
+
+## [0.7.0] - 2026-04-22
+
+### Added
+- **LLM 백엔드 토글 인프라** (TASK-003, ADR-014): `.env`의 `LLM_BACKEND` 값(`openai|glm|custom`)만 바꿔 OpenAI ↔ GLM ↔ 기타 OpenAI-호환 공급자로 즉시 전환 가능
+- `apps/config.py`: `llm_backend`, `llm_base_url`, `llm_api_key`, `llm_model`, `llm_temperature` 5개 필드 + 기존 `openai_chat_*` legacy fallback
+- `packages/llm/chat.py`: `_BACKENDS` 기본값 맵(openai/glm/custom) + `_resolve()`로 `.env` 우선순위 해석
+- LangSmith 트레이스에 `llm:<backend>` 태그 + `llm_backend`·`llm_model` 메타 (reranker 태깅과 동일 패턴)
+
+### Changed
+- `packages/rag/pipeline.py`의 query 로그 포맷에 LLM 정보 포함: `reranker=bge-m3, llm=openai:gpt-4o-mini`
+- 기본값: `LLM_BACKEND=openai`, 실효 모델 `gpt-4o-mini` — ADR-013 결론 준수 (**회귀 0**)
+
+### Notes
+- 향후 공급자 교체는 `.env`의 `LLM_BACKEND`·`LLM_API_KEY`·(선택) `LLM_MODEL` 세 줄만 수정하면 완료
+- 정량 비교는 TASK-004 평가 프레임워크 도입 후 수행
+
+---
+
+## [0.6.0] - 2026-04-22
+
+### Added
+- **BGE-reranker-v2-m3 도입** (다국어 cross-encoder): 한↔영 크로스 재순위 품질 해결
+- `packages/rag/reranker.py`: `Reranker` 추상화 + `FlashRankReranker`·`BgeM3Reranker` 두 백엔드, `get_reranker()` 팩토리
+- `.env`의 `RERANKER_BACKEND` 토글(`flashrank|bge-m3`), `RERANKER_MODEL_NAME`, `RERANKER_WARMUP` 변수
+- lifespan preload(`reranker_warmup=true`)로 첫 질의 지연 제거
+- LangSmith 트레이스에 `reranker:<backend>` 태그 + `reranker_backend` 메타 (쿼리별 필터링 가능)
+- `sentence-transformers>=3.0` 의존성
+
+### Changed
+- `packages/rag/retriever.py`가 reranker 주입형으로 재작성, `RAGPipeline`이 `reranker`를 보유
+- 기본 reranker 백엔드: `flashrank` → **`bge-m3`**
+
+### Fixed
+- ADR-011에서 관찰된 한국어 질의가 무관한 한국어 문서를 1위로 올리는 현상 해결 (완료 기준 충족)
+
+### 평가
+- [evaluation.md](wiki/features/evaluation.md) 에 5개 질의 A/B 비교 표 기록
+
+---
+
 ## [0.5.0] - 2026-04-21
 
 ### Added

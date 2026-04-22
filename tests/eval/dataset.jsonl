@@ -1,0 +1,12 @@
+{"id": "q01", "question": "ROS의 주요 구성요소는?", "expected_doc_ids": ["7c03e301-86d8-41f2-82a9-02c08325f3cc", "4cb67745-ecce-4b33-ac74-7af97eb9db4b", "a1bcf2a8-b310-46dd-a5c8-9cc6a6b42ec0"], "language": "ko", "note": "한국어 질의 + 영문 ROS 문서 — 과거 FlashRank 실패 사례"}
+{"id": "q02", "question": "What are the main components of ROS?", "expected_doc_ids": ["7c03e301-86d8-41f2-82a9-02c08325f3cc", "4cb67745-ecce-4b33-ac74-7af97eb9db4b", "a1bcf2a8-b310-46dd-a5c8-9cc6a6b42ec0"], "language": "en", "note": "영문 질의 동일 주제"}
+{"id": "q03", "question": "navigation stack은 무엇인가?", "expected_doc_ids": ["7c03e301-86d8-41f2-82a9-02c08325f3cc", "4cb67745-ecce-4b33-ac74-7af97eb9db4b", "a1bcf2a8-b310-46dd-a5c8-9cc6a6b42ec0"], "language": "mixed", "note": "한영 혼합 질의 + 영문 문서"}
+{"id": "q04", "question": "How does odometry work in ROS?", "expected_doc_ids": ["7c03e301-86d8-41f2-82a9-02c08325f3cc", "4cb67745-ecce-4b33-ac74-7af97eb9db4b", "a1bcf2a8-b310-46dd-a5c8-9cc6a6b42ec0"], "language": "en", "note": "ROS 기술 세부 주제"}
+{"id": "q05", "question": "Robotics Programming을 하는 방법은?", "expected_doc_ids": ["7c03e301-86d8-41f2-82a9-02c08325f3cc", "4cb67745-ecce-4b33-ac74-7af97eb9db4b", "a1bcf2a8-b310-46dd-a5c8-9cc6a6b42ec0"], "language": "mixed", "note": "TASK-001 평가 세트 재사용"}
+{"id": "q06", "question": "오차역전파법이란?", "expected_doc_ids": ["e8b1e5d5-d091-46b9-96f9-a385f5a6f4bb"], "language": "ko", "note": "한국어 질의 + 한국어 문서 (쉬운 케이스)"}
+{"id": "q07", "question": "합성곱 신경망(CNN)의 작동 원리는?", "expected_doc_ids": ["e8b1e5d5-d091-46b9-96f9-a385f5a6f4bb"], "language": "ko", "note": "한국어 딥러닝 주제"}
+{"id": "q08", "question": "경사하강법의 학습률이 너무 크면 어떻게 되나?", "expected_doc_ids": ["e8b1e5d5-d091-46b9-96f9-a385f5a6f4bb"], "language": "ko", "note": "한국어 딥러닝 심화"}
+{"id": "q09", "question": "What is backpropagation?", "expected_doc_ids": ["e8b1e5d5-d091-46b9-96f9-a385f5a6f4bb"], "language": "en", "note": "영문 질의 + 한국어 문서 (역방향 크로스)"}
+{"id": "q10", "question": "How to create a ROS node in C++?", "expected_doc_ids": ["7c03e301-86d8-41f2-82a9-02c08325f3cc", "4cb67745-ecce-4b33-ac74-7af97eb9db4b", "a1bcf2a8-b310-46dd-a5c8-9cc6a6b42ec0"], "language": "en", "note": "구체적 구현 질의"}
+{"id": "q11", "question": "ROS에서 토픽과 서비스의 차이는?", "expected_doc_ids": ["7c03e301-86d8-41f2-82a9-02c08325f3cc", "4cb67745-ecce-4b33-ac74-7af97eb9db4b", "a1bcf2a8-b310-46dd-a5c8-9cc6a6b42ec0"], "language": "ko", "note": "개념 비교 질의"}
+{"id": "q12", "question": "소프트맥스 함수를 언제 사용하나?", "expected_doc_ids": ["e8b1e5d5-d091-46b9-96f9-a385f5a6f4bb"], "language": "ko", "note": "한국어 딥러닝 기초"}

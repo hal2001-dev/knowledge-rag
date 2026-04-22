@@ -2,7 +2,7 @@
 
 **상태**: draft
 **마지막 업데이트**: 2026-04-17
-**관련 페이지**: [[config/environments.md]], [[deployment/monitoring.md]]
+**관련 페이지**: `environments.md` _(미작성)_, `monitoring.md` _(미작성)_
 
 ---
 
@@ -50,7 +50,7 @@ cp backups/docstore_<date>.pkl data/docstore.pkl
 
 ## 환경별 설정
 
-→ [[config/environments.md]] 참고
+→ `environments.md` _(미작성)_ 참고
 
 ---
 
@@ -75,4 +75,4 @@ python scripts/rebuild_index.py
 | 임베딩 오류 | OpenAI API 상태 | API 키/할당량 확인 |
 | 검색 결과 없음 | 인덱스 파일 존재 여부 | 인덱스 재구축 |
 
-→ 상세 에러별 해결: [[troubleshooting/common.md]]
+→ 상세 에러별 해결: [common.md](../troubleshooting/common.md)

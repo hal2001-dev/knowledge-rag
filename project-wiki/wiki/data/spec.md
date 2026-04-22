@@ -1,8 +1,8 @@
 # 데이터 스펙 (Data Spec)
 
 **상태**: draft
-**마지막 업데이트**: 2026-04-21
-**관련 페이지**: [[features/ingestion.md]], [[data/quality.md]]
+**마지막 업데이트**: 2026-04-22
+**관련 페이지**: `ingestion.md` _(미작성)_, `quality.md` _(미작성)_, [schema.md](schema.md) (DB 구조)
 
 ---
 
@@ -51,7 +51,7 @@ Docling 파싱 결과를 청킹 전에 정규화한다 ([packages/loaders/doclin
 - 연속 공백·빈 줄 압축
 - 테이블 청크·테이블 행은 구조 보존을 위해 정규화 제외
 
-→ [[architecture/decisions.md]] ADR-008
+→ [decisions.md](../architecture/decisions.md) ADR-008
 
 ---
 
@@ -82,7 +82,7 @@ Docling 파싱 결과를 청킹 전에 정규화한다 ([packages/loaders/doclin
 동일 해시가 이미 존재하면 `POST /ingest`가 `409 Conflict`와 기존 `doc_id`·`title`을 반환합니다 (idempotent).
 
 - 감지 수준: **L1 (바이트 단위)** — 파일명/제목이 달라도 바이트가 동일하면 중복
-- 한계: 포맷만 다른 동일 내용(예: 같은 PDF의 스캔본 vs 텍스트본), 리비전 차이가 있는 버전은 감지 불가 → L2/L3 도입 시 해결 (→ [[architecture/decisions.md]] ADR-005)
+- 한계: 포맷만 다른 동일 내용(예: 같은 PDF의 스캔본 vs 텍스트본), 리비전 차이가 있는 버전은 감지 불가 → L2/L3 도입 시 해결 (→ [decisions.md](../architecture/decisions.md) ADR-005)
 - 기존 NULL 레코드: 도입 이전 문서는 `content_hash=NULL`로 감지 대상 외. 필요 시 백필 스크립트 별도 작성.
 
 ---

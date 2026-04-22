@@ -39,6 +39,16 @@ async def lifespan(app: FastAPI):
     from packages.db.connection import get_engine
     Base.metadata.create_all(bind=get_engine())
 
+    # Reranker 미리 로드 (첫 질의 지연 최소화)
+    if settings.reranker_warmup:
+        from packages.code.models import ScoredChunk
+        from packages.rag.reranker import get_reranker
+        logger.info(f"Reranker warm-up 시작: backend={settings.reranker_backend}")
+        r = get_reranker(settings.reranker_backend, settings.reranker_model_name or None)
+        dummy = [ScoredChunk(content="warmup", metadata={}, score=0.0)]
+        r.rerank(query="warmup", candidates=dummy, top_n=1)
+        logger.info("Reranker warm-up 완료")
+
     yield
 
 

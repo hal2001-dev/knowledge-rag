@@ -1,0 +1,248 @@
+{
+  "run_id": "2026-04-22T001301Z",
+  "k": 3,
+  "runs": [
+    {
+      "backend": "bge-m3",
+      "aggregate": {
+        "hit@k": 1.0,
+        "precision": 1.0,
+        "recall": 0.9444,
+        "mrr": 1.0,
+        "latency_ms": 422.8333
+      },
+      "per_query": [
+        {
+          "id": "q01",
+          "question": "ROS의 주요 구성요소는?",
+          "language": "ko",
+          "expected_doc_ids": [
+            "7c03e301-86d8-41f2-82a9-02c08325f3cc",
+            "4cb67745-ecce-4b33-ac74-7af97eb9db4b",
+            "a1bcf2a8-b310-46dd-a5c8-9cc6a6b42ec0"
+          ],
+          "retrieved_doc_ids": [
+            "7c03e301-86d8-41f2-82a9-02c08325f3cc",
+            "7c03e301-86d8-41f2-82a9-02c08325f3cc",
+            "a1bcf2a8-b310-46dd-a5c8-9cc6a6b42ec0"
+          ],
+          "hit@k": 1.0,
+          "precision": 1.0,
+          "recall": 0.6666666666666666,
+          "mrr": 1.0,
+          "latency_ms": 475
+        },
+        {
+          "id": "q02",
+          "question": "What are the main components of ROS?",
+          "language": "en",
+          "expected_doc_ids": [
+            "7c03e301-86d8-41f2-82a9-02c08325f3cc",
+            "4cb67745-ecce-4b33-ac74-7af97eb9db4b",
+            "a1bcf2a8-b310-46dd-a5c8-9cc6a6b42ec0"
+          ],
+          "retrieved_doc_ids": [
+            "7c03e301-86d8-41f2-82a9-02c08325f3cc",
+            "7c03e301-86d8-41f2-82a9-02c08325f3cc",
+            "4cb67745-ecce-4b33-ac74-7af97eb9db4b"
+          ],
+          "hit@k": 1.0,
+          "precision": 1.0,
+          "recall": 0.6666666666666666,
+          "mrr": 1.0,
+          "latency_ms": 457
+        },
+        {
+          "id": "q03",
+          "question": "navigation stack은 무엇인가?",
+          "language": "mixed",
+          "expected_doc_ids": [
+            "7c03e301-86d8-41f2-82a9-02c08325f3cc",
+            "4cb67745-ecce-4b33-ac74-7af97eb9db4b",
+            "a1bcf2a8-b310-46dd-a5c8-9cc6a6b42ec0"
+          ],
+          "retrieved_doc_ids": [
+            "4cb67745-ecce-4b33-ac74-7af97eb9db4b",
+            "7c03e301-86d8-41f2-82a9-02c08325f3cc",
+            "a1bcf2a8-b310-46dd-a5c8-9cc6a6b42ec0"
+          ],
+          "hit@k": 1.0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "mrr": 1.0,
+          "latency_ms": 450
+        },
+        {
+          "id": "q04",
+          "question": "How does odometry work in ROS?",
+          "language": "en",
+          "expected_doc_ids": [
+            "7c03e301-86d8-41f2-82a9-02c08325f3cc",
+            "4cb67745-ecce-4b33-ac74-7af97eb9db4b",
+            "a1bcf2a8-b310-46dd-a5c8-9cc6a6b42ec0"
+          ],
+          "retrieved_doc_ids": [
+            "a1bcf2a8-b310-46dd-a5c8-9cc6a6b42ec0",
+            "7c03e301-86d8-41f2-82a9-02c08325f3cc",
+            "4cb67745-ecce-4b33-ac74-7af97eb9db4b"
+          ],
+          "hit@k": 1.0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "mrr": 1.0,
+          "latency_ms": 515
+        },
+        {
+          "id": "q05",
+          "question": "Robotics Programming을 하는 방법은?",
+          "language": "mixed",
+          "expected_doc_ids": [
+            "7c03e301-86d8-41f2-82a9-02c08325f3cc",
+            "4cb67745-ecce-4b33-ac74-7af97eb9db4b",
+            "a1bcf2a8-b310-46dd-a5c8-9cc6a6b42ec0"
+          ],
+          "retrieved_doc_ids": [
+            "a1bcf2a8-b310-46dd-a5c8-9cc6a6b42ec0",
+            "4cb67745-ecce-4b33-ac74-7af97eb9db4b",
+            "7c03e301-86d8-41f2-82a9-02c08325f3cc"
+          ],
+          "hit@k": 1.0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "mrr": 1.0,
+          "latency_ms": 595
+        },
+        {
+          "id": "q06",
+          "question": "오차역전파법이란?",
+          "language": "ko",
+          "expected_doc_ids": [
+            "e8b1e5d5-d091-46b9-96f9-a385f5a6f4bb"
+          ],
+          "retrieved_doc_ids": [
+            "e8b1e5d5-d091-46b9-96f9-a385f5a6f4bb",
+            "e8b1e5d5-d091-46b9-96f9-a385f5a6f4bb",
+            "e8b1e5d5-d091-46b9-96f9-a385f5a6f4bb"
+          ],
+          "hit@k": 1.0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "mrr": 1.0,
+          "latency_ms": 450
+        },
+        {
+          "id": "q07",
+          "question": "합성곱 신경망(CNN)의 작동 원리는?",
+          "language": "ko",
+          "expected_doc_ids": [
+            "e8b1e5d5-d091-46b9-96f9-a385f5a6f4bb"
+          ],
+          "retrieved_doc_ids": [
+            "e8b1e5d5-d091-46b9-96f9-a385f5a6f4bb",
+            "e8b1e5d5-d091-46b9-96f9-a385f5a6f4bb",
+            "e8b1e5d5-d091-46b9-96f9-a385f5a6f4bb"
+          ],
+          "hit@k": 1.0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "mrr": 1.0,
+          "latency_ms": 298
+        },
+        {
+          "id": "q08",
+          "question": "경사하강법의 학습률이 너무 크면 어떻게 되나?",
+          "language": "ko",
+          "expected_doc_ids": [
+            "e8b1e5d5-d091-46b9-96f9-a385f5a6f4bb"
+          ],
+          "retrieved_doc_ids": [
+            "e8b1e5d5-d091-46b9-96f9-a385f5a6f4bb",
+            "e8b1e5d5-d091-46b9-96f9-a385f5a6f4bb",
+            "e8b1e5d5-d091-46b9-96f9-a385f5a6f4bb"
+          ],
+          "hit@k": 1.0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "mrr": 1.0,
+          "latency_ms": 324
+        },
+        {
+          "id": "q09",
+          "question": "What is backpropagation?",
+          "language": "en",
+          "expected_doc_ids": [
+            "e8b1e5d5-d091-46b9-96f9-a385f5a6f4bb"
+          ],
+          "retrieved_doc_ids": [
+            "e8b1e5d5-d091-46b9-96f9-a385f5a6f4bb",
+            "e8b1e5d5-d091-46b9-96f9-a385f5a6f4bb",
+            "e8b1e5d5-d091-46b9-96f9-a385f5a6f4bb"
+          ],
+          "hit@k": 1.0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "mrr": 1.0,
+          "latency_ms": 324
+        },
+        {
+          "id": "q10",
+          "question": "How to create a ROS node in C++?",
+          "language": "en",
+          "expected_doc_ids": [
+            "7c03e301-86d8-41f2-82a9-02c08325f3cc",
+            "4cb67745-ecce-4b33-ac74-7af97eb9db4b",
+            "a1bcf2a8-b310-46dd-a5c8-9cc6a6b42ec0"
+          ],
+          "retrieved_doc_ids": [
+            "7c03e301-86d8-41f2-82a9-02c08325f3cc",
+            "a1bcf2a8-b310-46dd-a5c8-9cc6a6b42ec0",
+            "4cb67745-ecce-4b33-ac74-7af97eb9db4b"
+          ],
+          "hit@k": 1.0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "mrr": 1.0,
+          "latency_ms": 431
+        },
+        {
+          "id": "q11",
+          "question": "ROS에서 토픽과 서비스의 차이는?",
+          "language": "ko",
+          "expected_doc_ids": [
+            "7c03e301-86d8-41f2-82a9-02c08325f3cc",
+            "4cb67745-ecce-4b33-ac74-7af97eb9db4b",
+            "a1bcf2a8-b310-46dd-a5c8-9cc6a6b42ec0"
+          ],
+          "retrieved_doc_ids": [
+            "4cb67745-ecce-4b33-ac74-7af97eb9db4b",
+            "a1bcf2a8-b310-46dd-a5c8-9cc6a6b42ec0",
+            "7c03e301-86d8-41f2-82a9-02c08325f3cc"
+          ],
+          "hit@k": 1.0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "mrr": 1.0,
+          "latency_ms": 441
+        },
+        {
+          "id": "q12",
+          "question": "소프트맥스 함수를 언제 사용하나?",
+          "language": "ko",
+          "expected_doc_ids": [
+            "e8b1e5d5-d091-46b9-96f9-a385f5a6f4bb"
+          ],
+          "retrieved_doc_ids": [
+            "e8b1e5d5-d091-46b9-96f9-a385f5a6f4bb",
+            "e8b1e5d5-d091-46b9-96f9-a385f5a6f4bb",
+            "e8b1e5d5-d091-46b9-96f9-a385f5a6f4bb"
+          ],
+          "hit@k": 1.0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "mrr": 1.0,
+          "latency_ms": 314
+        }
+      ]
+    }
+  ]
+}

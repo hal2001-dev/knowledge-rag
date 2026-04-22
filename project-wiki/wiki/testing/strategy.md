@@ -2,7 +2,7 @@
 
 **상태**: draft
 **마지막 업데이트**: 2026-04-17
-**관련 페이지**: [[features/evaluation.md]], [[testing/cases.md]]
+**관련 페이지**: [evaluation.md](../features/evaluation.md), `cases.md` _(미작성)_
 
 ---
 
@@ -41,7 +41,7 @@
 ## 평가 (RAG 품질)
 
 RAGAS 또는 자체 평가 세트 사용:
-- Ground truth Q&A 셋 필요 → [[features/evaluation.md]]
+- Ground truth Q&A 셋 필요 → [evaluation.md](../features/evaluation.md)
 - 지표: Precision@3, Recall@3, Faithfulness, Answer Relevance
 
 ---

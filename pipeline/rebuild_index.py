@@ -25,6 +25,7 @@ from packages.llm.embeddings import build_embeddings
 from packages.llm.chat import build_chat
 from packages.vectorstore.qdrant_store import QdrantDocumentStore
 from packages.rag.pipeline import RAGPipeline
+from packages.rag.reranker import get_reranker
 from sqlalchemy.orm import sessionmaker
 
 
@@ -58,7 +59,8 @@ def main():
 
     store = QdrantDocumentStore(settings.qdrant_url, settings.qdrant_collection, embeddings)
     llm = build_chat(settings)
-    pipeline = RAGPipeline(store=store, llm=llm, settings=settings)
+    reranker = get_reranker(backend=settings.reranker_backend)
+    pipeline = RAGPipeline(store=store, llm=llm, reranker=reranker, settings=settings)
 
     Session = sessionmaker(bind=get_engine())
     with Session() as db:

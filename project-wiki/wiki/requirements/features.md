@@ -2,7 +2,7 @@
 
 **상태**: draft
 **마지막 업데이트**: 2026-04-17
-**관련 페이지**: [[requirements/acceptance.md]], [[roadmap.md]]
+**관련 페이지**: `acceptance.md` _(미작성)_, [roadmap.md](../../roadmap.md)
 
 ---
 

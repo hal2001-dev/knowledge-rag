@@ -29,6 +29,7 @@ tiktoken
 
 # Reranking (로컬, API키 불필요)
 flashrank
+sentence-transformers>=3.0  # BGE-reranker-v2-m3 multilingual cross-encoder
 
 # UI
 streamlit
@@ -41,3 +42,7 @@ pytest
 pytest-asyncio
 httpx
 pytest-cov
+
+# 평가 (TASK-004)
+ragas>=0.2
+datasets>=4.0

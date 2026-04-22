@@ -12,11 +12,11 @@
 
 | 용어 | 정의 | 우리 프로젝트에서의 의미 |
 |------|------|--------------------------|
-| **Chunk** | 문서를 분할한 단위 | 기본 512 tokens, overlap 50 (→ [[architecture/decisions.md]] ADR-002) |
-| **Embedding** | 텍스트를 벡터로 변환한 것 | [[features/embedding.md]] 참고 |
+| **Chunk** | 문서를 분할한 단위 | 기본 512 tokens, overlap 50 (→ [decisions.md](wiki/architecture/decisions.md) ADR-002) |
+| **Embedding** | 텍스트를 벡터로 변환한 것 | `embedding.md` _(미작성)_ 참고 |
 | **Vector Store** | 임베딩 벡터를 저장하는 DB | 현재 FAISS 사용 (→ ADR-001) |
 | **Retrieval** | 쿼리와 유사한 chunk를 찾는 과정 | Top-K 방식, K=3 기본값 |
-| **Generation** | 검색된 context로 LLM이 답변 생성 | [[features/generation.md]] 참고 |
+| **Generation** | 검색된 context로 LLM이 답변 생성 | `generation.md` _(미작성)_ 참고 |
 | **Context Window** | LLM에 입력되는 전체 텍스트 길이 | 프롬프트 + retrieved chunks |
 | **Reranking** | 1차 검색 결과를 재정렬하는 과정 | (미구현, 추후 검토) |
 | **Hallucination** | LLM이 사실과 다른 내용을 생성하는 현상 | evaluation에서 주요 체크 항목 |

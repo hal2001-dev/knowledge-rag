@@ -2,7 +2,7 @@
 
 **상태**: active
 **마지막 업데이트**: 2026-04-17
-**관련 페이지**: [[config/environments.md]], [[config/dependencies.md]], [[security.md]]
+**관련 페이지**: `environments.md` _(미작성)_, `dependencies.md` _(미작성)_, [security.md](../../security.md)
 
 ---
 
@@ -41,7 +41,7 @@ source .venv/bin/activate      # macOS/Linux
 pip install -r requirements.txt
 ```
 
-주요 패키지 → [[config/dependencies.md]] 참고
+주요 패키지 → `dependencies.md` _(미작성)_ 참고
 
 ---
 
@@ -52,7 +52,7 @@ cp .env.example .env
 # .env 파일 열어서 API 키 입력
 ```
 
-필요한 키 목록 → [[security.md]] 참고
+필요한 키 목록 → [security.md](../../security.md) 참고
 
 ---
 
@@ -82,7 +82,7 @@ python scripts/test_query.py "질문을 입력하세요"
 
 ## 자주 발생하는 셋업 문제
 
-→ [[troubleshooting/common.md]] 참고
+→ [common.md](../troubleshooting/common.md) 참고
 
 ---
 
