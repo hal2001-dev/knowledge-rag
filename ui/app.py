@@ -64,7 +64,46 @@ with TAB_CHAT:
             st.session_state["session_id"] = None
             st.rerun()
 
-    for msg in st.session_state["messages"]:
+    def _render_suggestions(suggestions: list[str], key_prefix: str):
+        """답변 아래에 후속 질문 배지 렌더.
+
+        st.button 클릭은 자체로 rerun을 유발하므로 명시적 st.rerun() 호출 안 함.
+        수동 호출 시 두 번째 이후 클릭에서 state가 꼬이는 케이스가 관찰됨.
+        """
+        if not suggestions:
+            return
+        st.caption("💡 이어서 물을 질문")
+        cols = st.columns(max(len(suggestions), 1))
+        for i, sug in enumerate(suggestions):
+            if cols[i].button(sug, key=f"{key_prefix}_sug_{i}", use_container_width=True):
+                st.session_state["_pending_question"] = sug
+
+    # 빈 채팅 empty state — 인덱스 요약 카드 + 예시 질문 5개 (TASK-008)
+    if not st.session_state["messages"]:
+        if st.session_state.get("_index_overview") is None:
+            code, data = _api_get("/index/overview", timeout=30)
+            st.session_state["_index_overview"] = data if code == 200 else {}
+        ov = st.session_state["_index_overview"] or {}
+        if ov.get("doc_count", 0) > 0:
+            with st.container(border=True):
+                st.markdown("#### 👋 이 시스템이 아는 내용")
+                if ov.get("summary"):
+                    st.markdown(ov["summary"])
+                if ov.get("titles"):
+                    with st.expander(f"📚 인덱싱된 문서 {ov.get('doc_count', 0)}개"):
+                        for t in ov["titles"]:
+                            st.caption(f"• {t}")
+                if ov.get("suggested_questions"):
+                    st.caption("🎯 예시 질문 (클릭하면 바로 질의됩니다)")
+                    cols = st.columns(min(len(ov["suggested_questions"]), 3) or 1)
+                    for i, q in enumerate(ov["suggested_questions"]):
+                        col = cols[i % len(cols)]
+                        if col.button(q, key=f"example_q_{i}", use_container_width=True):
+                            st.session_state["_pending_question"] = q
+        elif ov.get("summary"):
+            st.info(ov["summary"])
+
+    for msg_idx, msg in enumerate(st.session_state["messages"]):
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
             if msg["role"] == "assistant" and msg.get("sources"):
@@ -74,11 +113,20 @@ with TAB_CHAT:
                         st.markdown(f"{badge} **{src['title']}** — p.{src.get('page', '?')}  `score: {src['score']:.3f}`")
                         st.caption(src["excerpt"])
                         st.divider()
+        # 버튼은 `st.chat_message` 컨테이너 바깥에 렌더.
+        # key는 반드시 msg_idx 기반으로 통일 — 라이브 렌더와 다음 rerun의 히스토리 렌더가
+        # 같은 key를 써야 Streamlit이 클릭 이벤트를 매칭할 수 있음.
+        if msg["role"] == "assistant" and msg.get("suggestions"):
+            _render_suggestions(msg["suggestions"], key_prefix=f"msg_{msg_idx}")
 
-    if question := st.chat_input("문서에 대해 질문하세요..."):
+    # 배지 클릭으로 자동 질의 대기 상태인 경우 질문으로 사용
+    pending = st.session_state.pop("_pending_question", None)
+    question = pending or st.chat_input("문서에 대해 질문하세요...")
+    if question:
         st.session_state["messages"].append({"role": "user", "content": question})
         with st.chat_message("user"):
             st.markdown(question)
+        new_suggestions: list[str] = []
         with st.chat_message("assistant"):
             with st.spinner("검색 및 답변 생성 중..."):
                 try:
@@ -98,9 +146,11 @@ with TAB_CHAT:
                                     st.markdown(f"{badge} **{src['title']}** — p.{src.get('page', '?')}  `score: {src['score']:.3f}`")
                                     st.caption(src["excerpt"])
                                     st.divider()
+                        new_suggestions = data.get("suggestions", [])
                         st.session_state["messages"].append({
                             "role": "assistant", "content": data["answer"],
                             "sources": data["sources"], "latency_ms": data["latency_ms"],
+                            "suggestions": new_suggestions,
                         })
                     else:
                         err = resp.json().get("detail", resp.text)
@@ -110,6 +160,12 @@ with TAB_CHAT:
                     msg = "API 서버에 연결할 수 없습니다."
                     st.error(msg)
                     st.session_state["messages"].append({"role": "assistant", "content": msg})
+        # suggestions 배지는 `st.chat_message` 컨테이너 바깥에 렌더.
+        # key는 방금 append된 assistant 메시지의 인덱스 — 다음 rerun의 히스토리 루프에서
+        # 동일 msg_idx로 재렌더되므로 Streamlit widget state가 일관되게 매칭됨.
+        if new_suggestions:
+            assistant_idx = len(st.session_state["messages"]) - 1
+            _render_suggestions(new_suggestions, key_prefix=f"msg_{assistant_idx}")
 
 
 # ═════════════════════════════════════════════════════════════
@@ -149,6 +205,7 @@ with TAB_DOCS:
                             data = resp.json()
                             st.success(f"완료! {data['chunk_count']}개 청크 인덱싱됨")
                             st.session_state["documents_cache"] = None
+                            st.session_state["_index_overview"] = None
                         elif resp.status_code == 409:
                             detail = resp.json().get("detail", {})
                             if isinstance(detail, dict):
@@ -230,6 +287,7 @@ with TAB_DOCS:
                             if code == 200:
                                 st.success(f"삭제 완료: {d['title']}")
                                 st.session_state["documents_cache"] = None
+                                st.session_state["_index_overview"] = None
                                 st.session_state.pop(f"_confirm_del_{doc_id}", None)
                                 if st.session_state.get("selected_doc_id") == doc_id:
                                     st.session_state["selected_doc_id"] = None

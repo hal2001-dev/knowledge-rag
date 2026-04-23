@@ -36,3 +36,11 @@ class ChunkPreviewResponse(BaseModel):
     doc_id: str
     total_previewed: int
     chunks: list[ChunkPreview]
+
+
+class IndexOverviewResponse(BaseModel):
+    doc_count: int
+    titles: list[str]
+    top_headings: list[str]
+    summary: str
+    suggested_questions: list[str]

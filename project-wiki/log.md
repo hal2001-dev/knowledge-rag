@@ -5,6 +5,255 @@
 
 ---
 
+## [2026-04-23] tool | `/rag-commit` 로컬 스킬 신설
+
+- 위치: `.claude/skills/rag-commit.md` (로컬 전용, `.gitignore` 대상)
+- 범위: 커밋 전 체크(민감키 스캔·`.env` 방지·data/ ignore·위키 lint·동반 갱신) + 표준 메시지 템플릿 + 금지 동작 차단 (force push to main, --no-verify 등)
+- 자동화된 wiki lint: 5개 항목 (위키링크·깨진 링크·미정의 ADR·changelog 순서·index 페이지 수)
+- 메시지 템플릿 4종: feat(TASK) / fix / docs(wiki) / chore(보류·철회)
+- 트리거: 사용자가 "/rag-commit" 또는 "커밋해줘"·"push해줘" 발화
+- 위키 반영: `wiki/reviews/patterns.md`의 "커밋 체크리스트" 섹션에 체크 항목 요약 + 스킬 파일 포인터
+- 배경: 2026-04-22에 API 키 채팅 평문 노출 2회·GitHub Push Protection 차단 1회 발생한 이력 때문에 사전 차단 장치 필요
+
+---
+
+## [2026-04-22] lint | 위키 전체 정합성 점검·정정
+
+### 점검 범위 (스크립트로 자동화)
+1. 남은 위키링크 `[[...]]`: **0건** ✅
+2. 깨진 `.md` 상대 링크: **0건** ✅
+3. TASK-001~009 상태 일관성 (roadmap/overview/log/changelog 간): ✅ 모두 `✅ 완료`로 일치. TASK-006만 `🚫 철회` 일관
+4. ADR 정의 vs 참조: **ADR-018이 참조만 존재, 정의 없음** → 정정 (아래)
+5. 등록 ISSUE 파일: ISSUE-001, ISSUE-002 ✅
+6. changelog 버전 연속성: **0.11.0 누락** → 정정 (아래)
+7. index.md 페이지 수 vs 실제: **선언 19 vs 실제 24** → 정정
+
+### 정정 조치
+- **ADR-018 참조** (3곳, 전부 TASK-006 철회 컨텍스트): `roadmap.md` 서브태스크·완료 기준, `log.md` queue 항목에 **"(TASK-006 철회로 미작성. 재개 시 다음 가용 번호로 재할당)"** 주석 추가. 정의 파일은 생성하지 않음
+- **changelog [0.11.0] 건너뜀 표기**: `[0.12.0]` 위에 "0.11.0 — 건너뜀" 블록 추가하고 사유·참조 명시
+- **index.md**: 마지막 업데이트를 "TASK-001~009 완료, ADR-012~021(018 결번), ISSUE-001·002 등록"으로 최신화. 페이지 수 19 → **24 (루트 9 + wiki/ 13 + issues/open/ 2)**
+
+### 결과
+위키 정합성 체크 전 항목 통과. 남은 "참조 없는 ADR/버전" 항목은 결번 표기로 명시되어 정의와 참조가 일치함
+
+---
+
+## [2026-04-22] issue | ISSUE-002 등록 — 후속 질문 배지 무반응 (3회 수정 시도 증상 지속)
+
+- 증상: 예시 질문 클릭 후 답변 하단 배지 클릭 시 재질의 트리거 안 됨 (모바일 재현 확인)
+- 3회 수정 시도 기록 ([0.14.1]·[0.14.2]·[0.14.3])는 모두 Streamlit 모범 사례에 부합하나 원인은 아니었음 → 유지
+- 유력 가설: 모바일 Streamlit WebSocket 이벤트 누락 (ISSUE-001과 같은 계열). 데스크톱 검증 필요
+- 보류: "인증·공개배포 묶음"에 편입 (ISSUE-001·관리자 UI 2단계·HTTPS 배포와 함께 재검증)
+- 반영: `wiki/issues/open/ISSUE-002-*.md` 신설, troubleshooting·ADR-019 회고·overview·index에 상태 갱신
+
+---
+
+## [2026-04-22] fix v3 | 배지 무반응 — **진짜 근본 원인은 버튼 key 불일치** ([0.14.3])
+
+- 0.14.1(st.rerun 제거)·0.14.2(st.chat_message 바깥 렌더) 둘 다 **추정 원인이 틀렸음** — 증상 지속
+- **진짜 원인**: 라이브 렌더 `live_{len(messages)}_sug_*` key vs 다음 rerun 히스토리 렌더 `hist_{msg_idx}_sug_*` key 불일치. Streamlit widget state는 key 바인딩이라 사용자 클릭 이벤트가 분리된 위젯 사이에서 소실됨
+- 수정: 두 경로의 key 접두사를 `msg_{msg_idx}`로 통일. 라이브는 append 직후 `len(messages) - 1` 사용 → 다음 rerun 히스토리의 `enumerate` 인덱스와 동일 값
+- **재발 방지 원칙** (강하게 기록): Streamlit에서 같은 논리적 위젯이 여러 렌더 경로에 존재한다면 반드시 동일 key를 사용할 것
+- 이전 v1/v2 수정은 Streamlit 모범 사례에 부합하므로 되돌리지 않음. 오진이었음을 changelog·ADR-019 회고·troubleshooting에 명시
+- 반영: changelog [0.14.3], ADR-019 회고, troubleshooting/common.md UI 항목, 본 log
+
+---
+
+## [2026-04-22] fix v2 | 배지 무반응 — 진짜 원인은 chat_message 내부 버튼 ([0.14.2])
+
+- 이전 0.14.1 수정(st.rerun 제거)은 부분 해결. "처음 예시 질문 후 아래 배지 선택 시 무반응" 증상 지속
+- 진짜 원인: `_render_suggestions()`의 `st.button`이 `st.chat_message(...)` **컨테이너 내부**에서 호출 → 두 번째 이후 클릭에서 컨테이너 재생성 ↔ widget state 복원 경쟁으로 click 이벤트 소실
+- 수정: 배지 렌더를 `with st.chat_message` 블록 **바깥**으로 이동 (히스토리 루프·라이브 렌더 양쪽)
+- **재발 방지 원칙** 추가: Streamlit에서 `st.button`은 컨테이너 위젯(chat_message, expander, popover 등)의 컨텍스트 매니저 안에 두지 말 것 — ADR-019 회고 + troubleshooting/common.md에 기록
+- 반영: changelog [0.14.2], ADR-019 회고, troubleshooting 항목 갱신
+
+---
+
+## [2026-04-22] fix | 후속 질문 배지 두 번째 이후 클릭 무반응 해결 ([0.14.1])
+
+- 증상: 답변 아래 suggestions 배지 #1 클릭은 정상이나 같은 답변의 다른 배지를 이어 클릭하면 재질의 안 됨
+- 원인: `_render_suggestions()`·empty state 배지 핸들러에서 `st.rerun()` 명시 호출이 Streamlit의 버튼 자동 rerun과 중복되어 state 플러시 타이밍 꼬임
+- 해결: `ui/app.py`의 두 핸들러에서 `st.rerun()` 제거, `_pending_question` 세션 키 세팅만 남김. 자동 rerun이 바깥 `if question:` 블록을 재실행
+- 반영: changelog [0.14.1], ADR-019 회고 섹션, troubleshooting/common.md UI 섹션 항목 신설
+
+---
+
+## [2026-04-22] decision | 인증·공개배포 전체 보류 (사용자 지시까지)
+
+- 사유: 개인·내부 사용 시스템 단계, 인증·관리자 분리·HTTPS 배포 모두 현재 불필요
+- 보류 묶음: ISSUE-001 · 관리자 UI 2단계 · HTTPS 리버스 프록시 · API 키/OAuth · 관리자 전용 UI 버튼
+- 재개 조건: 사용자 명시적 지시
+- 반영: roadmap 실행 큐/장기 목록, overview 다음 할 일/열린 이슈, ISSUE-001 헤더에 묶음 정보 명시
+- 장기 목록의 "인증 (API Key/OAuth)" 항목도 동일 묶음에 편입
+
+---
+
+## [2026-04-22] impl | TASK-009 완료 — DELETE 파일 정리 + HybridChunker 토큰 상한 (ADR-021)
+
+### 코드
+- `apps/routers/documents.py` DELETE:
+  - `Path(settings.upload_dir).glob(f"{doc_id}.*")` 순회 unlink
+  - `Path(settings.markdown_dir) / f"{doc_id}.md"` 존재 시 unlink
+  - 삭제 실패(권한 등)는 warning 로그 후 계속 진행 (DB·Qdrant 정리 성공은 무효화하지 않음)
+- `packages/loaders/docling_loader.py`: `HuggingFaceTokenizer(tokenizer=AutoTokenizer.from_pretrained("sentence-transformers/all-MiniLM-L6-v2"), max_tokens=480)`으로 HybridChunker 구성. import/버전 오류 시 기본 chunker fallback + warning
+
+### 검증
+- **삭제 스모크**: 테스트 문서 업로드 → `/data/uploads/{id}.txt`·`/data/markdown/{id}.md` 생성 확인 → DELETE → 두 파일 모두 사라짐 확인
+- **토큰 경고**: 새 API 기동 + 스모크 업로드 후 `grep -c "Token indices sequence length"` = **0** (이전 재인덱싱 경고 다수 대비)
+- 기존 저장된 Qdrant 청크는 재인덱싱하지 않으면 유지 — 토큰 상한 효과는 새 업로드부터
+
+### 관련 페이지
+- architecture/decisions.md ADR-021 신규
+- changelog.md [0.14.0]
+- roadmap.md TASK-009 완료, 실행 큐 **전 예정 태스크 완료**
+- overview.md 완료 표·최근 결정·다음 할 일 갱신
+
+### 실행 큐 최종 상태
+```
+✅ TASK-001~009 모두 완료
+🛑 ISSUE-001 + 관리자 UI 2단계 (사용자 지시 대기)
+🔄 장기: Graph RAG, MCP 재개, 하이브리드 검색, 대화 요약, 인증, 스트리밍, L2 중복 감지
+```
+
+---
+
+## [2026-04-22] impl | TASK-008 완료 — 빈 채팅 인덱스 요약 카드 (ADR-020)
+
+### 코드
+- `apps/schemas/documents.py`: `IndexOverviewResponse(doc_count, titles, top_headings, summary, suggested_questions)`
+- `apps/routers/documents.py`:
+  - `GET /index/overview` 신규 — Qdrant scroll로 문서당 상위 50청크 heading 집계 + LLM JSON 모드로 summary·예시 질문 5개 생성
+  - 인메모리 캐시 `(doc_count, sorted doc_ids)` 키, `invalidate_index_overview_cache()` 헬퍼
+- `apps/routers/ingest.py` + DELETE에서 캐시 무효화 호출
+- `apps/config.py`·`.env(.example)`: `INDEX_OVERVIEW_ENABLED` 토글
+- `ui/app.py`: 빈 채팅 empty state에 `st.container(border=True)` 카드 — summary·문서 리스트·예시 질문 5개 배지(클릭→`_pending_question`→자동 재질의). 업로드·삭제 시 `_index_overview` 캐시 무효화
+
+### 검증
+- 1차 호출: doc_count=6, titles 6개, top_headings 5개, 한국어 요약 2~3문장 + 예시 질문 5개 생성
+  - "이 시스템은 딥러닝과 로봇 프로그래밍에 관한 지식을 제공합니다. 특히 ROS..."
+- 2차 호출: **5ms 캐시 히트** (LLM 호출 0)
+- 업로드·삭제 시 자동 무효화 (코드 경로 확인)
+
+### 관찰·한계
+- top_headings에 "또는 return np .sum(x**2)" 같은 노이즈가 섞이는 케이스 — heading 정제는 후속
+- JSON 모드 미지원 공급자에선 fallback 문구 사용
+
+### 관련 페이지
+- architecture/decisions.md ADR-020 신규
+- changelog.md [0.13.0]
+- roadmap.md TASK-008 완료, 실행 큐 `TASK-009 (다음)`
+- overview.md 완료 표·최근 결정·다음 할 일 갱신
+
+### 다음
+- **TASK-009**: DELETE 시 원본 파일 동반 삭제 + HybridChunker 토큰 상한 튜닝 (512 초과 경고 제거)
+
+---
+
+## [2026-04-22] impl | TASK-007 Phase 1 완료 — 후속 질문 제안 (ADR-019)
+
+### 코드
+- `packages/rag/generator.py` 재작성: plain/with_suggestions 두 system prompt, OpenAI JSON 모드(`response_format={"type":"json_object"}`), 파싱 실패 graceful degrade (answer는 원문, suggestions=[])
+- `apps/config.py`·`.env(.example)`: `SUGGESTIONS_ENABLED` (기본 true), `SUGGESTIONS_COUNT` (기본 3)
+- `apps/schemas/query.py`: `QueryResponse.suggestions: list[str] = []`
+- `packages/rag/pipeline.py`:
+  - `generate()` 반환 dict 변경에 맞춰 `suggestions` 전파
+  - `tracing_context` 태그에 `suggestions:<bool>`, 메타에 `suggestions_enabled/count` 추가
+  - query 로그에 `suggestions=N` 포함
+- `apps/routers/query.py`: `QueryResponse`에 suggestions 전달
+- `ui/app.py`: `_render_suggestions()` 헬퍼, 과거 메시지도 배지 재클릭 가능. `_pending_question` 세션 키로 자동 재질의
+
+### 검증
+- `SUGGESTIONS_ENABLED=true` + "ROS의 주요 구성요소는?" → 한국어 suggestions 3개 정상 생성, latency 4142ms
+  - "ROS의 파일 시스템 레벨에 대해 더 알고 싶습니다."
+  - "계산 그래프 레벨에서 어떤 개념들이 포함되나요?"
+  - "ROS 커뮤니티 레벨의 자원에는 어떤 것들이 있나요?"
+- `SUGGESTIONS_ENABLED=false` 회귀 테스트: suggestions=0, answer 동일 → **회귀 0**
+- 답변이 불충분(예: "관련 문서를 찾지 못했습니다.")일 때 suggestions 강제 빈 리스트
+
+### 주요 원칙 준수
+- 추가 LLM 호출 0회 (토큰 +50~100 응답)
+- JSON 파싱 실패에도 answer는 항상 반환
+- LangSmith 태그로 suggestions 경유 여부 관측 가능
+
+### 관련 페이지
+- architecture/decisions.md ADR-019 신규
+- changelog.md [0.12.0]
+- roadmap.md TASK-007 완료 처리, 실행 큐 `TASK-008 (다음)`
+- overview.md 완료 표·최근 결정 갱신
+
+### 다음
+- **TASK-008**: 빈 채팅 인덱스 요약 카드 + 예시 질문 (Phase 2). `GET /index/overview` 엔드포인트 + LLM 캐시
+
+---
+
+## [2026-04-22] docs | 태스크 재정리 + 사용자 개선점 명시
+
+### 재정리 내용
+- overview.md "다음 할 일"을 4개 블록(완료 ✅ / 다음 🎯 / 보류 🛑 / 철회·장기 🚫🔄)으로 재구성. 기존 번호 순서 꼬임 정리
+- 신규 섹션 **"예정 태스크 완료 시 사용자 개선점"** 추가 — 각 태스크가 before/after로 사용자 체감 어떻게 바꾸는지 표로 정리
+- roadmap.md 상단 실행 큐 블록 시각화 + "사용자 관점 개선 경로" 요약 표 추가
+- 알려진 한계 섹션은 태스크 현황의 "기술 부채" 블록으로 통합해 중복 제거
+
+### 신규 큐잉 (TASK-007 이후 실행 큐)
+- **TASK-008**: 빈 채팅 인덱스 요약 카드 + 예시 질문 5개 (TASK-007 Phase 2 승격). `GET /index/overview` 엔드포인트 + LLM 캐시. ADR-020 예정
+- **TASK-009**: 디스크 정리(DELETE 시 파일 동반 삭제) + HybridChunker 토큰 상한 튜닝(512 초과 경고 제거). ADR-021 예정
+
+### 현재 큐
+```
+✅ TASK-001~005 → 🎯 TASK-007 (다음) → TASK-008 → TASK-009
+→ 🛑 ISSUE-001 + 관리자 UI 2단계 (사용자 지시 대기)
+→ 🔄 장기: Graph RAG, MCP 재개, 하이브리드 검색, 대화 요약, 인증, 스트리밍, 중복 감지 L2
+```
+
+---
+
+## [2026-04-22] decision | TASK-006 (MCP 서버 익스포트) — 🚫 철회
+
+- 사용자 판단: **현재 시스템에서 MCP 노출은 불필요** — 범위에서 제외
+- 사유: 프로젝트 코어 품질(retrieval·답변 품질)에 기여 없음. Claude Code 통합은 외부 소비자 유스케이스가 구체화되기 전 과잉
+- 조치:
+  - 실행 큐에서 제거 (`TASK-005 ✅ → TASK-007 (다음)` 로 재편)
+  - roadmap의 TASK-006 섹션은 `~~취소선~~` + "참고용" 표기로 보존 (재개 시 원본 서브태스크 재활용)
+  - 장기 목록(재평가 섹션)에 "MCP 서버 익스포트 (철회 후 장기 검토)" 등재 + 재개 조건 명시
+- 재개 조건: ① 외부 에이전트(Claude Code/Cursor 등)가 이 지식 베이스를 소비할 구체 유스케이스, ② HTTP/SSE 모드 필요성. 충족 시 신규 TASK-NNN으로 재정의
+
+---
+
+## [2026-04-22] decision | Graph RAG 도입 — 현재는 보류 (비용·복잡도 사유)
+
+- 검토 결과 Graph RAG(Microsoft GraphRAG / LlamaIndex PropertyGraph 등)는 "적극적 질의"·"인덱스 가시성" 니즈와 부합은 하나, **현재 규모(문서 6개, 청크 4037, 로컬 Hit@3=1.0)에 비해 비용·복잡도가 과도**
+- 추정 비용: 재인덱싱 시 LLM 호출 $30~120, Neo4j/AGE 등 저장소 추가 Docker 서비스 1개, incremental 업데이트 전략 필요
+- 대안 경로: TASK-007(후속 질문) + Phase 2(인덱스 요약 카드) + 필요 시 경량 엔티티 추출로 같은 니즈의 80~90% 해결 가능
+- **재평가 조건** (roadmap 장기 목록에 명시): ① 문서 100+, ② 질의 로그에서 multi-hop/cross-document 패턴 비중 ↑, ③ 경량 대안으로 해결 안 될 때
+- 착수 시 의무: 별도 ADR 작성, TASK-004 프레임워크로 before/after 정량 비교
+
+---
+
+## [2026-04-22] queue | TASK-007 — 후속 질문 제안 + 인덱스 커버리지 가시성
+
+- 배경: 사용자가 "이 RAG가 뭘 아는지" 예측 어려움. 답변 이후 탐색 방향 제시 없음 → 적극적 질의 UX 필요
+- Phase 1 (이번 TASK 범위):
+  - `generate()`를 JSON 모드로 확장해 `{"answer": ..., "suggestions": [...]}` 한 번에 생성 (추가 LLM 호출 0회)
+  - `QueryResponse.suggestions` 스키마 추가, Streamlit 답변 하단 배지 3개 → 클릭 시 재질의
+  - `.env` 토글 `SUGGESTIONS_ENABLED`, `SUGGESTIONS_COUNT`
+  - LangSmith `suggestions_count` 메타
+- Phase 2 (후속 분리): 빈 채팅 empty state에 "인덱스 요약 + 예시 질문 5개" 카드
+- Phase 3 (더 후속): 형제 heading 기반 탐색 사이드 패널
+- 실행 큐: TASK-006 → **TASK-007**
+
+---
+
+## [2026-04-22] queue | TASK-006 — RAG를 MCP 서버로 익스포트 (Claude Code 연계)
+
+- 배경: 이 프로젝트의 RAG 인덱스를 Claude Code에서 `search_docs`/`list_docs` tool로 사용 가능하게 MCP 익스포트
+- 범위: stdio MCP 서버 (`apps/mcp_server.py`) + 최소 tool 2개만. 관리 기능(업로드·삭제)은 기존 웹 UI에만
+- 실행 큐: TASK-001~005 ✅ → **TASK-006 (다음)**
+- 산출물: `apps/mcp_server.py`, `wiki/integrations/mcp.md` 또는 features/에 가이드, ADR-018, changelog [0.11.0]  *(※ TASK-006 철회로 ADR-018·버전 0.11.0은 미발행. 재개 시 다음 가용 번호로 재할당)*
+- 주의: stdout 프로토콜 오염 방지 위해 logger를 stderr로 확인, FastAPI와 별도 프로세스(`python -m apps.mcp_server`)
+- 의도적 제외: `ingest_doc`/`delete_doc`(보안), HTTP 모드(stdio 로컬 전용), 인증
+
+---
+
 ## [2026-04-22] hold | ISSUE-001 + 관리자 UI 2단계 — 사용자 지시 대기
 
 - ISSUE-001 페이지 상태를 "open · 🛑 보류 (사용자 지시 대기)"로 전환

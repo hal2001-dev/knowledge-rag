@@ -58,11 +58,28 @@ class DoclingDocumentLoader(BaseLoader):
         #   merge_peers=True          : 같은 부모 heading 아래 작은 청크 병합
         #   always_emit_headings=True : 모든 청크에 heading 경로 emit
         #   omit_header_on_overflow=False : 긴 청크에서도 heading 생략 안 함
-        chunker = HybridChunker(
-            merge_peers=True,
-            always_emit_headings=True,
-            omit_header_on_overflow=False,
-        )
+        # 토크나이저에 max_tokens를 명시해 512 초과 경고 제거 (TASK-009, ADR-021).
+        # 480은 512 한계에 안전 마진 32토큰을 둔 값 — breadcrumb·heading prepend 여유.
+        try:
+            from docling_core.transforms.chunker.tokenizer.huggingface import HuggingFaceTokenizer
+            from transformers import AutoTokenizer
+            tokenizer = HuggingFaceTokenizer(
+                tokenizer=AutoTokenizer.from_pretrained("sentence-transformers/all-MiniLM-L6-v2"),
+                max_tokens=480,
+            )
+            chunker = HybridChunker(
+                tokenizer=tokenizer,
+                merge_peers=True,
+                always_emit_headings=True,
+                omit_header_on_overflow=False,
+            )
+        except Exception as e:
+            logger.warning(f"토크나이저 max_tokens 설정 실패, 기본 사용: {e}")
+            chunker = HybridChunker(
+                merge_peers=True,
+                always_emit_headings=True,
+                omit_header_on_overflow=False,
+            )
         lc_docs = _DoclingLoader(
             file_path=file_path,
             export_type=ExportType.DOC_CHUNKS,

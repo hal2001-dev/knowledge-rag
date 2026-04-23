@@ -47,4 +47,5 @@ def query(
         answer=result["answer"],
         sources=sources,
         latency_ms=result["latency_ms"],
+        suggestions=result.get("suggestions", []),
     )

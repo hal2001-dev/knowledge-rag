@@ -575,3 +575,149 @@ reranker를 다국어(BGE-M3)로 바꾼 뒤에도 임베딩은 `text-embedding-3
 ### 후속 (2/3단계 예정 ADR은 실제 승격 시 신규 작성)
 - 2단계: ISSUE-001 동반 해결, HTTPS 배포, `ADMIN_PASSWORD`
 - 3단계: 청크 검색 디버거, 벤치 시계열 차트, 설정 토글 UI
+
+---
+
+## ADR-019: 후속 질문 제안 — 단일 LLM 호출에 JSON 구조화로 통합
+**날짜**: 2026-04-22
+**상태**: accepted
+**관련**: TASK-007 Phase 1
+
+### 배경
+사용자가 답변을 받은 뒤 "다음에 뭘 물어야 하지?"를 스스로 찾아야 함. 현재 UX는 각 질의가 독립적이라 탐색 연쇄가 끊긴다. 후속 질문 제안을 붙이면 클릭 한 번으로 대화가 자연스럽게 깊어진다.
+
+### 선택지
+1. **단일 LLM 호출에 JSON 통합** — `{"answer": ..., "suggestions": [...]}`. 추가 호출 0회, 토큰만 소폭 증가
+2. 답변 생성 후 **별도 LLM 호출로 suggestions만 생성** — 구현 단순, 비용 2배, 지연↑
+3. **임베딩/규칙 기반 생성** — heading_path·TF-IDF 같은 규칙. 비용 0이나 품질 낮고 자연어 문장 생성 어려움
+
+### 결정
+**옵션 1.** 이유:
+- 추가 호출 0 → 비용·지연 영향 미미 (응답 토큰만 +50~100)
+- JSON 모드로 파싱 안정성 확보 (`response_format={"type":"json_object"}`)
+- 답변과 suggestions이 같은 컨텍스트를 공유 → 자연스러운 후속 질문
+
+### 구현
+- `packages/rag/generator.py`: 두 종류 system prompt(plain / with_suggestions) + `json.loads` 파싱 + 파싱 실패 시 graceful degrade(answer는 원문, suggestions=[])
+- `apps/config.py`: `suggestions_enabled: bool = True`, `suggestions_count: int = 3`
+- `.env(.example)`: `SUGGESTIONS_ENABLED`, `SUGGESTIONS_COUNT`
+- `apps/schemas/query.py`: `QueryResponse.suggestions: list[str] = []`
+- `packages/rag/pipeline.py`: `generate()` 반환을 dict로 바꾸고 `suggestions` 전파. `tracing_context` 태그에 `suggestions:<bool>`, 메타에 `suggestions_enabled/count` 추가
+- `apps/routers/query.py`: `QueryResponse` 생성 시 `suggestions=result.get("suggestions",[])`
+- `ui/app.py`: `_render_suggestions()` 헬퍼로 배지 렌더. 클릭 시 `st.session_state["_pending_question"]`에 세팅 → rerun → 자동 질의. 과거 메시지의 suggestions도 재클릭 가능하도록 `messages[i]["suggestions"]`에 보존
+
+### 결과
+- 스모크: "ROS의 주요 구성요소는?" 질의 시 한국어 suggestions 3개 정상 생성
+  - "ROS의 파일 시스템 레벨에 대해 더 알고 싶습니다."
+  - "계산 그래프 레벨에서 어떤 개념들이 포함되나요?"
+  - "ROS 커뮤니티 레벨의 자원에는 어떤 것들이 있나요?"
+- `SUGGESTIONS_ENABLED=false` 회귀 테스트: `suggestions=0`, answer는 기존과 동일 → **회귀 0** 확인
+- 답변이 "관련 문서를 찾지 못했습니다."류 불충분 응답이면 suggestions를 빈 리스트로 강제 (무관한 질문 생성 방지)
+
+### 한계 / 후속
+- **LLM이 3개보다 적거나 많이 반환**할 수 있음 — 서버에서 `suggestions[:N]` 잘라 보정
+- **JSON 모드 미지원 모델**(일부 GLM 변형): `response_format` TypeError catch 후 평문 요청, 파싱 실패 시 graceful degrade
+- **Phase 2 (빈 채팅 인덱스 요약 카드)** 는 TASK-008로 분리
+- **Phase 3 (형제 heading 기반 탐색 사이드 패널)** 은 더 후속
+- 사용자 클릭률·품질 평가는 TASK-004 프레임워크 확장에서 검토 (현재는 수동 관찰)
+
+### 회고·수정 이력 (미해결 — ISSUE-002)
+- **2026-04-22 fix v1 (0.14.1, 오진)**: `st.rerun()` 중복 호출로 추정. 수동 호출 제거. 증상 지속.
+- **2026-04-22 fix v2 (0.14.2, 오진)**: `st.chat_message` 내부 버튼으로 추정. 렌더를 블록 바깥으로 이동. 증상 지속.
+- **2026-04-22 fix v3 (0.14.3, 오진)**: 버튼 `key` 불일치로 추정. 라이브·히스토리 key를 `msg_{msg_idx}`로 통일. 모바일에서 증상 여전히 재현됨이 확인됨
+- **결론**: 3회 수정이 전부 근본 원인이 아니었음. 증상이 **모바일 특정**일 가능성 높음(ISSUE-001과 같은 계열). `ISSUE-002`로 분리 등록하고 "인증·공개배포 묶음"과 함께 HTTPS 배포 후 재검증하기로 결정
+- **보존 이유**: v1~v3 수정은 모두 Streamlit 모범 사례에 부합 — `st.rerun()` 중복 금지, 컨테이너 위젯 바깥에서 `st.button` 렌더, 같은 논리적 위젯의 key 통일. 원인이 아니었더라도 되돌리지 않음
+- **상세**: [ISSUE-002](../issues/open/ISSUE-002-suggestion-badge-click-unresponsive.md)
+
+---
+
+## ADR-020: 인덱스 커버리지 카드 — `GET /index/overview` + 인메모리 캐시
+**날짜**: 2026-04-22
+**상태**: accepted
+**관련**: TASK-008 (TASK-007 Phase 2에서 승격)
+
+### 배경
+ADR-019로 답변 후 후속 질문은 해결됐지만, **빈 채팅 empty state**에서 사용자는 "뭘 물어야 할지" 여전히 모름. 현재 인덱싱된 문서를 자연어로 요약하고 예시 질문 5개를 첫 화면에 보여주면 온보딩 효과가 큼.
+
+### 선택지
+1. **전용 엔드포인트 `/index/overview` + 인메모리 캐시** — 서버에서 LLM 호출 1회, 클라이언트는 fetch만
+2. **클라이언트(Streamlit)에서 매 진입 시 LLM 직접 호출** — 캐시 관리 어려움, 비용 폭증
+3. **정적 요약만** — heading 집계만으로 정적 문자열. LLM 품질 없음, 다국어·자연어 요약 불가
+4. **업로드 시 사전 생성** — 배치 작업으로 업로드 성공 후 요약 생성. 구현 복잡도 증가
+
+### 결정
+**옵션 1.** 서버 측 캐시가 가장 단순하고 LLM 비용을 1회/문서 변경 사이클로 억제 가능.
+
+### 구현
+- `apps/schemas/documents.py`: `IndexOverviewResponse(doc_count, titles, top_headings, summary, suggested_questions)`
+- `apps/routers/documents.py`:
+  - `GET /index/overview` 신규 — 처리 순서:
+    1. `list_documents` 결과와 doc_id 리스트로 cache_key 계산
+    2. 캐시 히트면 즉시 반환
+    3. 각 문서 상위 50 청크 샘플링 → heading_path[0]의 빈도로 top_headings 추출
+    4. 문서 제목·top_headings를 LLM(JSON 모드)에 전달 → summary + suggested_questions 5개 생성
+    5. 결과 캐시
+  - `invalidate_index_overview_cache()`: 업로드(`ingest.py`)·삭제(`documents.py` DELETE)에서 호출
+- `apps/config.py`·`.env`: `INDEX_OVERVIEW_ENABLED=true|false` 토글
+- `ui/app.py` 채팅 탭:
+  - `len(messages) == 0`일 때 `st.container(border=True)`로 카드 렌더
+  - 구성: "이 시스템이 아는 내용" 제목 + summary + 인덱싱된 문서 expander + 예시 질문 5개 배지
+  - 배지 클릭 → `_pending_question` 세팅 → 자동 재질의 (TASK-007의 플로우 재사용)
+  - 업로드·삭제 시 `st.session_state["_index_overview"] = None`로 클라이언트 캐시도 무효화
+
+### 결과
+- 1차 호출: 한국어 요약 2~3문장 + 예시 질문 5개 정상 생성 (latency 약 2~3초 LLM 포함)
+- 2차 호출: **5ms** (캐시 히트, LLM 호출 0)
+- 업로드/삭제 → 자동 무효화 → 다음 호출에서 재생성
+- 사용자 체감: 빈 채팅에 **"어떤 질문을 할 수 있는가"** 를 즉시 파악
+
+### 한계 / 후속
+- top_headings 품질이 heading_path[0]에 의존 — 일부 문서(딥러닝 한국어)는 "또는 return np .sum(x**2)" 같은 노이즈 heading이 상위로 올라오는 경우가 관찰됨. 향후 heading 정제(짧거나 숫자 포함 등 필터) 고려
+- LLM JSON 모드 미지원 공급자에서는 요약·질문이 없거나 fallback 문구로 대체
+- Phase 3(형제 heading 기반 사이드 패널)은 별도 태스크로 분리
+- 토픽 클라우드·엔티티 네트워크 같은 시각화는 의도적 제외 (Graph RAG 재검토 시점에 묶어서)
+
+---
+
+## ADR-021: 디스크 고아 정리 + HybridChunker 토큰 상한 명시
+**날짜**: 2026-04-22
+**상태**: accepted
+**관련**: TASK-009, ADR-009(HybridChunker), ADR-010(원본 파일 보존)
+
+### 배경
+두 개의 누적된 기술 부채를 한 태스크로 해소:
+1. **고아 파일**: ADR-010으로 원본 파일을 `data/uploads/`에 영구 보관하도록 바꾼 뒤, DELETE 엔드포인트가 Qdrant·PostgreSQL만 정리하고 디스크는 건드리지 않아 삭제 후에도 `data/uploads/{doc_id}.*`·`data/markdown/{doc_id}.md`가 남아 디스크 누수 발생
+2. **토큰 초과 경고**: HybridChunker 기본 설정은 tokenizer `max_tokens`를 명시하지 않아 "Token indices sequence length > 512" 경고가 청크 5~10%에서 발생. 임베딩 모델 512 토큰 한계에서 일부 내용이 잘려 검색 정확도 손실
+
+### 선택지 (부채 1: 파일 정리)
+1. DELETE 엔드포인트에서 `unlink(missing_ok=True)`로 직접 정리
+2. 별도 정기 청소 작업(cron job)
+3. 파일을 DB(BLOB)로 이관
+
+### 선택지 (부채 2: 토큰 상한)
+1. **`HybridChunker(tokenizer=HuggingFaceTokenizer(max_tokens=480))`** — 명시적 토크나이저
+2. 청킹 후 토큰 수 체크해 초과 청크만 재분할
+3. max_tokens를 기본 512로 두고 경고만 무시
+
+### 결정
+- 부채 1 → **옵션 1**: DELETE 경로에서 즉시 정리. 복잡도 0, 사용자 의도와 가장 일치
+- 부채 2 → **옵션 1**: 토크나이저 명시로 HybridChunker가 청킹 시점에 상한 강제. 안전 마진 32토큰(heading breadcrumb 여유)을 두어 **480으로 설정**
+
+### 구현
+- `apps/routers/documents.py` DELETE:
+  - `Path(settings.upload_dir).glob(f"{doc_id}.*")` 순회 → `unlink()` (missing_ok semantics)
+  - `Path(settings.markdown_dir) / f"{doc_id}.md"` 존재 시 삭제
+  - 삭제된 파일 수를 로그
+- `packages/loaders/docling_loader.py`:
+  - `HuggingFaceTokenizer(tokenizer=AutoTokenizer.from_pretrained("sentence-transformers/all-MiniLM-L6-v2"), max_tokens=480)`
+  - import 실패·버전 불일치 시 기본 HybridChunker로 fallback (`try/except` + 경고 로그)
+
+### 결과
+- **스모크**: 업로드→두 파일 생성 확인→DELETE 200→두 파일 모두 삭제 확인
+- **토큰 경고**: API 기동 후 `grep -c "Token indices sequence length"` = **0** (이전 재인덱싱에서는 수십 건)
+- 기존 문서는 재인덱싱하지 않으면 Qdrant 청크는 그대로 유지 — 토큰 상한 효과는 새 업로드부터 적용
+
+### 한계 / 후속
+- 480토큰 기준으로 청크 수는 소폭 증가할 수 있음 (같은 heading 하의 병합이 더 빈번하게 경계 넘음). TASK-004 벤치 재실행 시 확인
+- fallback 경로에서는 토큰 경고가 돌아올 수 있으나 `sentence-transformers`가 이미 설치되어 있어 정상 경로 사용됨
+- 백필: 기존 6개 문서의 남은 마크다운·업로드 파일은 없음(재인덱싱 과정에서 이미 정리됨). 필요 시 수동 `find data/ -name "<doc_id>*" -delete`

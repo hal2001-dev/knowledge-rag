@@ -22,9 +22,29 @@
 
 ### 실행 순서 원칙
 **태스크를 병렬로 진행하지 않는다.** 앞 태스크(문서화·ADR·위키 반영 포함)가 완전히 종료된 뒤 다음 태스크를 시작한다.
-현재 실행 큐: **TASK-001 ✅ → TASK-003 ✅ → TASK-004 ✅ → TASK-002 ✅ → TASK-005 ✅ (모두 완료)**
 
-대기 중: **🛑 보류 (사용자 지시 대기)** — ISSUE-001 + 관리자 UI 2단계 (HTTPS 배포 시점에 묶어 처리). 사용자가 지시할 때까지 자동 진행 금지
+#### 실행 큐 (확정)
+```
+✅ TASK-001 → ✅ TASK-003 → ✅ TASK-004 → ✅ TASK-002 → ✅ TASK-005
+→ ✅ TASK-007 → ✅ TASK-008 → ✅ TASK-009  (모든 예정 태스크 완료)
+→ 🛑 인증·공개배포 전체 묶음 (사용자 지시까지 전부 보류, 2026-04-22)
+     · ISSUE-001 (모바일 업로드) · 관리자 UI 2단계 · HTTPS 배포 · API 키/OAuth · 관리자 전용 UI 버튼
+→ 🔄 장기 검토: Graph RAG, MCP 재개, 하이브리드 검색, 대화 요약, 인증, 스트리밍, L2 중복 감지
+```
+
+#### 사용자 관점 개선 경로 (요약)
+| 단계 | 완료 시 체감 변화 |
+|---|---|
+| TASK-007 | 답변 아래에 "이어서 물을 질문 3개" 자동 배지 — 클릭으로 탐색 연쇄 |
+| TASK-008 | 빈 채팅에 "이 시스템이 아는 내용" 요약 + 예시 질문 5개 |
+| TASK-009 | 문서 삭제 시 디스크까지 완전 정리 + 긴 청크 누락 제거 |
+| (보류) 인증·공개배포 묶음 | 모바일 업로드, HTTPS 외부 접속, 관리자/사용자 경로 분리, 재인덱싱/벤치 버튼 — 사용자 지시까지 전부 보류 |
+
+상세 개선점은 [overview.md](overview.md)의 "예정 태스크 완료 시 사용자 개선점" 섹션 참고.
+
+---
+
+철회: ~~TASK-006 (RAG → MCP 서버)~~ — 사용자 판단으로 현재 시스템 범위에서 제외 (장기 검토 목록으로 이동)
 
 ### ~~TASK-001: BGE-reranker-v2-m3 도입 (재순위 다국어화)~~ — ✅ 완료 (2026-04-22)
 → ADR-012, changelog [0.6.0], [evaluation.md](wiki/features/evaluation.md) 참고
@@ -196,6 +216,173 @@
 - 재인덱싱·벤치 실행 비동기 버튼
 - 설정 토글(수정 후 서버 재시작 예약)
 
+### ~~TASK-006: RAG를 MCP 서버로 노출~~ — 🚫 철회 (2026-04-22)
+**상태**: 현재 시스템 범위에서 제외. 아래 원본 정의는 참고용으로 보존. 재개 시 장기 목록에서 선택해 신규 태스크(TASK-NNN)로 재등록할 것.
+**사유**: 사용자 판단 — 현재 시스템에서 MCP 서버 노출은 불필요. Claude Code 통합은 장기 검토 목록으로 이동
+
+**원본 정의 (참고용, 코드 작업 금지)**:
+**우선순위**: 중 (프로젝트 코어 품질 영향 0. 본인 개발 흐름 개선)
+**배경**: 이 프로젝트의 인덱스가 쌓여가는데 Claude Code로 다른 일을 할 때 이 지식을 불러 쓸 방법이 없음. MCP로 익스포트하면 Claude Code(및 Cursor 등 MCP 클라이언트)에서 `search_docs`, `list_docs` 같은 tool로 붙일 수 있어 "내 개인 RAG"가 자연스럽게 도구화됨.
+**목표**: stdio MCP 서버를 추가해 Claude Code `.mcp.json` 또는 `.claude/settings.local.json`에서 붙이면 즉시 질의 가능
+**범위**: **최소 2개 tool만**. 관리 기능(업로드·삭제·벤치)은 기존 웹 UI에 남김
+
+**서브태스크**:
+- [ ] 의존성 추가 — `mcp` (MCP Python SDK, `pip install mcp`)
+- [ ] `apps/mcp_server.py` 신설 — stdio 서버
+  - 기존 `RAGPipeline`·`QdrantDocumentStore`·`get_reranker()` 재사용 (코드 중복 금지)
+  - tool `search_docs(query: str, top_k: int = 3) -> list[{title, doc_id, page, heading_path, excerpt, score}]`
+    · 내부적으로 `RAGPipeline.query`를 호출하되 LLM 답변 생성은 생략(retrieve+rerank 결과만 반환)
+    · **또는** `retrieve()` 직접 호출로 토큰 비용 0
+  - tool `list_docs() -> list[{doc_id, title, file_type, chunk_count, indexed_at}]`
+    · PostgreSQL `list_documents(db)` 결과 반환
+- [ ] 진입점: `python -m apps.mcp_server` 로 stdio 실행
+- [ ] `README`/`wiki/features/` 또는 신규 `wiki/integrations/mcp.md`에 Claude Code 붙이는 법 기록
+  - 예시 `.mcp.json`:
+    ```json
+    {
+      "mcpServers": {
+        "knowledge-rag": {
+          "command": "/Users/hal2001/workspace/projects/personal/knowledge-rag/.venv/bin/python",
+          "args": ["-m", "apps.mcp_server"],
+          "cwd": "/Users/hal2001/workspace/projects/personal/knowledge-rag"
+        }
+      }
+    }
+    ```
+- [ ] 스모크 테스트 — Claude Code 세션에서 `search_docs("ROS의 주요 구성요소는?")` 호출 결과가 기존 `/query` 출력의 `sources`와 일치하는지
+- [ ] LangSmith 트레이스에 `mcp_tool` 태그 추가(기존 `tracing_context` 확장) — MCP 경유 호출도 관측 가능
+- [ ] ADR-018 신규 — "RAG를 MCP 서버로 익스포트: 최소 2 tool, 관리 기능 제외" *(TASK-006 철회로 미작성. 재개 시 신규 번호로 재할당)*
+- [ ] changelog `[0.11.0]` 항목
+- [ ] requirements.txt 업데이트
+
+**완료 기준**:
+1. `python -m apps.mcp_server` 가 stdio에서 MCP 핸드셰이크 응답 정상
+2. Claude Code에 `.mcp.json` 연결 후 `search_docs`·`list_docs` 둘 다 호출 성공
+3. 반환 결과가 웹 UI `/query` sources와 동일 doc_id/score
+4. ADR-018·changelog 반영 *(TASK-006 철회로 미발행. 재개 시 다음 가용 번호 사용)*
+
+**의도적으로 제외 (단계적 확장)**:
+- `ingest_doc`, `delete_doc` — 관리 기능은 웹 UI에만 (보안·경쟁 상태)
+- `get_doc_chunks` — 필요 시 TASK-006 이후 추가
+- HTTP 서버 모드, 인증 — stdio 로컬 전용이라 불필요
+- 원격 MCP 호스팅 — ISSUE-001 해결(HTTPS) 이후 검토
+
+**주의사항**:
+- MCP 서버는 **웹 API 서버(`uvicorn`)와 별도 프로세스**. Qdrant·Postgres 연결은 공유하지만 FastAPI 의존성 주입 시스템 대신 `build_embeddings()`·`get_reranker()` 직접 호출 필요
+- `apps/config.py`의 `lru_cache`된 `get_settings()`는 MCP 프로세스에서도 동일하게 동작
+- stdio 서버는 `stdout`에 JSON-RPC만 써야 함 — logger가 stdout에 찍으면 프로토콜 깨짐. **로그 핸들러를 `stderr`로** 설정 확인 필요
+- Claude Code의 MCP 서버 재시작은 Claude Code 자체 재시작이 필요. `.mcp.json` 변경 후 Claude Code를 다시 열어야 반영됨
+
+### ~~TASK-007: 후속 질문 제안 + 인덱스 커버리지 가시성~~ — ✅ 완료 (2026-04-22, Phase 1만)
+→ ADR-019, changelog [0.12.0]
+
+**Phase 1 완료**: 답변 후 3개 후속 질문 배지 + 클릭 재질의. 회귀 0 확인.
+**Phase 2(빈 채팅 카드) 는 TASK-008로 승격**, Phase 3은 장기.
+
+**우선순위**: 중 (UX 직결, Phase 1은 저비용)
+**배경**: 현재 사용자가 "이 RAG가 무엇을 알고 있는지" 예측 불가. 답변이 나와도 **더 갈 수 있는 방향**을 스스로 찾아야 함. 인덱스에 있는 내용(ROS 영문 + 딥러닝 한국어 등)을 투명하게 보여주고, 각 답변에서 자연스러운 다음 질문을 제시해 탐색성을 높인다.
+**목표**: (1) 답변 후 후속 질문 3개 자동 제안 + 배지 클릭 시 그 질문으로 즉시 재질의. (2) 빈 채팅 화면에 "이 시스템이 아는 내용 요약 + 예시 질문" 카드 표시
+**범위**: Phase 1만 TASK-007로 먼저 구현. Phase 2/3은 결과 보고 별도 태스크로 승격
+
+**Phase 1 — 답변 후 후속 질문 제안 (최소 구현)**:
+- [ ] `packages/rag/generator.py` 프롬프트 확장:
+  - 현재 `answer` 한 필드만 반환 → **`{"answer": "...", "suggestions": ["질문1", "질문2", "질문3"]}`** JSON 구조
+  - OpenAI `response_format={"type":"json_object"}` 또는 JSON 모드로 구조 보장 (JSON 파싱 실패 시 suggestions=빈 리스트로 graceful degrade)
+  - LLM에게 "답변의 맥락에서 사용자가 이어서 물어볼 만한 구체적 질문 3개"를 지시. 중복·메타질문(예: "더 있나요?") 금지 규칙 명시
+- [ ] `apps/schemas/query.py`의 `QueryResponse`에 `suggestions: list[str] = []` 추가
+- [ ] `packages/rag/pipeline.py`의 `query()` 반환 dict에 `suggestions` 포함
+- [ ] `ui/app.py` 채팅 탭:
+  - 답변 하단에 suggestions를 **클릭 가능한 배지** 3개로 (`st.button` 또는 columns로 나열)
+  - 배지 클릭 시 `st.session_state["_pending_question"]`에 저장 → rerun → 자동 질의
+  - 채팅 메시지 히스토리에도 suggestions 보존 (과거 메시지의 배지도 재클릭 가능)
+- [ ] `.env`에 토글 `SUGGESTIONS_ENABLED=true|false`, `SUGGESTIONS_COUNT=3`
+- [ ] `apps/config.py`에 동일 필드. 비활성 시 generator가 suggestions 생성 프롬프트 생략
+- [ ] LangSmith 태그 — `tracing_context` 메타에 `suggestions_count` 추가
+- [ ] 스모크: 동일 질의에서 suggestions 3개가 질문 형태로 생성되고, 클릭 시 재질의 플로우 성공
+- [ ] ADR-019 신규 — "후속 질문 제안: LLM 단일 호출에 통합, JSON 구조화"
+- [ ] changelog `[0.12.0]`
+
+**Phase 2 — 빈 채팅 상태에 인덱스 커버리지 카드 (후속, TASK-007 종료 후 별도)**:
+- 첫 진입 시 `GET /documents` + 상위 heading 통계로 "이 시스템이 아는 내용" 요약 생성
+- 예시 질문 5개 — LLM이 인덱스 내용 요약을 보고 "사용자가 자연스럽게 물어볼 만한 5개 질문" 제안
+- Streamlit 채팅 탭 empty state에 카드 + 예시 질문 배지
+- 캐시: 문서 목록 변동 없으면 재계산 안 함
+
+**Phase 3 — 탐색 사이드 패널 (더 나중)**:
+- 답변의 sources heading_path에서 **형제 heading** 추출해 "같은 주제의 다른 절" 링크 제공
+- 구현 규칙 기반 또는 heading 임베딩 유사도
+
+**완료 기준 (Phase 1)**:
+1. `/query` 응답에 `suggestions: list[str]` 항상 포함 (비활성 시 `[]`)
+2. Streamlit 채팅 탭에서 suggestions 배지 3개 렌더, 클릭 시 재질의 작동
+3. JSON 파싱 실패에도 answer는 정상 반환 (graceful degrade)
+4. `SUGGESTIONS_ENABLED=false`로 토글 시 기존 동작 완전 복원 (회귀 0)
+5. LangSmith에 suggestions 생성 기록
+
+**의도적 제외 (Phase 1)**:
+- **빈 채팅 카드, 예시 질문** — Phase 2로
+- **형제 heading 사이드 패널** — Phase 3으로
+- **사용자 클릭률 tracking / 추천 품질 평가 루프** — Phase 2 후 별도
+- **MCP 서버 연동** — `search_docs` tool 응답에는 포함 안 함 (TASK-006 범위와 분리)
+
+**주의사항**:
+- LLM JSON 모드 미지원 모델(일부 GLM 변형)에서는 `response_format` 무시될 수 있음 — `llm_backend=glm`에서 스모크 추가
+- 프롬프트에 "3개 생성"을 명시해도 LLM이 2개나 4개 반환할 수 있음 — 서버에서 `suggestions[:3]` 잘라 보정
+- 답변이 "관련 문서를 찾지 못했습니다." 인 경우 suggestions는 빈 리스트로 강제 (무관한 질문 생성 방지)
+- suggestions 생성은 기존 generate 호출에 통합되어 **추가 LLM 호출 0회**. 토큰만 약간 증가 (응답 +50~100토큰 예상)
+- 한국어 질의에는 한국어 suggestions, 영문에는 영문으로 생성되도록 system prompt에 명시
+
+### ~~TASK-008: 빈 채팅 인덱스 요약 카드 + 예시 질문 (TASK-007 Phase 2)~~ — ✅ 완료 (2026-04-22)
+→ ADR-020, changelog [0.13.0]
+
+**우선순위**: 중 (TASK-007 완료 후)
+**전제**: TASK-007 코드·ADR·changelog 종료 후 착수
+**배경**: 새 사용자가 채팅 창에 들어와도 "뭘 물어야 할지" 모름. 현재 인덱싱된 문서를 자연어로 요약해 첫 화면에 보여주면 온보딩 효과가 큼.
+
+**서브태스크**:
+- [ ] `apps/routers/documents.py`에 `GET /index/overview` 엔드포인트 추가 — 반환: `{doc_count, title_list, top_headings, suggested_questions: [5]}`
+- [ ] 구현: `GET /documents` + 각 문서의 상위 heading 집계(Qdrant scroll로 limit 소량 + heading_path 빈도) + LLM 1회 호출로 예시 질문 5개 생성
+- [ ] **캐싱**: 문서 목록 변동 없으면 인메모리 캐시 (업로드·삭제 시 무효화). LLM 반복 호출 방지
+- [ ] `ui/app.py` 채팅 탭 empty state — `len(messages) == 0`일 때 카드 렌더:
+  - 상단: "이 시스템이 아는 내용" 2~3줄 요약
+  - 중단: 예시 질문 5개 배지 (클릭 시 `st.session_state["_pending_question"]`으로 즉시 질의)
+- [ ] `.env` 토글 `INDEX_OVERVIEW_ENABLED=true|false`
+- [ ] ADR-020 신규
+- [ ] changelog `[0.13.0]`
+
+**완료 기준**:
+1. `/index/overview` 엔드포인트가 캐시된 결과 반환 (재호출 시 LLM 호출 없음)
+2. 빈 채팅에 카드·예시 질문 5개 렌더, 클릭 재질의 정상
+3. 업로드/삭제 후 캐시 무효화 동작
+
+**의도적 제외**: 토픽 클라우드 시각화, 엔티티 그래프, 문서별 자동 요약 카드 — Phase 3 이후
+
+### ~~TASK-009: 디스크 정리 + 긴 청크 누락 제거~~ — ✅ 완료 (2026-04-22)
+→ ADR-021, changelog [0.14.0]
+
+**우선순위**: 저 (작지만 점진 해소)
+**전제**: TASK-008 완료 후
+**배경**: (a) 문서 삭제 시 `data/uploads/`·`data/markdown/` 원본 파일이 정리되지 않아 고아 파일 누적. (b) HybridChunker 결과 5~10%가 임베딩 512토큰 상한 초과 — 일부 내용이 임베딩 경계에서 잘려 검색에 안 잡힘
+
+**서브태스크**:
+- [ ] `apps/routers/documents.py`의 `delete_doc`에 `unlink(missing_ok=True)` 추가 — `data/uploads/{doc_id}.*`, `data/markdown/{doc_id}.md`
+- [ ] 테스트: 업로드 → 삭제 후 해당 doc_id 파일이 전부 사라지는지 확인
+- [ ] `packages/loaders/docling_loader.py`의 `HybridChunker` 인자 조정 — 토큰 기반 max_tokens 옵션 확인·적용 (Docling 버전에 따라 `tokenizer` 설정)
+- [ ] 재인덱싱 후 "Token indices sequence length > 512" 경고가 사라지는지 확인 (0건이 이상적, 1% 이하가 실용선)
+- [ ] TASK-004 벤치 재실행 — Hit@3·faithfulness 회귀 없음 확인
+- [ ] ADR-021 신규 (간단)
+- [ ] changelog `[0.14.0]`
+
+**완료 기준**:
+1. 문서 삭제 후 `data/uploads/`·`data/markdown/` 고아 파일 0건
+2. 재인덱싱 시 토큰 초과 경고 ≤1%
+3. Hit@3 / faithfulness 회귀 0
+
+**주의사항**:
+- 고아 파일 정리는 단순 삭제라 `DELETE` 엔드포인트에서 예외 없이 `missing_ok=True` 사용 — 이미 없으면 조용히 넘김
+- 토큰 상한 조정은 재인덱싱 필요 — TASK-002의 재인덱싱 플로우 재활용 (`pipeline/rebuild_index.py`)
+- max_tokens를 너무 작게 잡으면 청크 수 증가 → latency·비용 증가. 현재 경고 임베딩 모델(1536-d)의 512 토큰 한계에 맞춰 ~480 정도가 안전
+
 - [ ] 
 - [ ] 
 
@@ -219,8 +406,10 @@
 - [ ] 스트리밍 응답
 - [ ] 사용자 피드백 루프
 - [ ] 평가 지표 측정 (Precision@K, Recall@K, MRR)
-- [ ] 인증 (API Key 또는 OAuth)
+- [ ] **인증 (API Key 또는 OAuth)** — 🛑 사용자 지시까지 전부 보류 (2026-04-22 결정, 개인·내부 시스템 단계). 재개 시 "인증·공개배포 묶음"의 일부로 ISSUE-001 + 관리자 UI 2단계와 함께 처리
 - [ ] 대화 요약(summary) 메모리 — 긴 세션 초기 문맥 보존
+- [ ] **Graph RAG (보류)** — 비용·복잡도 높음. 재평가 조건: ① 문서 수 100+, ② 질의 로그에서 multi-hop/cross-document 패턴이 상당 비율로 확인, ③ 경량 대안(엔티티 추출, heading 트리 등)으로도 "적극적 질의" 요구가 충족되지 않을 때. 착수 시 별도 ADR 작성 필수 (인덱싱 비용 $30~120/현재 규모, Neo4j·AGE 중 저장소 선택, incremental 업데이트 전략)
+- [ ] **MCP 서버 익스포트 (철회 후 장기 검토)** — TASK-006에서 철회됨(2026-04-22). Claude Code/Cursor 등 MCP 클라이언트에서 이 RAG를 `search_docs`/`list_docs` tool로 소비하는 통합. 재개 조건: ① 외부 에이전트가 이 지식 베이스를 소비할 구체적 유스케이스 발생, ② 운영 배포 후 stdio가 아닌 HTTP/SSE 모드 필요성 판단. 재개 시 신규 태스크로 정의 (원본 서브태스크는 roadmap의 `~~TASK-006~~` 섹션 참고)
 
 ---
 
@@ -244,3 +433,6 @@
 | TASK-004 평가 프레임워크 (Ragas + 자체 벤치, 기반선 수립, ADR-015) | 2026-04-22 |
 | TASK-002 BGE-M3 임베딩 토글 + A/B (OpenAI 기본 유지, ADR-016) | 2026-04-22 |
 | TASK-005 관리자 UI 1단계 (5개 탭, 청크 미리보기, ADR-017) | 2026-04-22 |
+| TASK-007 Phase 1 — 후속 질문 제안 (LLM JSON 통합, ADR-019) | 2026-04-22 |
+| TASK-008 — 빈 채팅 인덱스 요약 카드 + 예시 질문 (ADR-020) | 2026-04-22 |
+| TASK-009 — DELETE 파일 정리 + HybridChunker 토큰 상한 480 (ADR-021) | 2026-04-22 |

@@ -1,7 +1,7 @@
 # Wiki Index
 
-**마지막 업데이트**: 2026-04-22 (TASK-001~005 완료 + ADR-012~017. 다음 대기: ISSUE-001 + 관리자 UI 2단계)
-**총 페이지 수**: 19
+**마지막 업데이트**: 2026-04-22 (TASK-001~009 완료, ADR-012~021(018 결번), ISSUE-001·002 등록, 인증·공개배포 묶음 보류)
+**총 페이지 수**: 24 (루트 9 + wiki/ 13 + issues/open/ 2)
 
 ---
 
@@ -132,7 +132,8 @@
 
 | ID | 제목 | 상태 | 날짜 |
 |----|------|------|------|
-| [ISSUE-001](wiki/issues/open/ISSUE-001-mobile-file-uploader-no-preview.md) | 모바일 파일 업로더 선택 후 파일명 미표시 | open | 2026-04-22 |
+| [ISSUE-001](wiki/issues/open/ISSUE-001-mobile-file-uploader-no-preview.md) | 모바일 파일 업로더 선택 후 파일명 미표시 | open · 보류 | 2026-04-22 |
+| [ISSUE-002](wiki/issues/open/ISSUE-002-suggestion-badge-click-unresponsive.md) | 후속 질문 배지 두 번째 이후 클릭 무반응 (모바일 특정 의심) | open · 보류 | 2026-04-22 |
 
 ---
 

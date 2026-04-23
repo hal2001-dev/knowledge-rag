@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from apps.config import get_settings
 from apps.dependencies import get_db, get_pipeline
+from apps.routers.documents import invalidate_index_overview_cache
 from apps.schemas.ingest import IngestResponse
 from packages.db.repository import create_document, get_document_by_hash, to_doc_record
 from packages.rag.pipeline import RAGPipeline
@@ -68,6 +69,9 @@ async def ingest(
     except Exception:
         upload_path.unlink(missing_ok=True)
         raise
+
+    # 새 문서 추가로 인덱스 요약 캐시 무효화 (TASK-008)
+    invalidate_index_overview_cache()
 
     return IngestResponse(
         doc_id=doc.doc_id,

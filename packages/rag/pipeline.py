@@ -108,10 +108,13 @@ class RAGPipeline:
             tags=[
                 f"reranker:{self._reranker.backend}",
                 f"llm:{llm_backend}",
+                f"suggestions:{self._settings.suggestions_enabled}",
             ],
             metadata={
                 "reranker_backend": self._reranker.backend,
                 "llm_backend": llm_backend,
+                "suggestions_enabled": self._settings.suggestions_enabled,
+                "suggestions_count": self._settings.suggestions_count,
                 "llm_model": llm_model,
             },
         ):
@@ -129,14 +132,19 @@ class RAGPipeline:
                 "answer": "관련 문서를 찾지 못했습니다.",
                 "sources": [],
                 "latency_ms": int((time.monotonic() - start) * 1000),
+                "suggestions": [],
             }
 
-        answer = generate(
+        gen_result = generate(
             llm=self._llm,
             question=question,
             chunks=chunks,
             history=history,
+            suggestions_enabled=self._settings.suggestions_enabled,
+            suggestions_count=self._settings.suggestions_count,
         )
+        answer = gen_result["answer"]
+        suggestions = gen_result.get("suggestions", [])
         latency_ms = int((time.monotonic() - start) * 1000)
 
         sources = [
@@ -151,5 +159,12 @@ class RAGPipeline:
             for c in chunks
         ]
 
-        logger.info(f"질의 완료: {latency_ms}ms, {len(sources)}개 소스")
-        return {"answer": answer, "sources": sources, "latency_ms": latency_ms}
+        logger.info(
+            f"질의 완료: {latency_ms}ms, {len(sources)}개 소스, suggestions={len(suggestions)}"
+        )
+        return {
+            "answer": answer,
+            "sources": sources,
+            "latency_ms": latency_ms,
+            "suggestions": suggestions,
+        }

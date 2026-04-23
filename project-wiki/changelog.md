@@ -22,6 +22,102 @@
 
 ---
 
+## [0.14.3] - 2026-04-22
+
+### Fixed (0.14.1·0.14.2 수정이 추정 원인을 잘못 짚어 증상 지속 — 진짜 근본 원인 수정)
+- **진짜 원인은 버튼 `key` 불일치**
+  - 라이브 렌더: `live_{len(messages)}_sug_*`
+  - 다음 rerun 히스토리 렌더: `hist_{msg_idx}_sug_*`
+  - 사용자가 라이브에서 클릭했지만 rerun 시 같은 위치 버튼이 다른 key로 재렌더되어 Streamlit widget state가 이벤트 매칭 실패
+- 수정: 두 경로의 key 접두사를 **메시지 인덱스 기반(`msg_{msg_idx}`)으로 통일**
+- 라이브 렌더의 `key_prefix = f"msg_{len(messages) - 1}"` = assistant 메시지 append 직후 인덱스
+- 히스토리 렌더의 `key_prefix = f"msg_{msg_idx}"` = enumerate 인덱스
+- 두 값이 일치 → 라이브 클릭 이벤트가 다음 rerun 히스토리 렌더에서 정상 소비
+
+### Note
+- 0.14.1(st.rerun 제거)과 0.14.2(chat_message 바깥 렌더)는 부작용 방지로 유지되지만 **핵심 원인은 아니었음**. 추적 로그로 남김
+
+---
+
+## [0.14.2] - 2026-04-22
+
+### Fixed (0.14.1 수정이 부분적이라 추가 수정)
+- **배지 두 번째 이후 클릭 무반응 — `st.chat_message` 컨테이너 내부의 버튼으로 잘못 진단**
+- `_render_suggestions()` 호출을 `with st.chat_message(...)` 블록 **바깥**으로 이동 (히스토리·라이브 양쪽)
+- **결과적으로 이 변경만으로는 문제 미해결** — 진짜 원인은 0.14.3에서 발견·수정. 본 변경은 Streamlit 모범 사례에 부합하므로 되돌리지 않음
+
+---
+
+## [0.14.1] - 2026-04-22
+
+### Fixed
+- **후속 질문 배지 두 번째 이후 클릭이 무반응이던 문제** (`ui/app.py`): `_render_suggestions()`와 empty state 예시 질문 배지에서 버튼 클릭 후 **명시적 `st.rerun()` 호출을 제거**. `st.button` 클릭 자체가 rerun을 유발하므로 수동 호출은 중복이며, 두 번째 클릭부터 state 플러시 타이밍이 꼬여 재질의가 트리거되지 않았음
+- **주의**: 이 수정만으로는 부분적 해결. 근본 원인은 0.14.2에서 별도 수정됨 (배지를 `st.chat_message` 바깥으로 이동)
+
+---
+
+## [0.14.0] - 2026-04-22
+
+### Added
+- **DELETE 시 고아 파일 동반 정리** (TASK-009, ADR-021): `data/uploads/{doc_id}.*`, `data/markdown/{doc_id}.md`를 DELETE 엔드포인트가 직접 삭제
+- **HybridChunker 토큰 상한 명시**: `HuggingFaceTokenizer(max_tokens=480)` 지정 → 512토큰 초과 경고 0건. import 실패 시 기본 HybridChunker로 fallback
+
+### Fixed
+- ADR-010으로 원본 파일 영구 보관 후 DELETE가 디스크 정리를 안 해 고아 파일이 누적되던 기술 부채 해소
+- "Token indices sequence length > 512" 경고로 인해 임베딩 경계에서 내용이 잘리던 문제 — 안전 마진 32토큰 포함 480으로 상한 명시
+
+### Verified
+- 업로드→두 파일 생성→DELETE→두 파일 모두 삭제 확인
+- 토큰 경고: `grep -c "Token indices sequence length"` = **0**
+
+---
+
+## [0.13.0] - 2026-04-22
+
+### Added
+- **빈 채팅 인덱스 커버리지 카드** (TASK-008, ADR-020)
+- 신규 엔드포인트 `GET /index/overview` — 문서 목록·상위 heading 집계·LLM 요약·예시 질문 5개를 한 번에 반환 + 인메모리 캐시
+- `IndexOverviewResponse` 스키마, `invalidate_index_overview_cache()` 헬퍼
+- 업로드(`/ingest`)·삭제(`/documents/{id}`) 시 캐시 자동 무효화
+- `.env(.example)` 토글: `INDEX_OVERVIEW_ENABLED=true`
+- Streamlit 채팅 탭 empty state에 "이 시스템이 아는 내용" 카드 + 인덱싱된 문서 리스트 + 예시 질문 5개 배지 (클릭 재질의)
+
+### Verified
+- 1차 호출: 한국어 요약 2~3문장 + 예시 질문 5개 정상 생성
+- 2차 호출: **5ms 캐시 히트** (LLM 호출 0)
+- 업로드/삭제 후 자동 무효화 동작
+
+---
+
+## [0.12.0] - 2026-04-22
+
+### Added
+- **후속 질문 제안** (TASK-007 Phase 1, ADR-019): 답변 후 LLM이 생성한 구체적 후속 질문 3개 배지로 표시, 클릭 시 즉시 재질의
+- `packages/rag/generator.py`: 두 종류 system prompt + JSON 모드(`response_format={"type":"json_object"}`) + 파싱 실패 graceful degrade
+- `apps/schemas/query.py`: `QueryResponse.suggestions: list[str] = []`
+- `apps/config.py`·`.env(.example)`: `SUGGESTIONS_ENABLED`, `SUGGESTIONS_COUNT` 토글
+- LangSmith 트레이스 태그 `suggestions:<bool>` + 메타 `suggestions_enabled/count`
+- `ui/app.py`: `_render_suggestions()` 헬퍼, `_pending_question` 세션 키로 배지 클릭 재질의 플로우. 과거 메시지의 suggestions도 재클릭 가능
+
+### Changed
+- `generate()` 반환: `str` → `dict {"answer": str, "suggestions": list[str]}`
+- `RAGPipeline.query` 반환 dict에 `suggestions` 키 추가
+- 답변 토큰 +50~100 증가 (추가 LLM 호출 0회)
+
+### Verified
+- `SUGGESTIONS_ENABLED=true`: "ROS의 주요 구성요소는?" → 한국어 후속 질문 3개 정상 생성
+- `SUGGESTIONS_ENABLED=false`: suggestions=0, answer 동일 → **회귀 0**
+- 불충분 응답 시 suggestions 빈 리스트 강제
+
+---
+
+## [0.11.0] — 건너뜀
+
+TASK-006 (RAG → MCP 서버 익스포트) 철회(2026-04-22)로 인해 0.11.0 버전은 발행되지 않음.
+원본 큐잉 기록은 `roadmap.md`의 `~~TASK-006~~` 섹션과 `log.md` 2026-04-22 `queue` 항목에 보존.
+
+---
+
 ## [0.10.0] - 2026-04-22
 
 ### Added

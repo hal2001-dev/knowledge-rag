@@ -26,3 +26,4 @@ class QueryResponse(BaseModel):
     answer: str
     sources: list[SourceItem]
     latency_ms: int
+    suggestions: list[str] = []
