@@ -5,6 +5,19 @@
 
 ---
 
+## [2026-04-23] docs | 전체 프로젝트 구조도 신설 — wiki/architecture/structure.md
+
+- 디렉터리별 트리(apps/ packages/ ui/ pipeline/ scripts/ tests/ data/ project-wiki/ .claude/ .streamlit/) + 각 파일의 역할 주석
+- 논리적 계층도: Client → FastAPI → RAGPipeline → loaders/llm/rag/vectorstore → 외부 서비스·DB·파일시스템
+- 런타임 토폴로지: uvicorn + streamlit + docker(Qdrant+Postgres) + 외부(OpenAI·HF·LangSmith)
+- 디렉터리별 역할·의존 방향 원칙 ("packages/는 FastAPI/Streamlit 비의존")
+- 변경 시 동반 갱신 원칙 표 (코드 위치 → 갱신 대상 wiki)
+- 신규 기능 추가 시 권장 경로 8단계 (roadmap → 구현 → ADR → changelog → log → /rag-commit)
+- 알려진 정리 대상: wiki/security.md 중복, Alembic 미도입, placeholder md들
+- index.md Architecture 섹션에 등재 (총 페이지 24 → 25)
+
+---
+
 ## [2026-04-23] docs | PDF 처리 프로세스 정리 + 스캔 PDF OCR 기록 정정
 
 ### 배경

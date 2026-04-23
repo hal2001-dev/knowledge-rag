@@ -1,7 +1,7 @@
 # Wiki Index
 
-**마지막 업데이트**: 2026-04-23 (PDF 처리 프로세스 정리 + 스캔 PDF OCR 기록 정정. 이전 변경: TASK-001~009 완료, ADR-012~021(018 결번), ISSUE-001·002)
-**총 페이지 수**: 24 (루트 9 + wiki/ 13 + issues/open/ 2)
+**마지막 업데이트**: 2026-04-23 (전체 프로젝트 구조도 신설 + PDF 처리 프로세스 + 스캔 PDF OCR 기록 정정)
+**총 페이지 수**: 25 (루트 9 + wiki/ 14 + issues/open/ 2)
 
 ---
 
@@ -32,6 +32,7 @@
 | 페이지 | 설명 | 상태 |
 |--------|------|------|
 | [decisions.md](wiki/architecture/decisions.md) | ADR — 설계 결정 기록 | active |
+| [structure.md](wiki/architecture/structure.md) | 전체 프로젝트 디렉터리 구조 + 논리 계층도 + 런타임 토폴로지 | active |
 | `pipeline.md` _(미작성)_ | RAG 파이프라인 전체 흐름 | - |
 | `stack.md` _(미작성)_ | 기술 스택 및 선택 이유 | - |
 
