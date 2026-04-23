@@ -5,6 +5,17 @@
 
 ---
 
+## [2026-04-23] tool | `/rag-task-start`·`/rag-lint` 로컬 스킬 신설
+
+- 위치: `.claude/skills/rag-task-start.md`, `.claude/skills/rag-lint.md` (로컬 전용, `.gitignore` 대상)
+- **rag-task-start**: 새 TASK 등록 시 다음 TASK/ADR 번호 산출(018 결번 유지), roadmap 실행 큐·overview 다음 할 일·log `queue` 항목을 일관 절차로 동반 갱신. 범위·의도적 제외·완료 기준을 사용자와 합의한 뒤 등록까지만(구현 착수는 별도 턴)
+- **rag-lint**: `/rag-commit` 4단계 lint 스크립트를 단독 호출. 7개 체크(위키링크 잔여·깨진 .md·ADR 정의vs참조·changelog 내림차순·index 페이지 수·index 날짜 정합·overview 날짜 정합) 실패 시 대응 표 안내, 파일 수정은 안 함
+- 트리거: "태스크 등록"·"태스크 착수" / "lint 해줘"·"위키 점검"
+- 반영: `wiki/reviews/patterns.md`에 "로컬 스킬 카탈로그" 섹션 신설 (세 스킬 역할·상호관계·추가 기준 명문화), `wiki/architecture/structure.md`에 skills 디렉터리 확장
+- 배경: TASK-011 완료 시점에 `/rag-commit` 한 스킬만으로는 TASK 등록·중간 lint 절차가 매번 수동 반복되어 누락 여지. 3회 이상 반복 확인된 패턴만 스킬화 원칙(patterns.md에 명시)
+
+---
+
 ## [2026-04-23] impl | TASK-011 완료 — 하이브리드 검색 (ADR-023)
 
 ### 코드

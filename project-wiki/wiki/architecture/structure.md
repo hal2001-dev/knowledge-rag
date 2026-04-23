@@ -139,8 +139,10 @@ knowledge-rag/
 │
 ├── .claude/                           # gitignore (개인 환경)
 │   ├── settings.local.json            # Claude Code 권한 허용 목록
-│   └── skills/
-│       └── rag-commit.md              # 커밋 전 체크리스트 로컬 스킬
+│   └── skills/                        # 로컬 스킬 카탈로그 (wiki/reviews/patterns.md 참조)
+│       ├── rag-commit.md              # 커밋 전 체크리스트 + 메시지 템플릿 + push 분리
+│       ├── rag-task-start.md          # 새 TASK 등록 (번호 산출·큐 갱신·log queue)
+│       └── rag-lint.md                # 위키 정합성 단독 점검 (커밋 없이)
 │
 ├── .streamlit/
 │   └── config.toml                    # maxUploadSize 200MB · XSRF/CORS off (개발)

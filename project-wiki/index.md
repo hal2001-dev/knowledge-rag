@@ -1,6 +1,6 @@
 # Wiki Index
 
-**마지막 업데이트**: 2026-04-23 (TASK-011 완료 — 하이브리드 검색 Qdrant sparse BM25 + dense + RRF, Kiwi 한국어 전처리, ADR-023. 이전: TASK-010 폴더 일괄 색인 CLI)
+**마지막 업데이트**: 2026-04-23 (로컬 스킬 카탈로그 정리 — rag-task-start·rag-lint 신설, patterns.md에 상호관계 문서화. 이전: TASK-011 하이브리드 검색)
 **총 페이지 수**: 25 (루트 9 + wiki/ 14 + issues/open/ 2)
 
 ---
