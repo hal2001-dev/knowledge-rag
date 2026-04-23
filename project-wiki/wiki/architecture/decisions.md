@@ -116,6 +116,8 @@ PDF의 텍스트뿐 아니라 테이블·이미지까지 구조화 추출 필요
 - 파싱 시 `data/markdown/{doc_id}.md`에 전체 문서 저장
 - content_type 메타데이터로 text/table/image 청크 구분
 - Docling 모델 최초 실행 시 다운로드 필요 (약 1~2GB)
+- **스캔 PDF OCR**: Docling의 `PdfPipelineOptions.do_ocr=True` 기본값으로 **자동 처리**됨 (EasyOCR 내장). 텍스트 레이어 있는 PDF는 OCR 건너뛰고 직접 추출, 스캔 PDF는 자동으로 OCR 경로 진입. 전체 E2E 프로세스는 [spec.md PDF 처리 프로세스](../data/spec.md#pdf-처리-프로세스-end-to-end) 참고
+  - 2026-04-23 확인: 위키 초기 기록(spec.md의 "스캔 PDF = OCR 필요·추후 검토", troubleshooting의 "OCR 미지원")은 **추정이었을 뿐 실제 코드는 처음부터 OCR 동작** — 정정 완료
 
 ---
 

@@ -5,6 +5,32 @@
 
 ---
 
+## [2026-04-23] docs | PDF 처리 프로세스 정리 + 스캔 PDF OCR 기록 정정
+
+### 배경
+사용자 질의("OCR 미처리 PDF는 처리 안 되나?")를 통해 **위키 기록이 실제 코드와 어긋남을 확인**:
+- `wiki/data/spec.md`: "스캔 PDF ⚠️ OCR 필요·추후 검토"
+- `wiki/troubleshooting/common.md`: "OCR 전처리 필요 (현재 미지원)"
+- 실제 확인: Docling `PdfPipelineOptions.do_ocr=True` 기본값 → 스캔 PDF 자동 OCR 처리 중 (EasyOCR 내장)
+
+### 정정
+- **spec.md**: 지원 형식 표에서 스캔 PDF 행 ✅ 처리로 변경, 파일 크기 상한 50MB → 200MB 정정. 최상단 상태를 draft → active로
+- **spec.md 신규 섹션 "PDF 처리 프로세스 (End-to-End)"**: Stage 0~6 + 단계별 타이밍·장애 처리 상세 플로우 문서화
+  - Stage 0: 업로드 수신 (중복 감지, 원본 영구 보관)
+  - Stage 1: Docling 파싱 + 자동 OCR 분기 (digital/scanned/mixed)
+  - Stage 2: 마크다운 저장 + 정규화 (재인덱싱 fallback용)
+  - Stage 3: HybridChunker 청킹 (breadcrumb · page_no 복구)
+  - Stage 4: 2차 방어 청킹 (RecursiveCharacterTextSplitter)
+  - Stage 5: 임베딩·Qdrant 저장
+  - Stage 6: PostgreSQL 메타데이터 기록 + 캐시 무효화
+- **troubleshooting/common.md**: "PDF 파싱 결과가 빈 문자열" 항목 전면 재작성 — OCR 미지원 안내 제거, 실제 원인 5개(보안 PDF, 손상, 폰트 임베딩 없음, 흐린 스캔, 워터마크 오버레이) + 해결 단계 명시
+- **ADR-004 결과**에 OCR 자동 처리 보강 + 정정 메모
+
+### 교훈
+위키 초기 기록(2026-04-17~19)이 추정 기반이었음. 코드 실제 동작을 정기적으로 재검증하는 lint 확장 검토 필요 (예: ADR의 "결과" 블록 내용이 코드와 일치하는지 자동 체크)
+
+---
+
 ## [2026-04-23] tool | `/rag-commit` 로컬 스킬 신설
 
 - 위치: `.claude/skills/rag-commit.md` (로컬 전용, `.gitignore` 대상)

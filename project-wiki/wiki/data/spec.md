@@ -1,8 +1,8 @@
 # 데이터 스펙 (Data Spec)
 
-**상태**: draft
-**마지막 업데이트**: 2026-04-22
-**관련 페이지**: `ingestion.md` _(미작성)_, `quality.md` _(미작성)_, [schema.md](schema.md) (DB 구조)
+**상태**: active
+**마지막 업데이트**: 2026-04-23
+**관련 페이지**: `ingestion.md` _(미작성)_, `quality.md` _(미작성)_, [schema.md](schema.md) (DB 구조), [decisions.md](../architecture/decisions.md)
 
 ---
 
@@ -10,8 +10,8 @@
 
 | 형식 | 지원 여부 | 파서 | 비고 |
 |------|-----------|------|------|
-| PDF | ✅ | Docling 2.x | 텍스트·테이블·이미지 추출 |
-| 스캔 PDF (이미지) | ⚠️ | OCR 필요 | 추후 검토 |
+| PDF (디지털·텍스트 레이어) | ✅ | Docling 2.x | 텍스트·테이블·이미지 추출 |
+| PDF (스캔·이미지 기반) | ✅ | Docling 2.x + **EasyOCR 자동** | 2026-04-23 확인. `do_ocr=True` 기본값으로 자동 처리 |
 | DOCX | ✅ | Docling 2.x | 2026-04-19부터 지원 |
 | TXT | ✅ | Docling 2.x | |
 | Markdown | ✅ | Docling 2.x | |
@@ -22,10 +22,74 @@
 
 | 항목 | 제약 |
 |------|------|
-| 최대 파일 크기 | 50MB |
+| 최대 파일 크기 | **200MB** (`MAX_UPLOAD_SIZE_MB`, `.streamlit/config.toml` 동기화) |
 | 최대 페이지 수 | (미정) |
-| 지원 언어 | 한국어, 영어 |
+| 지원 언어 | 한국어, 영어 (OCR은 EasyOCR 기본 모델 지원 범위) |
 | 인코딩 | UTF-8 |
+
+---
+
+## PDF 처리 프로세스 (End-to-End)
+
+업로드된 PDF가 검색 가능한 벡터로 저장되기까지의 단계. 다른 형식(DOCX/TXT/MD)도 거의 동일하나 OCR 분기만 차이.
+
+### Stage 0 — 업로드 수신
+- `POST /ingest` ([apps/routers/ingest.py](../../../apps/routers/ingest.py))
+- 파일 확장자 화이트리스트 검사 (`.pdf/.txt/.md/.docx`)
+- 파일 크기 검사 (`MAX_UPLOAD_SIZE_MB`, 기본 200MB)
+- **SHA-256 해시**로 중복 감지 (L1, ADR-005). 동일 해시 존재 시 `409 Conflict` 반환 (재파싱 생략)
+- 원본 파일은 `data/uploads/{doc_id}{ext}`에 영구 보관 (ADR-010, 재인덱싱 가능)
+
+### Stage 1 — Docling 파싱 (OCR 포함)
+구현: [packages/loaders/docling_loader.py](../../../packages/loaders/docling_loader.py) · `DoclingDocumentLoader.load()`
+
+**자동 OCR 동작** (페이지별로 Docling이 자동 분기):
+
+| 페이지 유형 | 동작 | 속도 |
+|---|---|---|
+| 텍스트 레이어 존재 (digital PDF) | 텍스트 레이어 직접 추출 (OCR 건너뜀) | 빠름 (~수십 ms/페이지) |
+| 스캔·이미지 기반 | EasyOCR로 페이지 이미지 → 텍스트 추출 | 느림 (~1~5초/페이지, 한국어·영어 기본 지원) |
+| 혼합 | 페이지 단위로 자동 결정 | 중간 |
+
+**첫 실행 시**: Docling이 내부 모델(TableFormer, EasyOCR 등)을 HuggingFace Hub에서 다운로드 (~1~2GB). 이후 캐시.
+
+### Stage 2 — 마크다운 저장
+- `ExportType.MARKDOWN`으로 **두 번째 Docling 변환** 실행 → 전체 문서의 마크다운 출력
+- `_normalize_markdown()`으로 정규화 (NFC, 단어 분리 하이픈 복구, 페이지 번호 제거, NBSP/ZWSP 정리, 테이블 행 구조 보존)
+- `data/markdown/{doc_id}.md`로 저장 — 나중에 원본 소실 시 **재인덱싱 fallback** 입력
+
+### Stage 3 — HybridChunker 청킹 (ADR-009, ADR-021)
+- `HuggingFaceTokenizer(model="sentence-transformers/all-MiniLM-L6-v2", max_tokens=480)`
+- `HybridChunker(merge_peers=True, always_emit_headings=True, omit_header_on_overflow=False)`
+- `langchain-docling`의 `DoclingLoader(export_type=DOC_CHUNKS, chunker=...)`로 호출
+
+결과 청크:
+- `content_type`: `text` | `table` | `image` (Docling `doc_items.label` 기반)
+- `heading_path`: 전체 heading 계층 (예: `["Chapter 8","8.5","8.5.3 자율 주행"]`) — **breadcrumb로 본문 앞에 prepend**
+- `page`: `dl_meta.doc_items[*].prov[0].page_no` (스캔 PDF도 페이지 번호 복구됨)
+- 정규화: content는 `_normalize()` 적용 (테이블 청크는 제외하여 구조 보존)
+
+### Stage 4 — 2차 방어 청킹
+- [packages/rag/chunker.py](../../../packages/rag/chunker.py)의 `RecursiveCharacterTextSplitter(chunk_size=2000, overlap=100)`
+- HybridChunker가 2000자 이상의 극단적 청크를 만든 경우에만 동작 (거의 발생 안 함)
+
+### Stage 5 — 임베딩·Qdrant 저장
+- [packages/llm/embeddings.py](../../../packages/llm/embeddings.py) — 기본 OpenAI `text-embedding-3-small` (1536-d). 토글로 BGE-M3(1024-d) 가능 (ADR-016)
+- Qdrant 컬렉션은 임베딩 차원에 따라 자동 생성/검증
+- payload에 `metadata` 전체(`doc_id`, `title`, `source`, `page`, `heading_path`, `content_type`, `dl_meta` 등) 저장
+
+### Stage 6 — PostgreSQL 메타데이터 기록
+- `documents` 테이블에 1행 insert: `doc_id`, `title`, `source`, `file_type`, `content_hash`, `chunk_count`, `has_tables`, `has_images`, `indexed_at`, `status`
+- `invalidate_index_overview_cache()` 호출 → 빈 채팅 카드(ADR-020) 캐시 무효화
+
+### 장애·예외 처리
+- Stage 1~5 중 예외 발생 시 `data/uploads/{doc_id}{ext}`를 `unlink`하고 500 응답 (부분 상태 방지)
+- 이미 등록된 content_hash이면 Stage 0에서 즉시 409 반환, Docling 실행 안 함
+- OCR이 빈 결과를 낼 수 있는 케이스(보안 PDF, 손상된 파일, 비정상 인코딩 PDF 등)는 `chunk_count=0`이나 비정상적으로 작은 값으로 관측됨 → `troubleshooting/common.md` 참고
+
+### 단계별 타이밍 (LangSmith + 서버 로그)
+- `파싱 Xms · 청킹 Yms · 저장 Zms · 총 Wms` 포맷으로 ingest 로그에 기록 (ADR-007, ADR-014)
+- LangSmith의 `rag.ingest` run에 단계 분해 가시성
 
 ---
 

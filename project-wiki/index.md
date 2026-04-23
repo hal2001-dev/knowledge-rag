@@ -1,6 +1,6 @@
 # Wiki Index
 
-**마지막 업데이트**: 2026-04-22 (TASK-001~009 완료, ADR-012~021(018 결번), ISSUE-001·002 등록, 인증·공개배포 묶음 보류)
+**마지막 업데이트**: 2026-04-23 (PDF 처리 프로세스 정리 + 스캔 PDF OCR 기록 정정. 이전 변경: TASK-001~009 완료, ADR-012~021(018 결번), ISSUE-001·002)
 **총 페이지 수**: 24 (루트 9 + wiki/ 13 + issues/open/ 2)
 
 ---
@@ -62,7 +62,7 @@
 
 | 페이지 | 설명 | 상태 |
 |--------|------|------|
-| [spec.md](wiki/data/spec.md) | 입력 문서 스펙, 지원 형식 | draft |
+| [spec.md](wiki/data/spec.md) | 입력 문서 스펙, 지원 형식, PDF 처리 프로세스 | active |
 | [schema.md](wiki/data/schema.md) | PostgreSQL + Qdrant + 파일시스템 DB 구조 | active |
 | `pipeline.md` _(미작성)_ | 데이터 흐름 (수집→전처리→저장) | - |
 | `quality.md` _(미작성)_ | 품질 기준 및 검증 | - |
