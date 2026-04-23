@@ -5,6 +5,54 @@
 
 ---
 
+## [2026-04-23] impl | TASK-010 완료 — 폴더 일괄 색인 CLI (ADR-022)
+
+### 코드
+- `scripts/bulk_ingest.py` 신설 — `Path.rglob` 재귀 탐색, API `POST /ingest` HTTP 호출, L1 중복 감지 활용
+- CLI 옵션: `--dir --recursive/--no-recursive --include --exclude(반복) --title-from --source-prefix --workers --dry-run --fail-fast --api-base --report`
+- `MAX_UPLOAD_SIZE_MB` 초과 파일은 `skipped_too_large`로 분류 (실패 아님)
+- 결과 JSON: `data/eval_runs/bulk_ingest_<ts>.json` — total/ok/duplicate/failed/skipped_too_large + per-file results
+- `tests/integration/test_bulk_ingest.py` — dry-run 기반 6개 케이스 (재귀·no-recursive·exclude·include·없는 폴더·빈 폴더)
+
+### 검증
+- 스모크: 3파일 재귀 업로드 6.8초 / 재실행 전부 409 스킵 0.0초 (progress resume 대체)
+- 통합 테스트 6/6 통과
+- 업로드 후 `/documents` API에서 3건 등록 확인, 정리 후 원복
+
+### 의도적 제외
+- 관리자 UI 버튼·`POST /bulk_ingest` API — 인증 없는 현 단계에서 노출 금지 (인증·공개배포 묶음과 함께 미래 도입)
+- S3/원격 스토리지 — 로컬 파일시스템만
+- 대화형 websocket 진행 표시 — tqdm + LangSmith 트레이스로 충분
+
+### 관련 페이지
+- architecture/decisions.md ADR-022 신규
+- changelog.md [0.15.0]
+- roadmap.md TASK-010 완료 처리, 실행 큐 **전 예정 태스크 완료**
+- overview.md 진행표·최근 결정·다음 할 일
+- wiki/onboarding/setup.md "대량 문서 색인 (TASK-010)" 섹션 추가
+
+### 실행 큐 최종
+```
+✅ TASK-001~010 모두 완료
+🛑 인증·공개배포 묶음 (사용자 지시 대기)
+🔄 장기: Graph RAG, MCP 재개, 하이브리드 검색 등
+```
+
+---
+
+## [2026-04-23] queue | TASK-010 — 폴더 단위 일괄 색인 CLI 스크립트 큐잉
+
+- 배경: 현재 문서 등록은 UI·API·`ingest_sample.py` 모두 1건씩. 폴더 전체 배치 수단 부재
+- 범위: `scripts/bulk_ingest.py` 신설 — **하위 폴더 포함 재귀 탐색**, 확장자 필터, 정규식 exclude, `--dry-run`·`--fail-fast`·`--report` 등
+- 재실행 안전성: L1 중복 감지(SHA-256)·원본 영구 보관·자동 OCR·토큰 상한(TASK-001~009)이 모두 준비되어 폴더 재실행해도 409로 스킵
+- 의도적 제외: 관리자 UI 버튼·`POST /bulk_ingest` API — **인증 없는 현 단계에서 노출 금지**, 인증·공개배포 묶음과 함께 도입
+- 결과 리포트 스키마: `{total, ok, duplicate, failed, results[]}`를 `data/eval_runs/bulk_ingest_<ts>.json`에 저장
+- 주의: 스캔 PDF 섞이면 OCR로 파일당 수 분 소요. 동시 실행 금지(L1 UNIQUE 충돌 가능)
+- 실행 큐: TASK-001~009 ✅ → **TASK-010 (다음)**
+- 반영: roadmap(실행 큐·사용자 경로 표·TASK-010 상세 정의), overview(다음 할 일·사용자 개선점)
+
+---
+
 ## [2026-04-23] docs | 전체 프로젝트 구조도 신설 — wiki/architecture/structure.md
 
 - 디렉터리별 트리(apps/ packages/ ui/ pipeline/ scripts/ tests/ data/ project-wiki/ .claude/ .streamlit/) + 각 파일의 역할 주석

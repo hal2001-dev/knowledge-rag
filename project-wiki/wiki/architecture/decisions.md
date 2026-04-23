@@ -723,3 +723,51 @@ ADR-019로 답변 후 후속 질문은 해결됐지만, **빈 채팅 empty state
 - 480토큰 기준으로 청크 수는 소폭 증가할 수 있음 (같은 heading 하의 병합이 더 빈번하게 경계 넘음). TASK-004 벤치 재실행 시 확인
 - fallback 경로에서는 토큰 경고가 돌아올 수 있으나 `sentence-transformers`가 이미 설치되어 있어 정상 경로 사용됨
 - 백필: 기존 6개 문서의 남은 마크다운·업로드 파일은 없음(재인덱싱 과정에서 이미 정리됨). 필요 시 수동 `find data/ -name "<doc_id>*" -delete`
+
+---
+
+## ADR-022: 대량 색인 — CLI 스크립트 우선, API는 인증·공개배포와 함께 미래 도입
+**날짜**: 2026-04-23
+**상태**: accepted
+**관련**: TASK-010, ADR-005(중복 감지), ADR-010(원본 보관), ADR-017(관리자 UI 1단계)
+
+### 배경
+단일 업로드만 가능한 현재 구조로는 수십~수백 개 문서가 있는 폴더를 등록하기 어렵다. 3가지 선택지가 있었고 **현 시스템의 인증 상태**가 결정을 좌우.
+
+### 선택지
+1. **CLI 스크립트만 (`scripts/bulk_ingest.py`)** — 로컬 전용, 인증 불필요, 기존 `/ingest` HTTP 재활용
+2. 새 API 엔드포인트 `POST /bulk_ingest` + 관리자 UI 버튼 — 원격에서도 트리거 가능, 그러나 **인증 없이 노출 위험**
+3. 현재 UI의 다중 파일 `st.file_uploader(accept_multiple_files=True)` 추가 — 중간 선택지, 대량 업로드 시 브라우저 메모리·네트워크 부담
+
+### 결정
+**옵션 1 단독.** 이유:
+- 인증·공개배포 묶음이 **사용자 지시까지 전부 보류** 상태 (2026-04-22). 무인증 상태에서 대량 업로드 API·UI 버튼 노출은 보안 경계 위반
+- 기존 `POST /ingest`에 L1 중복 감지(ADR-005)·원본 보관(ADR-010)·자동 OCR(ADR-004)·토큰 상한(ADR-021)이 이미 갖춰져 있어 CLI는 얇은 래퍼로 충분
+- 한 번의 스크립트 수정으로 재실행·중복 스킵·리포트를 전부 만족
+
+### 구현
+- `scripts/bulk_ingest.py`
+  - `Path.rglob`로 재귀 탐색 (기본 `--recursive=True`)
+  - 확장자 필터(`--include`), 정규식 exclude(`--exclude`), 제목 자동 생성(`--title-from stem|filename|relpath`), source 접두(`--source-prefix`), `--dry-run`, `--fail-fast`, `--workers`, `--api-base`, `--report`
+  - API `POST /ingest` HTTP로 호출 — 각 파일의 content_hash 계산·중복 감지 서버 로직 일관성 유지
+  - 응답: 200 → ok, 409 → duplicate(스킵, 실패 아님), 기타 → failed
+  - `MAX_UPLOAD_SIZE_MB` 초과 파일은 `skipped_too_large`로 분류
+  - 진행은 tqdm(있으면), 결과 JSON을 `data/eval_runs/bulk_ingest_<ts>.json`에 저장
+- 통합 테스트: `tests/integration/test_bulk_ingest.py` — dry-run 기반 6개 케이스 (재귀·no-recursive·exclude·include·없는 폴더·빈 폴더)
+
+### 결과
+- 스모크: 3개 파일 재귀 업로드 → 6.8초 / 재실행 0.0초(전부 409 스킵)
+- 통합 테스트 6개 통과
+- 재실행 안전성 확보 (progress resume을 L1 중복 감지가 대체)
+
+### 의도적 제외 (현 단계)
+- **관리자 UI 버튼**: 인증 없는 상태에서 노출 금지 — 인증·공개배포 묶음과 함께 재논의
+- **`POST /bulk_ingest` API**: 동일 이유
+- **S3/원격 스토리지**: 로컬 파일시스템만
+- **대화형 진행 표시(websocket)**: tqdm·LangSmith 트레이스로 충분
+
+### 한계 / 후속
+- CLI는 **로컬 또는 같은 LAN 내부**에서만 실행 (`--api-base` 지정 시 네트워크 경유하나 현 시스템은 무인증)
+- 동시 실행 시 같은 파일이 두 프로세스에 걸리면 content_hash UNIQUE 충돌 가능 — 스크립트 단일 실행 원칙
+- 스캔 PDF 섞이면 OCR 자동 실행으로 파일당 수 분 소요 가능 (ADR-004)
+- 인증·공개배포 묶음 재개 시점에 관리자 UI 2단계에 "폴더 경로 입력 → 백그라운드 실행 + 진행 표시" 패턴으로 승격 후보

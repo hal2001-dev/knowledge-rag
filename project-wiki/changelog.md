@@ -22,6 +22,26 @@
 
 ---
 
+## [0.15.0] - 2026-04-23
+
+### Added
+- **폴더 단위 일괄 색인 CLI** (TASK-010, ADR-022): `scripts/bulk_ingest.py` 신설
+- 하위 폴더 포함 재귀 탐색 (`--recursive` 기본 True, `--no-recursive` 토글)
+- 확장자 필터(`--include`), 정규식 제외(`--exclude`), 제목 자동 생성(`--title-from stem|filename|relpath`)
+- `--dry-run`(대상만 미리보기), `--fail-fast`, `--source-prefix`, `--workers`, `--api-base`, `--report`
+- L1 중복 감지(ADR-005) 활용 — 재실행 시 이미 등록된 파일 자동 409 스킵
+- 결과 리포트 JSON → `data/eval_runs/bulk_ingest_<timestamp>.json`
+- `MAX_UPLOAD_SIZE_MB` 초과 파일은 `skipped_too_large`로 집계 (실패 아님)
+- 통합 테스트 `tests/integration/test_bulk_ingest.py` — 6개 케이스
+- `wiki/onboarding/setup.md`에 "대량 문서 색인" 섹션 추가
+
+### 검증
+- 스모크: 재귀 3파일 업로드 6.8초 / 재실행 전부 409 스킵 0.0초
+- 통합 테스트 6/6 통과
+- 관리자 UI 버튼·`POST /bulk_ingest` API는 **인증·공개배포 묶음과 함께 보류** (무인증 노출 금지)
+
+---
+
 ## [0.14.3] - 2026-04-22
 
 ### Fixed (0.14.1·0.14.2 수정이 추정 원인을 잘못 짚어 증상 지속 — 진짜 근본 원인 수정)

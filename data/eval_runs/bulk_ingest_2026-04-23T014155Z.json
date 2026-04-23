@@ -1,0 +1,46 @@
+{
+  "run_id": "2026-04-23T014155Z",
+  "dir": "/private/tmp/bulk_test",
+  "recursive": true,
+  "include": [
+    ".pdf",
+    ".txt",
+    ".md",
+    ".docx"
+  ],
+  "exclude": [
+    "draft_"
+  ],
+  "title_from": "stem",
+  "source_prefix": "",
+  "workers": 1,
+  "api_base": "http://localhost:8000",
+  "total": 3,
+  "ok": 0,
+  "duplicate": 3,
+  "failed": 0,
+  "skipped_too_large": 0,
+  "started_at": "2026-04-23T01:41:55.563575+00:00",
+  "finished_at": "2026-04-23T01:41:55.575014+00:00",
+  "elapsed_sec": 0.01,
+  "results": [
+    {
+      "path": "sub_a/inner.txt",
+      "size_mb": 0.0,
+      "status": "duplicate",
+      "doc_id": "2b2dd1fb-7133-4407-94c8-96786da57f01"
+    },
+    {
+      "path": "sub_b/deep/nested.txt",
+      "size_mb": 0.0,
+      "status": "duplicate",
+      "doc_id": "b1a84728-ac9e-47e2-9d8b-178d1c4db09b"
+    },
+    {
+      "path": "top.txt",
+      "size_mb": 0.0,
+      "status": "duplicate",
+      "doc_id": "012642c8-91dc-4ecb-8686-e3361dea0791"
+    }
+  ]
+}

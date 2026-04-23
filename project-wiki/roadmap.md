@@ -26,7 +26,7 @@
 #### 실행 큐 (확정)
 ```
 ✅ TASK-001 → ✅ TASK-003 → ✅ TASK-004 → ✅ TASK-002 → ✅ TASK-005
-→ ✅ TASK-007 → ✅ TASK-008 → ✅ TASK-009  (모든 예정 태스크 완료)
+→ ✅ TASK-007 → ✅ TASK-008 → ✅ TASK-009 → ✅ TASK-010  (모든 예정 완료)
 → 🛑 인증·공개배포 전체 묶음 (사용자 지시까지 전부 보류, 2026-04-22)
      · ISSUE-001 (모바일 업로드) · 관리자 UI 2단계 · HTTPS 배포 · API 키/OAuth · 관리자 전용 UI 버튼
 → 🔄 장기 검토: Graph RAG, MCP 재개, 하이브리드 검색, 대화 요약, 인증, 스트리밍, L2 중복 감지
@@ -38,6 +38,7 @@
 | TASK-007 | 답변 아래에 "이어서 물을 질문 3개" 자동 배지 — 클릭으로 탐색 연쇄 |
 | TASK-008 | 빈 채팅에 "이 시스템이 아는 내용" 요약 + 예시 질문 5개 |
 | TASK-009 | 문서 삭제 시 디스크까지 완전 정리 + 긴 청크 누락 제거 |
+| **TASK-010** | **폴더 단위 일괄 색인 CLI** — 한 명령으로 수십~수백 개 문서 자동 등록, 중복 건 스킵, 실패 리포트** |
 | (보류) 인증·공개배포 묶음 | 모바일 업로드, HTTPS 외부 접속, 관리자/사용자 경로 분리, 재인덱싱/벤치 버튼 — 사용자 지시까지 전부 보류 |
 
 상세 개선점은 [overview.md](overview.md)의 "예정 태스크 완료 시 사용자 개선점" 섹션 참고.
@@ -383,6 +384,75 @@
 - 토큰 상한 조정은 재인덱싱 필요 — TASK-002의 재인덱싱 플로우 재활용 (`pipeline/rebuild_index.py`)
 - max_tokens를 너무 작게 잡으면 청크 수 증가 → latency·비용 증가. 현재 경고 임베딩 모델(1536-d)의 512 토큰 한계에 맞춰 ~480 정도가 안전
 
+### ~~TASK-010: 폴더 단위 일괄 색인 CLI 스크립트~~ — ✅ 완료 (2026-04-23)
+→ ADR-022, changelog [0.15.0], [setup.md "대량 문서 색인" 섹션](wiki/onboarding/setup.md)
+
+**우선순위**: 중 (대량 문서 등록 시 필수)
+**전제**: TASK-009 완료 (디스크 정리·토큰 상한). 현재 시스템의 중복 감지(ADR-005)·원본 보관(ADR-010)·자동 OCR(ADR-004)·HybridChunker(ADR-009)·토큰 상한(ADR-021)이 모두 준비되어 재실행 안전성 확보됨
+**배경**: 현재 문서 등록 경로는 (a) Streamlit UI 수동 업로드 1건씩, (b) `POST /ingest` API 1건씩, (c) `scripts/ingest_sample.py` 단일 파일 테스트뿐. 수십~수백 개 문서를 폴더 단위로 한 번에 등록할 수단이 없음
+**목표**: 한 명령으로 지정 폴더 내 모든 지원 문서(`.pdf/.txt/.md/.docx`)를 **하위 폴더 포함(재귀)** 순회해 자동 업로드·색인. 중복(L1 SHA-256) 자동 스킵, 실패 리포트 JSON 저장. 재실행 안전
+**범위**: CLI만. 관리자 UI 버튼·API 엔드포인트는 **인증·공개배포 묶음과 함께 보류** (현재 인증 미도입이라 관리자 UI에 무인증 버튼 노출 금지)
+
+**서브태스크**:
+- [ ] `scripts/bulk_ingest.py` 신설
+- [ ] CLI 인자 설계:
+  - `--dir PATH` (필수, 절대·상대 경로)
+  - `--recursive` / `-r` (기본 **True**, 하위 폴더 전부 탐색)
+  - `--no-recursive` (최상위 폴더만)
+  - `--include "*.pdf *.txt *.md *.docx"` (기본 4종)
+  - `--exclude REGEX` (파일 경로 정규식으로 제외, 반복 허용)
+  - `--title-from {filename|relpath|stem}` (기본 `stem` — 확장자 제외 파일명)
+  - `--source-prefix PATH` (선택, source 메타에 붙일 접두 — 예: "acme/docs/")
+  - `--workers N` (기본 1, 순차 처리. 2+ 시 병렬이나 Docling 모델 메모리 주의)
+  - `--dry-run` (실제 업로드 없이 탐색 결과와 중복 예상만 출력)
+  - `--fail-fast` (첫 실패 시 전체 중단. 기본은 스킵 후 계속)
+  - `--report PATH` (기본 `data/eval_runs/bulk_ingest_<timestamp>.json`)
+  - `--api-base URL` (기본 `http://localhost:8000`)
+- [ ] 구현:
+  - `Path(dir).rglob(pattern)` 기반 재귀 탐색, `--exclude` 정규식으로 필터
+  - 진행 표시는 `tqdm`. 각 파일마다 `POST /ingest` 호출 (직접 `pipeline.ingest` 대신 HTTP로 — L1 중복 감지·content_hash 일관성 유지)
+  - 응답 분류: `200 OK` → ok, `409 Conflict` → duplicate (로그만, 실패 아님), 그 외 → failed
+  - 결과 리포트 스키마:
+    ```json
+    {
+      "run_id": "...",
+      "dir": "...", "recursive": true, "include": [...], "exclude": [...],
+      "total": N, "ok": N, "duplicate": N, "failed": N,
+      "results": [
+        {"path": "...", "status": "ok|duplicate|failed",
+         "doc_id": "...", "chunk_count": N, "error": "..."}
+      ],
+      "started_at": "...", "finished_at": "...", "elapsed_sec": N
+    }
+    ```
+- [ ] Docling 모델 프리로드: 첫 파일에서 다운로드 트리거되므로 tqdm에 "첫 파일 오래 걸림" 주석
+- [ ] 대용량 안전장치: 업로드 직전 파일 크기 체크해 `MAX_UPLOAD_SIZE_MB` 초과 시 `skipped_too_large`로 분류
+- [ ] `scripts/` 디렉터리에 사용 예시 README 또는 본 파일 docstring에 2~3 예시
+- [ ] 테스트: `tests/integration/test_bulk_ingest.py` 신규 (임시 디렉터리에 샘플 파일 3개 생성 → 실행 → 결과 JSON 검증)
+- [ ] `wiki/onboarding/setup.md`에 "대량 문서 색인" 섹션 추가 + 실행 명령 예시
+- [ ] ADR 신규 (차기 가용 번호, TASK-010 완료 시 결정) — "대량 색인 전략: CLI 스크립트 우선, API는 인증·공개배포와 함께 미래 도입"
+- [ ] changelog `[0.15.0]`
+
+**완료 기준**:
+1. `python scripts/bulk_ingest.py --dir /path/to/docs` 실행 시 하위 폴더 포함 전 파일 순회·업로드
+2. 중복(409) 응답을 `duplicate`로 집계하고 실패로 처리하지 않음
+3. `--dry-run` 모드가 업로드 전 대상 파일 목록·중복 예상 출력
+4. 결과 JSON 파일이 `data/eval_runs/bulk_ingest_<ts>.json`으로 저장
+5. 한 파일 실패 시 전체 중단되지 않고 다음 파일 계속 (`--fail-fast` 예외)
+
+**의도적 제외**:
+- **관리자 UI 버튼**: 인증 없는 현 단계에서 노출 금지 (인증·공개배포 묶음과 함께 도입)
+- **중복 재검증(L2/L3)**: 기존 L1(SHA-256)으로 충분. L2는 장기 검토
+- **병렬 처리 기본값**: 기본 순차. `--workers` 옵션만 제공해 사용자가 명시적으로 선택
+- **원격 폴더/S3/cloud storage**: 로컬 파일시스템만. 필요 시 별도 태스크
+
+**주의사항**:
+- 스캔 PDF가 섞이면 OCR 자동 실행되어 파일당 수 분~수십 분 소요 가능. 폴더가 크면 **백그라운드로 실행**하고 LangSmith로 진행 모니터링 권장
+- 동시에 여러 `bulk_ingest`를 돌리지 말 것 — 같은 `doc_id` 경쟁, content_hash UNIQUE 충돌 가능
+- 재실행 시 이미 등록된 파일은 409로 스킵되므로 중단 후 재시작 안전 (progress resume 대용)
+- API 서버(`uvicorn`)가 사전에 실행 중이어야 함. Docling·Reranker 모델 워밍업까지 5~60초 소요
+- 스크립트는 **로컬에서만** 실행. 원격 API에 대량 업로드는 네트워크·비용 고려 (`--api-base` 지정 시 인증 필요)
+
 - [ ] 
 - [ ] 
 
@@ -436,3 +506,4 @@
 | TASK-007 Phase 1 — 후속 질문 제안 (LLM JSON 통합, ADR-019) | 2026-04-22 |
 | TASK-008 — 빈 채팅 인덱스 요약 카드 + 예시 질문 (ADR-020) | 2026-04-22 |
 | TASK-009 — DELETE 파일 정리 + HybridChunker 토큰 상한 480 (ADR-021) | 2026-04-22 |
+| TASK-010 — 폴더 단위 일괄 색인 CLI + 재실행 안전성 (ADR-022) | 2026-04-23 |
