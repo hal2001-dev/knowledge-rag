@@ -78,9 +78,9 @@
 
 | 스킬 파일 | 트리거 문구 | 역할 | 호출 시점 |
 |---|---|---|---|
-| `rag-commit.md` | `/rag-commit`, "커밋해줘", "push해줘" | 커밋 전 체크리스트 자동 실행(위 8항목) + 메시지 템플릿 제안 + push 분리 | TASK 완료·위키 단독 수정 직후 |
+| `rag-commit.md` | `/rag-commit`, "커밋해줘", "push해줘" | 커밋 전 체크리스트 자동 실행(8항목 — API 키·**PII 이메일**·`.env`·`data/`·위키 정합성·동반 갱신·메시지 템플릿·push 분리) | TASK 완료·위키 단독 수정 직후 |
 | `rag-task-start.md` | `/rag-task-start`, "태스크 등록", "태스크 착수" | 다음 TASK/ADR 번호 산출, roadmap 실행 큐·overview·log `queue` 동반 갱신, 범위·의도적 제외·완료 기준 합의 | 새 작업 의도 발화 또는 직전 TASK 완료 직후 |
-| `rag-lint.md` | `/rag-lint`, "lint 해줘", "위키 점검" | 커밋 없이 위키 정합성(7항목) 단독 점검. 실패 시 대응 표 안내 | 위키 수정 중간·커밋 직전 예비 점검 |
+| `rag-lint.md` | `/rag-lint`, "lint 해줘", "위키 점검" | 커밋 없이 위키 정합성(8항목 — 위키링크·깨진 링크·ADR 정의vs참조·changelog 순서·index 페이지 수·index·overview 날짜 정합·**PII 이메일 평문 노출**) 단독 점검 | 위키 수정 중간·커밋 직전 예비 점검 |
 
 ### 각 스킬의 상호 관계
 

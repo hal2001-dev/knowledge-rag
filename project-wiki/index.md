@@ -1,6 +1,6 @@
 # Wiki Index
 
-**마지막 업데이트**: 2026-04-23 (TASK-012 큐잉 — Cloudflare Tunnel + Access 외부 노출 게이트웨이, 후순위, 사용자 도메인 이전·착수 지시 대기. 이전: 로컬 스킬 카탈로그 정리)
+**마지막 업데이트**: 2026-04-23 (TASK-013 큐잉 — MkDocs + GitHub Pages 문서 사이트, 후순위 · 위키 PII 제거 + security.md PII 정책 · rag-commit·rag-lint 스킬에 PII 스캔 추가. 이전: TASK-012 큐잉)
 **총 페이지 수**: 25 (루트 9 + wiki/ 14 + issues/open/ 2)
 
 ---

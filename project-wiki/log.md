@@ -5,12 +5,38 @@
 
 ---
 
+## [2026-04-23] queue | TASK-013 — MkDocs Material + GitHub Pages 문서 사이트 큐잉 (후순위)
+
+- 배경: project-wiki/는 5단계 중첩 구조가 정보 조직의 핵심. GitHub Wiki는 flat 전제라 네비게이션 손실 큼. 외부 공개·검색 가능한 경로 필요하지만 현 구조 재작성 없이
+- 결론: **MkDocs Material + GitHub Pages** — `project-wiki/`를 `docs_dir`로 그대로 사용, GitHub Actions로 push 시 자동 빌드·배포
+- 대안 검토: GitHub Wiki(flat 강제·구조 손실·링크 재작성 대량), GitBook/Docusaurus(외부 의존·오버킬) — MkDocs 압승
+- 범위 분리: 에이전트 작업(mkdocs.yml·workflow·링크 호환 점검·rag-lint에 `mkdocs build --strict` 추가·runbook) vs 사용자 작업(GitHub Settings → Pages → Source `gh-pages` branch 활성화, 선택적 커스텀 도메인)
+- 내부 링크: 현재 상대 경로 대부분 MkDocs에서 그대로 동작. `--strict` 빌드로 소수 404 정정
+- 의도적 제외: 위키 구조 flatten, 다국어, Algolia 등 외부 검색, Docusaurus
+- 회귀 전략: mkdocs.yml·workflow 제거 + gh-pages 브랜치 삭제로 3분 내 완전 롤백
+- 실행 큐: TASK-001~011 ✅ → 🕐 TASK-012 (도메인 Cloudflare 이전 후) → **🕐 TASK-013 (후순위)**
+- 반영: roadmap(실행 큐·상세 정의), overview(다음 할 일), log(이 엔트리)
+- ADR: 착수 시 신규 번호 부여
+
+---
+
+## [2026-04-23] tool | `/rag-commit` · `/rag-lint` PII 스캔 확장
+
+- 배경: 2026-04-23 security 작업에서 위키 3곳 실 이메일 노출 발견. 기존 스킬은 API 키만 검출하고 PII는 수동 grep 의존
+- `/rag-commit` 2단계 민감정보 스캔 분리: (2a) API 키 / (2b) **PII(개인 이메일 도메인)** / (2c) `.env` stage
+- `/rag-lint` 체크 8 신설: 위키 전체 .md에서 개인 이메일 도메인(gmail/naver/daum/kakao/hanmail/yahoo/outlook/hotmail/icloud) 패턴 스캔
+- placeholder `HAL2001`, `<admin-email>`, `@users.noreply.github.com`는 정규식 매칭 제외
+- 매치 시 경고(commit)·FAIL(lint) → `security.md` PII 공개 범위 정책에 따라 치환 후 재시도
+- 반영: `.claude/skills/rag-commit.md`, `.claude/skills/rag-lint.md` (저장소 외 로컬)
+
+---
+
 ## [2026-04-23] security | 위키 PII 제거 + security.md 공개 범위 정책 신설
 
 - 스캔 결과: 위키에 실 이메일 3곳 평문 노출(로그 1, 로드맵 2). 전화번호·실명·사설 IP는 없음
 - 조치: 이메일을 `HAL2001` 플레이스홀더로 치환. append-only 예외 — PII 삭제는 log 이전 엔트리 인라인 수정 허용
 - security.md 신설 섹션 "개인정보(PII) 공개 범위 정책" — 금지 위치·허용 위치·플레이스홀더·사고 대응·정기 grep 명령
-- git Author 설정: 앞으로의 커밋부터 `HAL2001 <hal2001@naver.com>` (로컬 저장소 한정, --global 미변경)
+- git Author 설정: 앞으로의 커밋부터 `HAL2001` 명의, 이메일은 로컬 저장소 한정 설정(--global 미변경). 구체 이메일 값은 `git config user.email`로만 확인, 위키에 평문 기록 금지
 - 과거 커밋의 실명/로컬 hostname은 그대로 — 재작성은 파괴적이라 사용자 명시 지시 없이는 보류
 - 반영: security.md, roadmap.md(TASK-012 섹션 2곳), log.md(TASK-012 queue 엔트리 1곳)
 

@@ -28,6 +28,7 @@
 ✅ TASK-001 → ✅ TASK-003 → ✅ TASK-004 → ✅ TASK-002 → ✅ TASK-005
 → ✅ TASK-007 → ✅ TASK-008 → ✅ TASK-009 → ✅ TASK-010 → ✅ TASK-011
 → 🕐 TASK-012 (후순위, 2026-04-23 큐잉) — Cloudflare Tunnel + Access 외부 노출 게이트웨이 (코드 0줄, 운영 문서 중심)
+→ 🕐 TASK-013 (후순위, 2026-04-23 큐잉) — MkDocs Material + GitHub Pages 문서 사이트 (현재 project-wiki/ 구조 유지, CI 자동 배포)
 → 🛑 인증·공개배포 전체 묶음 (사용자 지시까지 전부 보류, 2026-04-22)
      · ISSUE-001 (모바일 업로드) · 관리자 UI 2단계 · HTTPS 배포 · 앱 내 API 키/OAuth · 관리자 전용 UI 버튼
 → 🔄 장기 검토: Graph RAG, MCP 재개, 대화 요약, 스트리밍, L2 중복 감지
@@ -44,6 +45,7 @@
 | **TASK-010** | **폴더 단위 일괄 색인 CLI** — 한 명령으로 수십~수백 개 문서 자동 등록, 중복 건 스킵, 실패 리포트** |
 | TASK-011 | 하이브리드 검색(BM25 + dense + RRF, Kiwi 한국어 전처리) — 정확 용어·숫자 매칭 여력 확보 |
 | (후순위) TASK-012 | Cloudflare Tunnel + Access 외부 노출 게이트웨이 — 이메일 OTP 하나로 외부 테스트 가능, 앱 코드 수정 0 |
+| (후순위) TASK-013 | MkDocs Material + GitHub Pages — 현재 위키 구조를 손대지 않고 정적 사이트·검색·사이드바 확보 |
 | (보류) 인증·공개배포 묶음 | 모바일 업로드, 앱 내 인증, 관리자/사용자 경로 분리, 재인덱싱/벤치 버튼 — 사용자 지시까지 전부 보류 |
 
 상세 개선점은 [overview.md](overview.md)의 "예정 태스크 완료 시 사용자 개선점" 섹션 참고.
@@ -563,6 +565,64 @@ Cloudflare 계정·도메인 소유자 인증·대시보드 GUI가 필요한 작
 - **이메일 OTP 발송 딜레이** — 스팸함 가능성, 최초 로그인 시 확인
 - **도메인 이전 다운타임** — 사용자가 외부 서비스에 해당 도메인 쓰고 있으면 주의. 새 서브도메인 전용 사용 권장
 - **Access 정책 오설정으로 셀프락** — `Everyone` 정책 실수 주의, 테스트 후 `Bypass` 정책은 즉시 제거
+
+---
+
+## TASK-013: MkDocs Material + GitHub Pages 문서 사이트
+
+**상태**: queued (후순위, 2026-04-23 큐잉)
+**우선순위**: 낮음 — 사용자 "착수" 지시 시 진행
+**관련**: 신규 ADR (착수 시 작성·번호 부여 예정)
+
+### 배경
+현재 `project-wiki/`는 **5단계 깊이 중첩 구조**(architecture/·features/·issues/open/·reviews/ …)가 정보 조직의 핵심. GitHub Wiki는 flat 전제라 네비게이션 손실이 큼. 외부 공개·검색 가능한 문서 사이트가 필요하지만 현 구조 재작성 없이 그대로 쓸 수 있는 경로가 요구됨.
+
+### 목표
+`project-wiki/` 디렉터리 **그대로** 정적 사이트로 빌드·배포. 푸시하면 자동 갱신.
+
+### 아키텍처 결정 (초안, 착수 시 신규 ADR로 확정)
+- **MkDocs + Material theme** — 파이썬 생태, 중첩 nav 네이티브, 검색·다크모드·코드 하이라이트 내장
+- **소스**: `project-wiki/` 그대로 사용 (`docs_dir: project-wiki`)
+- **빌드**: GitHub Actions (`mkdocs gh-deploy` 또는 Actions로 `gh-pages` 브랜치 배포)
+- **배포처**: GitHub Pages (public repo, 무료). URL: `https://<user>.github.io/knowledge-rag/`
+- **내부 링크**: 현재 상대 경로 `[x](wiki/architecture/decisions.md)`는 대부분 그대로 동작. 문제 링크만 소폭 조정
+
+### 범위
+- [ ] `mkdocs.yml` 루트에 추가 — `docs_dir`, `site_name`, `nav`(자동 or 수동), Material 플러그인, 검색 한국어 토크나이저(`lunr-languages` 또는 내장 ko)
+- [ ] `.github/workflows/docs.yml` — push 시 `pip install mkdocs-material` → `mkdocs build` → `peaceiris/actions-gh-pages` 로 `gh-pages` 브랜치 push
+- [ ] GitHub 저장소 Settings → Pages → Source: `gh-pages` branch (사용자 대시보드 작업)
+- [ ] 내부 링크 호환성 점검 — `mkdocs build --strict`로 깨진 링크 0 확보
+- [ ] `/rag-lint` 스크립트에 `mkdocs build --strict` 호출 추가(lint 실패로 연결)
+- [ ] `wiki/deployment/runbook.md`에 로컬 미리보기(`mkdocs serve`)·배포 실패 복구 절차
+- [ ] (선택) 커스텀 도메인 — Cloudflare에 도메인 있으면 `docs.<domain>` CNAME으로 연결
+
+### 범위 — 사용자 작업
+- [ ] GitHub Settings → Pages → Source `gh-pages` branch 활성화 (1회, 1분)
+- [ ] (선택) 커스텀 도메인 원하면 Cloudflare DNS에 CNAME 추가
+
+### 의도적 제외
+- **위키 구조 flatten** — 현재 중첩 유지가 전제. 바꿀 일 없음
+- **사설 정보 공개 점검** — security.md PII 정책으로 이미 관리 중, 이 TASK에서 중복 안 함
+- **다국어 사이트** — 현 위키는 한국어 단일
+- **검색 고도화(Algolia 등)** — Material 내장 검색으로 충분
+- **Docusaurus / GitBook / BookStack** — 대안 검토 완료, MkDocs가 현 구조에 최적
+
+### 완료 기준
+- `https://<user>.github.io/knowledge-rag/` 접속 → 사이드바에 architecture/·features/·issues/ 등 중첩 표시
+- 검색창에서 "하이브리드 검색" → ADR-023·changelog 히트
+- main에 push → 1~2분 내 사이트 자동 갱신
+- 내부 링크 404 발생 0, `mkdocs build --strict` 통과
+- 로컬 `mkdocs serve`로 커밋 전 미리보기 가능
+
+### 회귀 전략
+- `mkdocs.yml`·워크플로 파일 제거 + `gh-pages` 브랜치 삭제로 **3분 내 완전 롤백**
+- 사이트가 안 떠도 저장소·위키는 영향 0 (현재 경로 그대로)
+
+### 리스크 체크
+- **링크 형식 차이**로 소수 404 가능 — `--strict` 빌드 실패 시 로그 보고 정정
+- **MkDocs 한국어 검색 인덱싱 품질** — 일부 토큰화 문제 가능, 필요 시 `lunr-languages` 설정 또는 CJK 호환 검색 플러그인 교체
+- **GitHub Actions 무료 시간(2,000분/월)** — 이 용도로는 수 분/월 수준, 여유 충분
+- **Private 저장소 + Pages** — Free 플랜은 public만 가능(현재 public이라 무관). 나중에 private로 바꿀 때 재검토
 
 ---
 
