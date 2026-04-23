@@ -1,7 +1,7 @@
 # 로드맵
 
 **상태**: active
-**마지막 업데이트**: 2026-04-21
+**마지막 업데이트**: 2026-04-23
 **관련 페이지**: [overview.md](overview.md), [features.md](wiki/requirements/features.md)
 
 ---
@@ -26,11 +26,14 @@
 #### 실행 큐 (확정)
 ```
 ✅ TASK-001 → ✅ TASK-003 → ✅ TASK-004 → ✅ TASK-002 → ✅ TASK-005
-→ ✅ TASK-007 → ✅ TASK-008 → ✅ TASK-009 → ✅ TASK-010 → ✅ TASK-011  (모든 예정 완료)
+→ ✅ TASK-007 → ✅ TASK-008 → ✅ TASK-009 → ✅ TASK-010 → ✅ TASK-011
+→ 🕐 TASK-012 (후순위, 2026-04-23 큐잉) — Cloudflare Tunnel + Access 외부 노출 게이트웨이 (코드 0줄, 운영 문서 중심)
 → 🛑 인증·공개배포 전체 묶음 (사용자 지시까지 전부 보류, 2026-04-22)
-     · ISSUE-001 (모바일 업로드) · 관리자 UI 2단계 · HTTPS 배포 · API 키/OAuth · 관리자 전용 UI 버튼
-→ 🔄 장기 검토: Graph RAG, MCP 재개, 대화 요약, 인증, 스트리밍, L2 중복 감지
+     · ISSUE-001 (모바일 업로드) · 관리자 UI 2단계 · HTTPS 배포 · 앱 내 API 키/OAuth · 관리자 전용 UI 버튼
+→ 🔄 장기 검토: Graph RAG, MCP 재개, 대화 요약, 스트리밍, L2 중복 감지
 ```
+
+**TASK-012 주의**: 후순위. 사용자가 도메인을 Cloudflare에 이전하고 착수 지시할 때 진행. 이 작업은 **인증·공개배포 묶음 전체 해제가 아님** — "외부 테스트 접근 게이트" 최소 조각만 꺼낸 것. ISSUE-001·관리자 UI 2단계·앱 내 인증은 계속 보류.
 
 #### 사용자 관점 개선 경로 (요약)
 | 단계 | 완료 시 체감 변화 |
@@ -39,7 +42,9 @@
 | TASK-008 | 빈 채팅에 "이 시스템이 아는 내용" 요약 + 예시 질문 5개 |
 | TASK-009 | 문서 삭제 시 디스크까지 완전 정리 + 긴 청크 누락 제거 |
 | **TASK-010** | **폴더 단위 일괄 색인 CLI** — 한 명령으로 수십~수백 개 문서 자동 등록, 중복 건 스킵, 실패 리포트** |
-| (보류) 인증·공개배포 묶음 | 모바일 업로드, HTTPS 외부 접속, 관리자/사용자 경로 분리, 재인덱싱/벤치 버튼 — 사용자 지시까지 전부 보류 |
+| TASK-011 | 하이브리드 검색(BM25 + dense + RRF, Kiwi 한국어 전처리) — 정확 용어·숫자 매칭 여력 확보 |
+| (후순위) TASK-012 | Cloudflare Tunnel + Access 외부 노출 게이트웨이 — 이메일 OTP 하나로 외부 테스트 가능, 앱 코드 수정 0 |
+| (보류) 인증·공개배포 묶음 | 모바일 업로드, 앱 내 인증, 관리자/사용자 경로 분리, 재인덱싱/벤치 버튼 — 사용자 지시까지 전부 보류 |
 
 상세 개선점은 [overview.md](overview.md)의 "예정 태스크 완료 시 사용자 개선점" 섹션 참고.
 
@@ -480,6 +485,84 @@
 - [ ] 대화 요약(summary) 메모리 — 긴 세션 초기 문맥 보존
 - [ ] **Graph RAG (보류)** — 비용·복잡도 높음. 재평가 조건: ① 문서 수 100+, ② 질의 로그에서 multi-hop/cross-document 패턴이 상당 비율로 확인, ③ 경량 대안(엔티티 추출, heading 트리 등)으로도 "적극적 질의" 요구가 충족되지 않을 때. 착수 시 별도 ADR 작성 필수 (인덱싱 비용 $30~120/현재 규모, Neo4j·AGE 중 저장소 선택, incremental 업데이트 전략)
 - [ ] **MCP 서버 익스포트 (철회 후 장기 검토)** — TASK-006에서 철회됨(2026-04-22). Claude Code/Cursor 등 MCP 클라이언트에서 이 RAG를 `search_docs`/`list_docs` tool로 소비하는 통합. 재개 조건: ① 외부 에이전트가 이 지식 베이스를 소비할 구체적 유스케이스 발생, ② 운영 배포 후 stdio가 아닌 HTTP/SSE 모드 필요성 판단. 재개 시 신규 태스크로 정의 (원본 서브태스크는 roadmap의 `~~TASK-006~~` 섹션 참고)
+
+---
+
+## TASK-012: Cloudflare Tunnel + Access 외부 노출 게이트웨이
+
+**상태**: queued (후순위, 2026-04-23 큐잉)
+**우선순위**: 낮음 — 사용자 "착수" 지시 시 진행
+**착수 전제조건**: 도메인을 Cloudflare 네임서버로 이전 완료 (사용자 개인 작업)
+**관련**: 신규 ADR (착수 시 작성·번호 부여 예정)
+
+### 배경
+외부(사용자 지인·자기 모바일) 에서 RAG 시스템에 접속해 테스트할 채널이 필요. 현재 상태:
+- Streamlit 8501·FastAPI 8000 모두 localhost 바인드, 인증 없음
+- 인증·공개배포 묶음 전체 보류(2026-04-22) 중이라 앱 내 인증 TASK 진행 불가
+- 이 TASK는 "외부 테스트 접근 게이트" 최소 조각만 꺼낸 것. **묶음 전체 해제 아님**
+
+### 목표
+**앱 코드 수정 0**으로 외부 접속·이메일 OTP 인증·HTTPS 종단을 한 번에 해결. 후속으로 필요해지면 Clerk·자체 게이트로 확장 가능한 구조 확보.
+
+### 아키텍처 결정 (초안, 착수 시 신규 ADR로 확정)
+- **Cloudflare Tunnel** — 내 장비에서 아웃바운드 연결만 맺고 inbound 포트 개방 없음. 공격 표면 최소
+- **Cloudflare Access (Zero Trust Free)** — 엣지에서 One-time PIN(이메일 OTP) 인증. 정책: `miru2001@gmail.com` 화이트리스트
+- **노출 포트**: 8501(Streamlit)만. 8000(FastAPI)은 localhost 유지 — Streamlit이 서버 사이드로 호출하므로 외부 노출 불필요
+- **도메인**: 사용자 소유 도메인의 서브도메인(`rag.<domain>`) 사용
+
+### 범위 — 사용자가 직접 해야 할 일 (계정·대시보드 작업)
+
+Cloudflare 계정·도메인 소유자 인증·대시보드 GUI가 필요한 작업은 **사용자만 수행 가능**. 에이전트는 대신 못 한다.
+
+- [ ] **Cloudflare 계정 생성 또는 로그인** ([dash.cloudflare.com](https://dash.cloudflare.com))
+- [ ] **도메인 네임서버 이전** — 현재 도메인 등록기관(가비아·카페24·GoDaddy 등) 관리 페이지에서 네임서버를 Cloudflare가 지정한 2개로 변경. 전파 10분~24시간
+- [ ] **Zero Trust 대시보드 진입** ([one.dash.cloudflare.com](https://one.dash.cloudflare.com)) → 팀 이름 설정 → Free 플랜 선택
+- [ ] **Tunnel 생성** — Networks → Tunnels → Create a tunnel → Cloudflared → 이름 `knowledge-rag` → 설치 명령 복사
+- [ ] 본인 장비에서 `cloudflared service install <token>` 실행 (에이전트가 도울 수 있지만 token은 사용자가 대시보드에서 복사해야 함)
+- [ ] **Public Hostname 추가** — Subdomain `rag`, Domain `<your-domain>`, Service `HTTP` `localhost:8501`
+- [ ] **Access Application 추가** — Access → Applications → Add → Self-hosted → 이름·도메인 입력
+- [ ] **Policy 작성** — Action `Allow`, Include → Emails → `miru2001@gmail.com` (복수면 콤마), Session `24h`, Identity providers에 `One-time PIN` 체크
+- [ ] **외부 기기에서 접속 테스트** — 이메일 OTP 수신·입력 → Streamlit 진입 확인
+- [ ] **미등록 이메일 차단 확인** — 본인 아닌 이메일로 시도 → 거부 화면
+- [ ] (실운영 시) 이메일 화이트리스트 주기적 점검, 이탈한 테스터 제거
+
+### 범위 — 에이전트가 할 일 (코드·문서 작업)
+
+착수 지시 시 에이전트가 `/rag-commit` 절차와 함께 진행:
+
+- [ ] `wiki/deployment/runbook.md` 신규/갱신 — 위 사용자 작업을 재현 가능한 순서로 기록, 스크린샷 경로 placeholder, 문제 발생 시 롤백 절차
+- [ ] `wiki/architecture/decisions.md` — 신규 ADR (착수 시 번호 부여, 결정 내용·대안(Clerk, Auth0) 비교·왜 Access인가·재개 조건)
+- [ ] `project-wiki/changelog.md` — `[0.17.0]` 추가 (코드 변경 없지만 운영 경로 변경은 사용자 가시적)
+- [ ] `wiki/overview.md` — 진행표에 "외부 접근" 상태 갱신, 최근 결정에 신규 ADR, 완료 태스크 표에 TASK-012
+- [ ] (선택) [ui/app.py](ui/app.py) — 사이드바에 `cf-access-authenticated-user-email` 헤더 값 표시 (코드 3~5줄, `AUTH_ENABLED=false`이거나 헤더 부재 시 "로컬" 표기)
+- [ ] `log.md`에 impl 항목 append
+- [ ] `wiki/troubleshooting/common.md` — OTP 미수신·도메인 전파 지연·셀프락 해제 사례 기록
+
+### 의도적 제외 (보류 묶음 유지)
+- 앱 내 패스워드 게이트·Clerk·Auth0 등 **애플리케이션 레이어 인증** — Cloudflare Access로 충분
+- 다중 사용자·역할(admin/guest) 분리
+- FastAPI 8000의 외부 노출·인증
+- ISSUE-001 모바일 업로드 이슈 해소 (별건)
+- 관리자 UI 2단계(백그라운드 재색인·벤치 UI 버튼)
+- 공개 배포·사용자 모집·운영 모니터링 체계
+
+### 완료 기준
+- 외부 네트워크(모바일 4G·타 PC)에서 `https://rag.<domain>`에 접속
+- 미등록 이메일 → 접근 차단
+- 등록 이메일 → OTP 수신·입력 후 Streamlit 정상 이용 (업로드·질의 전부)
+- HTTPS 인증서 유효, 내 장비 inbound 포트 개방 0
+- 재현 문서: runbook만 보고 다른 환경에서 동일 셋업 가능
+
+### 회귀 전략
+- `cloudflared tunnel stop` 한 번으로 외부 노출 즉시 종료
+- Access Policy에서 Allow → Block 한 번이면 모든 접근 차단
+- 앱 코드 건드리지 않으므로 로컬 개발 영향 0
+
+### 리스크 체크
+- **Cloudflare Free 50 MAU 제한** — 개인·소규모 테스트는 여유
+- **이메일 OTP 발송 딜레이** — 스팸함 가능성, 최초 로그인 시 확인
+- **도메인 이전 다운타임** — 사용자가 외부 서비스에 해당 도메인 쓰고 있으면 주의. 새 서브도메인 전용 사용 권장
+- **Access 정책 오설정으로 셀프락** — `Everyone` 정책 실수 주의, 테스트 후 `Bypass` 정책은 즉시 제거
 
 ---
 

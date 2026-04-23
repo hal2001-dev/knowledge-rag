@@ -5,6 +5,23 @@
 
 ---
 
+## [2026-04-23] queue | TASK-012 — Cloudflare Tunnel + Access 외부 노출 게이트웨이 큐잉 (후순위)
+
+- 배경: 외부(모바일·지인 장비)에서 RAG 접속·테스트 필요. 현 상태는 Streamlit 8501·FastAPI 8000 모두 localhost·인증 없음. 인증·공개배포 묶음 전체 보류(2026-04-22) 중이라 앱 내 인증 불가
+- 결론: **앱 코드 0줄** + **Cloudflare Tunnel + Access(이메일 OTP)** 조합으로 "외부 테스트 접근 게이트" 최소 조각만 꺼냄. 묶음 전체 해제 아님
+- 대안 검토: Clerk(150~250줄, React 의존·Streamlit 어색), 자체 bcrypt 게이트(80줄, 이메일 OTP 직접 구현 필요), **Cloudflare Access(0줄·엣지 인증·Tunnel과 같은 대시보드·Free 50 MAU)** — 현 요구에 Access 압승
+- 범위 분리: 사용자 작업(계정·도메인 네임서버 이전·대시보드 셋업·외부 기기 테스트) vs 에이전트 작업(runbook·신규 ADR·changelog·overview·log·선택적 UI 헤더 표기)
+- 노출 포트: **8501만** — Streamlit이 서버사이드로 8000 호출하므로 FastAPI 외부 노출 불필요
+- 이메일 화이트리스트(초기): `miru2001@gmail.com`. One-time PIN, 세션 24h
+- 전제조건: 사용자의 도메인을 Cloudflare 네임서버로 이전 (전파 10분~24h)
+- 의도적 제외: 앱 내 패스워드/Clerk/Auth0, 다중 사용자·역할, FastAPI 외부 노출, ISSUE-001, 관리자 UI 2단계
+- 회귀 전략: `cloudflared tunnel stop` 즉시 차단, Access Policy Allow→Block 즉시 차단, 앱 변경 없어 로컬 영향 0
+- 실행 큐: TASK-001~011 ✅ → **🕐 TASK-012 (후순위, 사용자 도메인 이전·착수 지시 대기)**
+- 반영: roadmap(실행 큐·상세 정의·사용자/에이전트 작업 분리), overview(다음 할 일)
+- ADR: 착수 시 신규 번호 부여 (queue 단계에서는 번호 예약 없음 — `rag-task-start` 스킬 규칙)
+
+---
+
 ## [2026-04-23] tool | `/rag-task-start`·`/rag-lint` 로컬 스킬 신설
 
 - 위치: `.claude/skills/rag-task-start.md`, `.claude/skills/rag-lint.md` (로컬 전용, `.gitignore` 대상)
