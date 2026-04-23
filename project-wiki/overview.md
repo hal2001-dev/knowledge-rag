@@ -1,7 +1,7 @@
 # Project Overview
 
 **상태**: active
-**마지막 업데이트**: 2026-04-22
+**마지막 업데이트**: 2026-04-23
 **관련 페이지**: `pipeline.md` _(미작성)_, `stack.md` _(미작성)_
 
 ---
@@ -20,7 +20,7 @@
 | 청킹 | `done` | HybridChunker + 전체 heading 경로 breadcrumb 주입, 1619→800청크(−51%) |
 | 중복 업로드 방지 (L1) | `done` | SHA-256 파일 해시 기반, 409 응답 |
 | 임베딩 & 벡터 저장 | `done` | OpenAI text-embedding-3-small + Qdrant |
-| 검색 + 재순위 | `done` | Qdrant top-20 → **BGE-reranker-v2-m3** 재순위 top-3 (2026-04-22 채택, ADR-012). 토글로 flashrank 회귀 가능 |
+| 검색 + 재순위 | `done` | **하이브리드**(dense + BM25, RRF) top-20 → **BGE-reranker-v2-m3** 재순위 top-3 (ADR-012, ADR-023). 한국어는 Kiwi 형태소 전처리. `SEARCH_MODE=vector` 토글로 단일 경로 회귀 가능 |
 | LLM 연동 | `done` | gpt-4o-mini, 한국어/영어 자동 감지 |
 | 대화 히스토리 | `done` | Postgres 영속화, 최근 20턴 컨텍스트 주입 |
 | 관측 (LangSmith) | `done` | `rag.ingest`/`rag.query` 트레이스, 세션 태그, 단계별 타이머 |
@@ -36,7 +36,8 @@
 |------|------|-----------|
 | 언어 | Python 3.12.2 | venv 기반 |
 | 문서 파싱 | Docling 2.x | 텍스트·테이블·이미지 지원 |
-| 벡터 DB | Qdrant (Docker) | [decisions.md](wiki/architecture/decisions.md) 참고 |
+| 벡터 DB | Qdrant (Docker, named vectors: dense + sparse) | 하이브리드 검색 — [decisions.md](wiki/architecture/decisions.md) ADR-023 |
+| Sparse Embedding | FastEmbed `Qdrant/bm25` + Kiwi 한국어 토크나이저 | BM25 성분, 한국어 교착어 대응 (ADR-023) |
 | 메타데이터 DB | PostgreSQL (Docker) | SQLAlchemy ORM |
 | 임베딩 모델 | OpenAI text-embedding-3-small (기본) | `EMBEDDING_BACKEND`로 BGE-M3 토글 가능 (ADR-016) |
 | LLM | gpt-4o-mini (기본) | ADR-013 유지 결정. `.env`의 `LLM_BACKEND`로 openai/glm/custom 토글 가능 (ADR-014) |
@@ -60,6 +61,7 @@
 
 > [decisions.md](wiki/architecture/decisions.md) 참고
 
+- **ADR-023 (2026-04-23)**: 하이브리드 검색 도입 — Qdrant 네이티브 sparse(BM25) + dense, RRF 융합. 한국어는 Kiwi로 명사·동사·외국어만 추출해 BM25 적합성 확보. 현 dataset에서 vector와 Hit@3 동률(1.0)이지만 정확 용어·숫자·고유명사 매칭 향상 여력. `SEARCH_MODE=hybrid` 기본, `vector`로 회귀 가능
 - **ADR-022 (2026-04-23)**: 폴더 단위 일괄 색인 CLI(`scripts/bulk_ingest.py`). 재귀 탐색·L1 중복 스킵·결과 JSON 리포트. 관리자 UI 버튼·API는 인증·공개배포 묶음과 함께 미래 도입
 - **ADR-021 (2026-04-22)**: DELETE 고아 파일 정리 + HybridChunker `max_tokens=480` 명시. 토큰 경고 0건, 회귀 0
 - **ADR-020 (2026-04-22)**: 인덱스 커버리지 카드 — `/index/overview` 서버 캐시. 빈 채팅에 "이 시스템이 아는 내용" + 예시 질문 5개. 캐시 히트 5ms
@@ -76,7 +78,7 @@
 
 **실행 원칙**: 순차 진행 (병렬 금지). 앞 태스크의 코드·ADR·changelog·로그까지 종료 후 다음 착수.
 
-### ✅ 완료 (2026-04-22 기준, 5건)
+### ✅ 완료 (2026-04-23 기준)
 
 | # | 제목 | ADR |
 |---|------|-----|
@@ -89,12 +91,13 @@
 | TASK-008 | 빈 채팅 인덱스 요약 카드 + 예시 질문 5개 (`/index/overview` + 캐시) | ADR-020 |
 | TASK-009 | DELETE 고아 파일 정리 + HybridChunker 토큰 상한 480 (경고 0건) | ADR-021 |
 | TASK-010 | 폴더 단위 일괄 색인 CLI (`scripts/bulk_ingest.py`, 재귀·중복 스킵·리포트) | ADR-022 |
+| TASK-011 | 하이브리드 검색 (Qdrant sparse BM25 + dense + RRF, Kiwi 한국어 전처리) | ADR-023 |
 
 ### 🎯 다음 (예정, 순서대로)
 
 | # | 제목 | 범위·상태 |
 |---|------|---|
-| (없음) | 예정 태스크 모두 완료 (TASK-001~010) | 다음 작업은 사용자 지시 대기 |
+| (없음) | 예정 태스크 모두 완료 (TASK-001~011) | 다음 작업은 사용자 지시 대기 |
 
 ### 🛑 보류 (사용자 지시 대기)
 
@@ -108,7 +111,6 @@
 |---|---|---|
 | TASK-006 (RAG → MCP) | 외부 에이전트 유스케이스 부재 | 외부 소비자 확정 / HTTP-SSE 필요성 |
 | Graph RAG | 현 규모($30~120 비용) 대비 이득 불확실 | 문서 100+ / multi-hop 질의 빈발 / 경량 대안 한계 |
-| 하이브리드 검색(BM25+벡터) | 현재 Hit@3=1.0 상한 | 검색 실패 사례 누적 |
 | 대화 요약 메모리 | 현재 20턴 주입으로 충분 | 긴 세션(50+턴) 수요 |
 | 인증(API Key/OAuth) | 로컬·LAN 전용 단계 | 운영 배포 진입 |
 | 스트리밍 응답 | UI 복잡도 증가 대비 체감 작음 | 답변 지연 불만 누적 |
@@ -155,6 +157,18 @@
 | 긴 청크 | 5~10%가 임베딩 512토큰 초과 → 검색에서 일부 내용 누락 | HybridChunker 토큰 상한 조정으로 **누락 제거** |
 
 **사용자 한 줄 가치**: 눈에 안 보이지만 디스크·검색 품질이 조용히 개선.
+
+### TASK-011 완료 시 (하이브리드 검색)
+
+| 항목 | Before | After |
+|---|---|---|
+| 검색 방식 | 벡터 유사도 단일 경로 | **dense + BM25 sparse** 결과를 RRF로 융합 |
+| 정확 용어·숫자·고유명사 | 의미 유사도에 의존 → 철자·버전 번호 취약 | BM25가 **정확 매칭** 보장 (예: "ROS 2.0.3") |
+| 한국어 sparse | 교착어 특성상 일반 BM25 저효율 | Kiwi로 명사·동사·외국어만 추출해 **BM25 적합성 확보** |
+| A/B 회귀 (현 dataset) | — | Hit@3=1.000(vector) → 1.000(hybrid), 회귀 0. latency +74% (허용 범위) |
+| 토글 | — | `SEARCH_MODE=vector`로 **단일 경로 즉시 회귀** 가능 |
+
+**사용자 한 줄 가치**: 정확한 용어·고유명사 질의에도 놓치지 않는 검색 (현 dataset에서는 회귀 0, 장기 dataset 확장 시 이득 가시화).
 
 ### TASK-010 완료 시 (폴더 일괄 색인)
 

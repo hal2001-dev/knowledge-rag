@@ -8,6 +8,7 @@ from packages.llm.embeddings import build_embeddings
 from packages.llm.chat import build_chat
 from packages.rag.pipeline import RAGPipeline
 from packages.rag.reranker import get_reranker
+from packages.rag.sparse import SparseEmbedder
 from packages.vectorstore.qdrant_store import QdrantDocumentStore
 
 
@@ -15,10 +16,17 @@ from packages.vectorstore.qdrant_store import QdrantDocumentStore
 def get_pipeline() -> RAGPipeline:
     settings = get_settings()
     embeddings = build_embeddings(settings)
+    sparse = (
+        SparseEmbedder(model_name=settings.sparse_model_name)
+        if settings.search_mode == "hybrid"
+        else None
+    )
     store = QdrantDocumentStore(
         url=settings.qdrant_url,
         collection=settings.qdrant_collection,
         embeddings=embeddings,
+        search_mode=settings.search_mode,
+        sparse_embedder=sparse,
     )
     llm = build_chat(settings)
     reranker = get_reranker(

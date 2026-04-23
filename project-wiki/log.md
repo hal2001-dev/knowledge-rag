@@ -5,6 +5,41 @@
 
 ---
 
+## [2026-04-23] impl | TASK-011 완료 — 하이브리드 검색 (ADR-023)
+
+### 코드
+- `packages/rag/sparse.py` 신설 — FastEmbed `Qdrant/bm25` + Kiwi 한국어 전처리 (`SparseEmbedder`, `preprocess()`, 싱글턴 캐시)
+- `packages/vectorstore/qdrant_store.py` 재작성 — `search_mode` 분기, named vectors(dense/sparse), `_ensure_collection` 구조 검증, hybrid 경로는 raw `PointStruct`·`SparseVector`·`client.query_points(prefetch=..., query=FusionQuery(fusion=RRF))`로 직접 호출
+- `apps/config.py` — `search_mode`, `sparse_model_name` 설정 추가
+- `apps/dependencies.py`, `pipeline/rebuild_index.py`, `scripts/bench_retrieval.py`, `scripts/bench_answers.py` — `SparseEmbedder` 주입
+- `.env`, `.env.example`, `requirements.txt`(fastembed≥0.4, kiwipiepy≥0.17) 반영
+
+### 검증
+- Phase 1 벤치(vector vs hybrid, BGE-reranker, dataset 12건): **Hit@3=1.000 동률**, P@3=1.000, Recall@3=0.944, MRR=1.000
+- latency: vector 579ms → hybrid 1008ms (+74%, 허용 범위)
+- Phase 2 Ragas 벤치는 LLM/reranker 경로 미변경이라 생략 (긴 실행 시간 대비 이득 불확실)
+- 한국어 질의 Kiwi 전처리 수기 확인: 명사·동사·외국어·숫자만 추출, 조사/어미 제거
+
+### 의도적 제외
+- Phase 2 Ragas 재측정 — 생성 경로 동일 (사용자 요청으로 조기 종료)
+- hybrid 모드에서 `as_retriever()` LangChain 호환 — `NotImplementedError`로 명시, 현재 경로는 `retrieve()`만 사용
+- 실시간 mode 전환 — 컬렉션 구조 차이(unnamed vs named vectors)로 **재인덱싱 필수**
+
+### 관련 페이지
+- architecture/decisions.md ADR-023 신규 (하이브리드 검색 도입, A/B 결과, follow-ups)
+- changelog.md [0.16.0]
+- roadmap.md 실행 큐 ✅ TASK-011 추가, 장기 리뷰에서 "하이브리드 검색" 제거
+- overview.md 진행표·기술 스택(sparse embedding 추가)·최근 결정·완료 태스크·사용자 개선점
+
+### 실행 큐 최종
+```
+✅ TASK-001~011 모두 완료
+🛑 인증·공개배포 묶음 (사용자 지시 대기)
+🔄 장기: Graph RAG, MCP 재개, 대화 요약 메모리 등
+```
+
+---
+
 ## [2026-04-23] impl | TASK-010 완료 — 폴더 일괄 색인 CLI (ADR-022)
 
 ### 코드

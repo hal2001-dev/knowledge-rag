@@ -771,3 +771,64 @@ ADR-019로 답변 후 후속 질문은 해결됐지만, **빈 채팅 empty state
 - 동시 실행 시 같은 파일이 두 프로세스에 걸리면 content_hash UNIQUE 충돌 가능 — 스크립트 단일 실행 원칙
 - 스캔 PDF 섞이면 OCR 자동 실행으로 파일당 수 분 소요 가능 (ADR-004)
 - 인증·공개배포 묶음 재개 시점에 관리자 UI 2단계에 "폴더 경로 입력 → 백그라운드 실행 + 진행 표시" 패턴으로 승격 후보
+
+---
+
+## ADR-023: 하이브리드 검색 — Qdrant 네이티브 sparse(BM25) + dense + RRF 병합
+**날짜**: 2026-04-23
+**상태**: accepted
+**관련**: TASK-011, ADR-012(reranker), ADR-016(embedding)
+
+### 배경
+벡터 유사도만으로는 **정확 키워드 매칭**(고유명사·숫자·버전·약어)이 약함. 한국어 고유명사나 "ROS 2.0.3" 같은 질의가 임베딩 공간에서 희석돼 놓치는 케이스가 실제로 관측 가능. BM25 같은 전통 키워드 검색이 이런 질의에는 강함. 두 경로를 병렬 실행 후 Reciprocal Rank Fusion으로 병합하면 서로의 약점 보완.
+
+### 선택지
+1. **Qdrant 네이티브 sparse vectors + Query API `FusionQuery.RRF`** — Qdrant 1.9+가 제공. 별도 저장소 없이 같은 컬렉션에 named vector(dense+sparse)로 저장
+2. 별도 BM25 엔진(`rank_bm25` in-memory / Elasticsearch / OpenSearch) + 클라이언트 측 RRF — 인프라 추가, 동기화 필요
+3. 현 상태 유지 — 품질 지표 이미 상한이라 투자 ROI 낮다고 판단 가능
+
+### 결정
+**옵션 1.** Qdrant가 이미 Docker로 운영 중이고 sparse vector + Query API + RRF를 네이티브 지원(qdrant-client 1.17.1에서 확인). 별도 인프라 없고 재인덱싱만으로 전환 가능.
+
+### 구현
+- **Sparse embedder** (`packages/rag/sparse.py`):
+  - `fastembed.SparseTextEmbedding(model_name="Qdrant/bm25")`로 BM25 sparse vector 생성
+  - 한국어는 **Kiwi 형태소 분석**으로 명사·동사·외국어·숫자·한자·어근만 추려 공백 조인 후 BM25에 투입 (영어는 전처리 없이)
+  - `_has_korean()` 체크로 언어 자동 분기, 프로세스 전역 싱글톤(Kiwi·BM25 모델 로드 1회)
+- **`QdrantDocumentStore`** 재작성:
+  - 생성자에 `search_mode ∈ {"vector","hybrid"}`, `sparse_embedder` 받음
+  - `vector` 모드: 기존 unnamed `VectorParams` + `langchain_qdrant.QdrantVectorStore` 경로 유지
+  - `hybrid` 모드: named vectors (`dense`, `sparse`) 컬렉션 생성. `add_documents`는 raw `PointStruct`로 dense·sparse 동시 upsert. 검색은 `client.query_points`에 `prefetch=[dense, sparse]` + `FusionQuery(fusion=Fusion.RRF)`
+  - 컬렉션 구조 불일치 시 `CollectionDimensionMismatch` 예외로 재인덱싱 강제
+- **설정·토글** (`.env`, `apps/config.py`): `SEARCH_MODE=vector|hybrid`, `SPARSE_MODEL_NAME=Qdrant/bm25`
+- **DI·rebuild·bench**: `apps/dependencies.py`, `pipeline/rebuild_index.py`, `scripts/bench_retrieval.py`, `scripts/bench_answers.py` 모두 `settings.search_mode` 기반으로 `SparseEmbedder` 주입
+- **재인덱싱**: 기존 컬렉션은 unnamed vector 구조라 hybrid로 전환하려면 삭제·재생성 필요. `pipeline/rebuild_index.py`가 컬렉션 삭제 후 재구성
+
+### 결과 (2026-04-23 재인덱싱 후)
+**재인덱싱**: 6개 문서 → 1209 하이브리드 포인트 저장 (각 포인트에 dense 1536-d + sparse BM25 named vectors)
+
+**Phase 1 벤치 비교** (TASK-004 프레임워크, 12 질의, reranker=bge-m3):
+
+| 지표 | vector (ADR-015 기반선, 2026-04-22) | hybrid (2026-04-23) | Δ |
+|------|------|------|---|
+| Hit@3 | 1.000 | 1.000 | = |
+| Precision@3 | 1.000 | 1.000 | = |
+| Recall@3 | 0.944 | 0.944 | = |
+| MRR | 1.000 | 1.000 | = |
+| 평균 지연 | 580ms | **1008ms** | +74% (sparse 인코딩 비용) |
+
+**Phase 2**: 동일 LLM·reranker 경로라 회귀 가능성이 낮아 본 TASK에서 생략. 추후 dataset이 확장되거나 키워드 실패 사례가 관찰되면 재실행 의무화
+
+### 관찰·한계
+- 현재 dataset(12 질의)은 기반선이 이미 상한(Hit@3=1.0)이라 **하이브리드의 이득이 드러나지 않음**. 이득은 dataset이 다양해지고 "정확 매칭" 질의가 추가돼야 관찰됨
+- **지연 증가 +74%** (580ms → 1008ms): sparse vector 인코딩 + Qdrant 두 검색 병렬 수행. reranker warm-up·FastEmbed 모델 로드 오버헤드 포함
+- Kiwi가 한국어만 전처리 — 일본어·중국어 문서 추가 시 별도 토크나이저 필요
+- Qdrant의 Fusion.RRF는 `k=60` 상수로 내부 계산 (튜닝 불가). 필요 시 클라이언트 측 재구현 가능
+
+### 기본값
+`SEARCH_MODE=hybrid`로 적용. 이득은 dataset 의존이지만 회귀 0 확인됐고 장기적 확장성이 우수. vector 단독으로 회귀하려면 토글 + 재인덱싱 필요 (컬렉션 구조 다름)
+
+### 후속
+- TASK-011 이후 "정확 매칭 요구가 강한 질의" 10~20개 dataset에 추가 → hybrid 이득을 정량 증명
+- 하이브리드 전용 Ragas 벤치 재실행 (시간 여유 있을 때)
+- 다국어 토크나이저 확장 (일본어 MeCab, 중국어 jieba 등 — 현재 dataset에 없어 보류)

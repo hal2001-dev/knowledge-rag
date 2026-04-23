@@ -31,6 +31,10 @@ tiktoken
 flashrank
 sentence-transformers>=3.0  # BGE-reranker-v2-m3 multilingual cross-encoder
 
+# Hybrid search (TASK-011) — BM25 sparse + Kiwi 한국어 토크나이저
+fastembed>=0.4
+kiwipiepy>=0.17
+
 # UI
 streamlit
 

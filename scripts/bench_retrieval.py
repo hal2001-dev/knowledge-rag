@@ -64,10 +64,16 @@ def score_one(retrieved_doc_ids: list[str], expected_doc_ids: set[str], k: int) 
 
 def run_backend(backend: str, dataset: list[dict], k: int, initial_k: int, settings) -> dict:
     emb = build_embeddings(settings)
+    sparse = None
+    if settings.search_mode == "hybrid":
+        from packages.rag.sparse import SparseEmbedder
+        sparse = SparseEmbedder(model_name=settings.sparse_model_name)
     store = QdrantDocumentStore(
         url=settings.qdrant_url,
         collection=settings.qdrant_collection,
         embeddings=emb,
+        search_mode=settings.search_mode,
+        sparse_embedder=sparse,
     )
     reranker = get_reranker(backend=backend)
     # warm-up

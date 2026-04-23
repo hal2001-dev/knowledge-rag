@@ -45,10 +45,16 @@ def load_dataset(path: Path) -> list[dict]:
 def _build_stack(settings):
     """retrieve를 직접 호출할 수 있도록 store·llm·reranker만 반환 (pipeline 우회)."""
     emb = build_embeddings(settings)
+    sparse = None
+    if settings.search_mode == "hybrid":
+        from packages.rag.sparse import SparseEmbedder
+        sparse = SparseEmbedder(model_name=settings.sparse_model_name)
     store = QdrantDocumentStore(
         url=settings.qdrant_url,
         collection=settings.qdrant_collection,
         embeddings=emb,
+        search_mode=settings.search_mode,
+        sparse_embedder=sparse,
     )
     llm = build_chat(settings)
     reranker = get_reranker(backend=settings.reranker_backend)

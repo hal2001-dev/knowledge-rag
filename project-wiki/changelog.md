@@ -22,6 +22,28 @@
 
 ---
 
+## [0.16.0] - 2026-04-23
+
+### Added
+- **하이브리드 검색** (TASK-011, ADR-023): Qdrant 네이티브 sparse vectors(BM25) + dense + RRF 병합
+- `packages/rag/sparse.py` — `SparseEmbedder` + Kiwi 한국어 형태소 전처리 (명사·동사·외국어·숫자·한자·어근 추출)
+- `packages/vectorstore/qdrant_store.py` 재작성 — `search_mode` 토글, named vectors 컬렉션, `query_points` + `FusionQuery.RRF`
+- `.env` 토글: `SEARCH_MODE=vector|hybrid`, `SPARSE_MODEL_NAME=Qdrant/bm25`
+- DI·rebuild·bench 스크립트 모두 hybrid 지원
+- 의존성 `fastembed>=0.4`, `kiwipiepy>=0.17`
+
+### Changed
+- 기본값 `SEARCH_MODE=hybrid` — 회귀 0 확인 후 적용
+- 재인덱싱 완료 (6 문서 → 1209 포인트, dense+sparse named vectors)
+
+### 검증
+- Phase 1 A/B (vector 2026-04-22 기반선 ↔ hybrid 2026-04-23):
+  - Hit@3 1.000 ↔ 1.000, MRR 1.000 ↔ 1.000, Recall@3 0.944 ↔ 0.944 (동률, 이미 상한)
+  - 평균 지연 580ms ↔ 1008ms (+74%, sparse 인코딩 + 병렬 검색 비용)
+- 현 dataset(12 질의)은 벡터 단독으로 상한이라 hybrid 이득이 드러나지 않음. "정확 매칭" 질의 추가 시 이득 예상
+
+---
+
 ## [0.15.0] - 2026-04-23
 
 ### Added

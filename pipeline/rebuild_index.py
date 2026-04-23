@@ -26,6 +26,7 @@ from packages.llm.chat import build_chat
 from packages.vectorstore.qdrant_store import QdrantDocumentStore
 from packages.rag.pipeline import RAGPipeline
 from packages.rag.reranker import get_reranker
+from packages.rag.sparse import SparseEmbedder
 from sqlalchemy.orm import sessionmaker
 
 
@@ -57,7 +58,19 @@ def main():
         client.delete_collection(settings.qdrant_collection)
         print(f"기존 컬렉션 삭제: {settings.qdrant_collection}")
 
-    store = QdrantDocumentStore(settings.qdrant_url, settings.qdrant_collection, embeddings)
+    sparse = (
+        SparseEmbedder(model_name=settings.sparse_model_name)
+        if settings.search_mode == "hybrid"
+        else None
+    )
+    store = QdrantDocumentStore(
+        url=settings.qdrant_url,
+        collection=settings.qdrant_collection,
+        embeddings=embeddings,
+        search_mode=settings.search_mode,
+        sparse_embedder=sparse,
+    )
+    print(f"search_mode: {settings.search_mode}")
     llm = build_chat(settings)
     reranker = get_reranker(backend=settings.reranker_backend)
     pipeline = RAGPipeline(store=store, llm=llm, reranker=reranker, settings=settings)

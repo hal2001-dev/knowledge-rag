@@ -47,6 +47,10 @@ class Settings(BaseSettings):
     # 인덱스 커버리지 카드 (TASK-008, ADR-020 예정)
     index_overview_enabled: bool = True
 
+    # 검색 모드 (TASK-011, ADR-023) — vector | hybrid
+    search_mode: str = "vector"
+    sparse_model_name: str = "Qdrant/bm25"
+
     # Reranker — flashrank(영어) | bge-m3(다국어)
     reranker_backend: str = "flashrank"
     reranker_model_name: str = ""  # 빈 값이면 각 백엔드 기본 모델 사용
