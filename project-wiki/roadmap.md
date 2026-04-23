@@ -506,7 +506,7 @@
 
 ### 아키텍처 결정 (초안, 착수 시 신규 ADR로 확정)
 - **Cloudflare Tunnel** — 내 장비에서 아웃바운드 연결만 맺고 inbound 포트 개방 없음. 공격 표면 최소
-- **Cloudflare Access (Zero Trust Free)** — 엣지에서 One-time PIN(이메일 OTP) 인증. 정책: `miru2001@gmail.com` 화이트리스트
+- **Cloudflare Access (Zero Trust Free)** — 엣지에서 One-time PIN(이메일 OTP) 인증. 정책: `HAL2001` 화이트리스트 (실 이메일은 Cloudflare 대시보드에만 저장)
 - **노출 포트**: 8501(Streamlit)만. 8000(FastAPI)은 localhost 유지 — Streamlit이 서버 사이드로 호출하므로 외부 노출 불필요
 - **도메인**: 사용자 소유 도메인의 서브도메인(`rag.<domain>`) 사용
 
@@ -521,7 +521,7 @@ Cloudflare 계정·도메인 소유자 인증·대시보드 GUI가 필요한 작
 - [ ] 본인 장비에서 `cloudflared service install <token>` 실행 (에이전트가 도울 수 있지만 token은 사용자가 대시보드에서 복사해야 함)
 - [ ] **Public Hostname 추가** — Subdomain `rag`, Domain `<your-domain>`, Service `HTTP` `localhost:8501`
 - [ ] **Access Application 추가** — Access → Applications → Add → Self-hosted → 이름·도메인 입력
-- [ ] **Policy 작성** — Action `Allow`, Include → Emails → `miru2001@gmail.com` (복수면 콤마), Session `24h`, Identity providers에 `One-time PIN` 체크
+- [ ] **Policy 작성** — Action `Allow`, Include → Emails → `HAL2001`의 실 이메일 (여러 명이면 콤마), Session `24h`, Identity providers에 `One-time PIN` 체크. **실 이메일 주소는 위키·커밋 메시지에 평문 기록 금지**, Cloudflare 대시보드에만 저장
 - [ ] **외부 기기에서 접속 테스트** — 이메일 OTP 수신·입력 → Streamlit 진입 확인
 - [ ] **미등록 이메일 차단 확인** — 본인 아닌 이메일로 시도 → 거부 화면
 - [ ] (실운영 시) 이메일 화이트리스트 주기적 점검, 이탈한 테스터 제거

@@ -1,7 +1,7 @@
 # 보안 (Security)
 
 **상태**: active
-**마지막 업데이트**: 2026-04-21
+**마지막 업데이트**: 2026-04-23
 **관련 페이지**: `environments.md` _(미작성)_, [setup.md](wiki/onboarding/setup.md)
 
 ---
@@ -21,6 +21,31 @@
 | LangSmith API Key | 트레이스 업로드 | `LANGCHAIN_API_KEY` | .env (로컬), Secret Manager (운영) |
 
 **사고 대응**: 키가 채팅·PR·로그에 평문 노출된 경우 **즉시 발급처에서 revoke하고 새 키 발급**. LangSmith는 https://smith.langchain.com → Settings → API Keys 에서 삭제.
+
+---
+
+## 개인정보(PII) 공개 범위 정책 — 2026-04-23 추가
+
+공개 저장소이므로 아래 항목은 **위키·커밋 메시지·코드 주석·PR 본문·changelog 어디에도 평문 금지**.
+
+| 항목 | 금지 위치 | 허용 위치 | 플레이스홀더 |
+|---|---|---|---|
+| 실 이메일 (OAuth·알림·ACL 대상) | 위키·커밋·코드·로그 | `.env`(gitignore), Cloudflare Zero Trust 대시보드 | `HAL2001`, `<admin-email>` |
+| 실명(한국어/영어) | 위키·커밋 본문·Author 필드 노출 주의 | 로컬 시스템 계정명만 | `HAL2001` |
+| 전화번호·주소·생년월일 | 전부 | (사용 금지) | — |
+| 내부 IP·사설 도메인 | 위키 본문 | 내부 문서 전용(별도 저장소) | `<internal-host>` |
+
+### 사고 발생 시
+1. 즉시 대응: 해당 커밋·파일에서 평문 제거 + 재커밋
+2. 이미 push된 경우: 정보 성격에 따라 ① 그대로 두고 관련 계정/시스템 교체(이메일·키 등), ② `git filter-repo`로 히스토리 재작성 + force push(파괴적, 사용자 명시 지시 후)
+3. 위키 `log.md`에 `[YYYY-MM-DD] incident` 엔트리 기록
+
+### 평상시 점검
+`/rag-lint` 확장 또는 수동 grep:
+```
+grep -rniE "miru2001|@gmail\.com|@naver|010-[0-9]{4}|실제이름패턴" project-wiki/
+```
+TASK-012(Cloudflare Access) 착수 시 실 이메일을 Cloudflare 대시보드에만 입력하고 위키는 `HAL2001` 플레이스홀더 유지.
 
 ### .env 파일 예시 (`.env.example` 으로 커밋)
 ```

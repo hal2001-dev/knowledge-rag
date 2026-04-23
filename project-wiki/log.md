@@ -5,6 +5,17 @@
 
 ---
 
+## [2026-04-23] security | 위키 PII 제거 + security.md 공개 범위 정책 신설
+
+- 스캔 결과: 위키에 실 이메일 3곳 평문 노출(로그 1, 로드맵 2). 전화번호·실명·사설 IP는 없음
+- 조치: 이메일을 `HAL2001` 플레이스홀더로 치환. append-only 예외 — PII 삭제는 log 이전 엔트리 인라인 수정 허용
+- security.md 신설 섹션 "개인정보(PII) 공개 범위 정책" — 금지 위치·허용 위치·플레이스홀더·사고 대응·정기 grep 명령
+- git Author 설정: 앞으로의 커밋부터 `HAL2001 <hal2001@naver.com>` (로컬 저장소 한정, --global 미변경)
+- 과거 커밋의 실명/로컬 hostname은 그대로 — 재작성은 파괴적이라 사용자 명시 지시 없이는 보류
+- 반영: security.md, roadmap.md(TASK-012 섹션 2곳), log.md(TASK-012 queue 엔트리 1곳)
+
+---
+
 ## [2026-04-23] queue | TASK-012 — Cloudflare Tunnel + Access 외부 노출 게이트웨이 큐잉 (후순위)
 
 - 배경: 외부(모바일·지인 장비)에서 RAG 접속·테스트 필요. 현 상태는 Streamlit 8501·FastAPI 8000 모두 localhost·인증 없음. 인증·공개배포 묶음 전체 보류(2026-04-22) 중이라 앱 내 인증 불가
@@ -12,7 +23,7 @@
 - 대안 검토: Clerk(150~250줄, React 의존·Streamlit 어색), 자체 bcrypt 게이트(80줄, 이메일 OTP 직접 구현 필요), **Cloudflare Access(0줄·엣지 인증·Tunnel과 같은 대시보드·Free 50 MAU)** — 현 요구에 Access 압승
 - 범위 분리: 사용자 작업(계정·도메인 네임서버 이전·대시보드 셋업·외부 기기 테스트) vs 에이전트 작업(runbook·신규 ADR·changelog·overview·log·선택적 UI 헤더 표기)
 - 노출 포트: **8501만** — Streamlit이 서버사이드로 8000 호출하므로 FastAPI 외부 노출 불필요
-- 이메일 화이트리스트(초기): `miru2001@gmail.com`. One-time PIN, 세션 24h
+- 이메일 화이트리스트(초기): `HAL2001` (실 이메일은 `.env` 또는 Cloudflare 대시보드에만 저장, 위키·커밋 메시지·공개 문서에 평문 금지). One-time PIN, 세션 24h
 - 전제조건: 사용자의 도메인을 Cloudflare 네임서버로 이전 (전파 10분~24h)
 - 의도적 제외: 앱 내 패스워드/Clerk/Auth0, 다중 사용자·역할, FastAPI 외부 노출, ISSUE-001, 관리자 UI 2단계
 - 회귀 전략: `cloudflared tunnel stop` 즉시 차단, Access Policy Allow→Block 즉시 차단, 앱 변경 없어 로컬 영향 0
