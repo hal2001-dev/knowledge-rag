@@ -5,6 +5,129 @@
 
 ---
 
+## [2026-04-25] queue | TASK-019 — 사용자 UI NextJS 분리 + Clerk 인증 (최우선)
+
+### 합의 사항
+- 사용자 인지된 문제: Streamlit `st.tabs`가 프로그램적 탭 전환 미지원 → 도서관·랜딩의 자동 이동 4 트리거가 토스트 안내만 남기고 멈춤. 모바일 UX 한계(ISSUE-001/002). 사용자/관리자 화면이 한 앱에 섞여 외부 공개·인증 도입 모두 어려움. 인증 없음 → 사용자별 데이터 격리 불가
+- 해결 방향: 사용자 측(채팅·도서관·대화)을 NextJS thin client로 분리, Clerk 인증 도입. 관리자 측(문서·잡·시스템·평가)은 Streamlit 잔류·동결. LLM·RAG는 모두 FastAPI 단일 진실
+- 우선순위: **최우선** — TASK-018 다음 자리, 다른 후순위 큐(TASK-012/013/020)보다 먼저 진행
+- ADR: 다음 가용 ADR-030 예약 (착수 시 작성)
+
+### 핵심 결정
+- **분리 정책**: 사용자 = NextJS / 관리자 = Streamlit. 동일 FastAPI 백엔드 공유. 포트 분리(8501 admin / 3000 user / 8000 API)
+- **인증**: NextJS만 Clerk(`@clerk/nextjs` 미들웨어). 이메일 OTP만(비번 X, 소셜 X). Free 플랜
+- **인증 분리 전략 (Origin 분기)**:
+  - JWT 헤더 있음 → Clerk 검증 → `user_id = clerk.user_id`
+  - 헤더 없음 + LAN/localhost origin → `user_id = 'admin'` 자동 (Streamlit + 로컬 스크립트 호환)
+  - 헤더 없음 + 외부 origin → 401
+- **데이터 격리**: `conversations.user_id TEXT NOT NULL`, sentinel idempotent 마이그레이션. 기존 행 `'admin'` 백필. 사용자 A → B 세션 GET 시 404
+- **역할 분리 없음**: 모든 로그인 사용자 동등. Clerk Organizations·publicMetadata role 미사용
+- **익명 사용 불허**: 로그인 필수
+- **Streamlit 측 모든 수정 동결**: 사용자 명시 지시까지. NextJS 분리 작업에서 ui/app.py·관련 자산 일체 미수정 (메모리 `feedback_streamlit_no_edit`)
+
+### 보류 묶음 영향 (부분 해제)
+2026-04-22 보류된 5개 항목 묶음 중 **#4 "앱 내 인증"만 부분 해제** (Clerk 도입). 나머지 4개는 보류 유지:
+- ISSUE-001 (모바일 업로드)
+- 관리자 UI 2단계
+- HTTPS 배포
+- 관리자 전용 UI 버튼
+
+### 레이아웃·페이지
+- AppShell: 상단 카테고리 칩(라벨만, NULL→"기타") + 좌측 사이드바(데스크톱 펼침·모바일 drawer 닫힘, ＋새 대화·자기 user_id 대화 목록·하단 📚 도서관) + 메인(활성 스코프 배지 + 본문)
+- 페이지: `/chat`, `/library` (대화는 사이드바로 흡수, `/conversations` 라우트 없음)
+- 활성 스코프 우선순위: series > category > doc, 한 번에 하나
+- 세션 제목: 첫 질문 일부 자동 사용 (현 정책 유지)
+
+### 외부 의존·키 (사전 합의 사항)
+- Clerk 계정 (사용자 직접 생성) — Free 플랜 10k MAU/월 무료
+- API 키 2~3개 (`NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`, 선택 `CLERK_WEBHOOK_SECRET`)
+- 신규 패키지: `@clerk/nextjs`, NextJS 14/15, shadcn/ui, TanStack Query, openapi-typescript
+
+### 의도적 제외
+- Streamlit 측 모든 수정 (동결 정책)
+- HTTPS 배포·도메인 (TASK-012과 묶이는 별건)
+- 관리자 UI 2단계, ISSUE-001, 관리자 UI 버튼 (보류 묶음 잔류)
+- 사용자/관리자 역할 분리 (Organizations, role metadata)
+- 비밀번호 로그인, 소셜 로그인 (Phase 1)
+- 'admin' 사용자에 NextJS UI 접근 (Streamlit 대화는 Streamlit에서만)
+- 답변 스트리밍 SSE, PWA, 다국어 (별건 후속)
+- 시리즈 카드·시리즈 스코프 (TASK-020 완료 시 NextJS에 추가)
+- 익명 사용, B2B/SSO/SAML
+
+### 산정
+**7~9일 (집중, 중앙값 7~8일)** — Clerk 통합 + Origin 분기 미들웨어 + user_id 마이그레이션 + 보호 라우트 +1.5~2일 합산
+
+### 회귀 전략
+- Streamlit 8501 그대로 운영 — NextJS 빌드 실패 시 즉시 회귀
+- `category_filter` default `None` → 후방호환 100%
+- 인증 미들웨어 `AUTH_ENABLED=false` 토글로 도입 시점 분리
+- conversations down 마이그레이션 별도 SQL
+
+### 반영
+- `roadmap.md`: 실행 큐 TASK-018 다음에 `🆕 TASK-019 (최우선)` 삽입, 진행표·하단 상세 섹션(배경·아키텍처·범위·의도적 제외·완료 기준·회귀 전략·리스크·외부 의존)
+- `overview.md`: "다음 (예정)" 표 최상단에 TASK-019, 보류 묶음 표를 "부분 해제 후 잔여 4개"로 업데이트, "Streamlit 측 모든 수정" 동결 행 추가
+- `log.md`: 이 엔트리
+- 메모리 `feedback_streamlit_no_edit.md` 신설 + `MEMORY.md` 인덱스 추가
+
+### 다음 단계
+- 별도 사용자 "착수" 지시 시 구현 진입 (메모리 `feedback_task_start` 규칙: 등록까지만, 구현은 별도 턴)
+- 착수 시 ADR-030 작성 → Clerk 발급 가이드 → `web/` 신설 → FastAPI 미들웨어 → 마이그레이션 → 페이지 구현 → Playwright 검증
+
+---
+
+## [2026-04-25] queue | TASK-020 — Series/묶음 문서 (Option D, 후순위)
+
+### 합의 사항
+- 사용자 인지된 문제: 같은 책이 30챕터처럼 여러 파일로 쪼개져 인덱싱되면 도서관 카드가 흩어지고 "이 책에 대해 묻기"가 1챕터에만 한정됨
+- 해결 방향: Series/묶음을 1급 시민으로 도입(Option A 스키마) + 색인 시점 자동 묶기(휴리스틱, 신뢰도 임계값으로 분기) + 관리자 사후 검수(Confirm/Detach)
+- 우선순위: 후순위 큐잉. TASK-012/013과 동일 패턴, 사용자 명시적 "착수" 지시 시 진행
+- ADR: 다음 가용 ADR-029 예약 (착수 시 작성)
+
+### 핵심 결정
+- **Option D 채택** — A(스키마)+B(태그)+C(휴리스틱) 비교 후, A 스키마 + 자동 묶기 + 검수 하이브리드가 사용자 부담 0 + 1급 시민 + 정정 가능을 모두 만족
+- **자동 묶기 시점**: 색인 후처리 (indexer_worker BackgroundTasks 체인의 summary→classify→**series_match**)
+- **신뢰도 임계값**:
+  - High (동일 source 폴더 + 공통 prefix ≥ 8자 + 동일 doc_type + 숫자 시퀀스) → `auto_attached`로 자동 묶기
+  - Medium → `suggested`로 검수 큐만 등록 (`series_id NULL` 유지)
+  - Low → 처리 없음
+- **재바인딩 회피**: `series_match_status=rejected` 마킹된 문서는 동일 휴리스틱이 다시 자동 묶기 시도 안 함 (관리자 의사 존중)
+- **사용자 측 시리즈 편집은 admin 전용** — NextJS 사용자 UI는 read-only
+
+### 데이터 모델 (착수 시 ADR-029로 확정)
+- `series` 테이블 신설(`series_id`, `title`, `description`, `cover_doc_id`, `series_type`, `created_at`)
+- `documents`에 4컬럼 추가: `series_id`(FK), `volume_number`, `volume_title`, `series_match_status`(none/auto_attached/suggested/confirmed/rejected)
+- Qdrant payload에 `series_id`, `series_title` 추가 (재인덱싱 회피, 부분 업데이트 + keyword index)
+
+### 의도적 제외
+- 자동 제안 LLM 보조 (휴리스틱이 부족하면 별건 합의)
+- 시리즈와 카테고리·doc 동시 스코프 활성 (단순화: series > category > doc 우선순위, 한 번에 하나)
+- 시리즈 자체에 별도 카테고리·태그·요약 (멤버 데이터 집계 표면화만)
+- 무한 재바인딩 (rejected 기억으로 차단)
+
+### 완료 기준
+- 마이그레이션 idempotent(advisory lock + sentinel) 통과
+- 새 문서 인덱싱 시 series_match 자동 실행 (실패 격리 — 인덱싱은 성공)
+- High 신뢰도면 `auto_attached`로 자동 채워진 채 done
+- `/query.series_filter` 적용 시 시리즈 멤버만 검색됨 (vector·hybrid 양 경로)
+- Streamlit 검수 페이지: auto_attached + suggested 두 큐 + Confirm/Detach
+- detach된 문서는 동일 휴리스틱이 재바인딩 시도하지 않음
+
+### 회귀 전략
+- `series_id IS NULL` 기존 동작 100% 보존
+- `SERIES_ENABLED=true|false` 토글로 도입 시점 분리
+- down 마이그레이션으로 rollback 가능
+
+### 반영
+- `roadmap.md`: 실행 큐 마지막에 `🕐 TASK-020`, 진행표 후순위 행 추가, 하단 상세 섹션(배경·아키텍처·범위·의도적 제외·완료 기준·회귀 전략·리스크) 작성
+- `overview.md`: 다음 할 일 표에 TASK-020 행 추가
+- `log.md`: 이 엔트리
+
+### 다음 단계
+- 별도 사용자 지시 시까지 자동 진행 금지 (TASK-012/013과 동일 큐 정책)
+- TASK-019 (NextJS 사용자 UI 전환)는 별도 진행. NextJS의 시리즈 카드·시리즈 스코프 배지는 TASK-020 완료 시점에 NextJS에 추가하는 흐름 (NextJS는 series_id NULL 가정으로 우선 동작 가능)
+
+---
+
 ## [2026-04-25] ops | 32MiB 한도 패치 후속 — 고아 청크 정리 + failed 잡 15건 reset
 
 ### 작업

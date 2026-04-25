@@ -32,8 +32,10 @@
 → ✅ TASK-016 (2026-04-25 완료, ADR-026) — 도서관 탭 + doc_filter 라우팅 (카테고리 그룹 카드 그리드, "이 책에 대해 묻기")
 → ✅ TASK-017 (2026-04-25 완료, ADR-027) — 랜딩 카드 v2 (카테고리 분포·주제 칩·최근 문서 카드)
 → ✅ TASK-018 (2026-04-25 완료, ADR-028) — 색인 워커 분리 (Postgres `ingest_jobs` 큐 + indexer 프로세스, SKIP LOCKED claim, advisory lock 마이그레이션 race 해소)
+→ 🆕 TASK-019 (**최우선**, 2026-04-25 큐잉) — 사용자 UI NextJS 분리 + Clerk 인증 (관리자 UI는 Streamlit 잔류, 동결). ADR-030 예약
 → 🕐 TASK-012 (후순위, 2026-04-23 큐잉) — Cloudflare Tunnel + Access 외부 노출 게이트웨이 (코드 0줄, 운영 문서 중심)
 → 🕐 TASK-013 (후순위, 2026-04-23 큐잉) — MkDocs Material + GitHub Pages 문서 사이트 (현재 project-wiki/ 구조 유지, CI 자동 배포)
+→ 🕐 TASK-020 (후순위, 2026-04-25 큐잉) — Series/묶음 문서 (Option D: 1급 시민 + 색인 시점 자동 묶기 + 관리자 사후 검수)
 → 🛑 인증·공개배포 전체 묶음 (사용자 지시까지 전부 보류, 2026-04-22)
      · ISSUE-001 (모바일 업로드) · 관리자 UI 2단계 · HTTPS 배포 · 앱 내 API 키/OAuth · 관리자 전용 UI 버튼
 → 🔄 장기 검토: Graph RAG, MCP 재개, 대화 요약, 스트리밍, L2 중복 감지
@@ -51,6 +53,8 @@
 | TASK-011 | 하이브리드 검색(BM25 + dense + RRF, Kiwi 한국어 전처리) — 정확 용어·숫자 매칭 여력 확보 |
 | (후순위) TASK-012 | Cloudflare Tunnel + Access 외부 노출 게이트웨이 — 이메일 OTP 하나로 외부 테스트 가능, 앱 코드 수정 0 |
 | (후순위) TASK-013 | MkDocs Material + GitHub Pages — 현재 위키 구조를 손대지 않고 정적 사이트·검색·사이드바 확보 |
+| **TASK-019** | **사용자 UI NextJS 분리 + Clerk 인증 — 관리자 UI(문서·잡·시스템·평가)는 Streamlit 잔류·동결. 사용자(채팅·도서관·대화)는 NextJS thin client. 인증·공개배포 묶음에서 "앱 내 인증" 항목만 부분 해제** |
+| (후순위) TASK-020 | Series/묶음 문서 — 30챕터로 쪼개진 책을 한 시리즈로 묶어 검색·도서관·스코프 통합. 색인 시점 자동 묶기 + 관리자 사후 검수 |
 | **TASK-014** | **문서별 자동 요약(한 줄 + 개요 + 주제 + 예시 질문) 영구 캐시 — 카탈로그·랜딩·소스 카드 공용 데이터** |
 | **TASK-015** | **doc_type/category/tags 자동 채움 — 사용자 입력 부담 없이 카탈로그 그룹핑·검색 필터 활성화 가능** |
 | **TASK-016** | **"도서관" 탭 — 인덱싱된 전체 문서를 카테고리별로 일람, 요약 클릭 한 번에 해당 문서로 질문 시작** |
@@ -632,6 +636,302 @@ Cloudflare 계정·도메인 소유자 인증·대시보드 GUI가 필요한 작
 - **MkDocs 한국어 검색 인덱싱 품질** — 일부 토큰화 문제 가능, 필요 시 `lunr-languages` 설정 또는 CJK 호환 검색 플러그인 교체
 - **GitHub Actions 무료 시간(2,000분/월)** — 이 용도로는 수 분/월 수준, 여유 충분
 - **Private 저장소 + Pages** — Free 플랜은 public만 가능(현재 public이라 무관). 나중에 private로 바꿀 때 재검토
+
+---
+
+## TASK-019: 사용자 UI NextJS 분리 + Clerk 인증
+
+**상태**: queued (**최우선**, 2026-04-25 큐잉) — TASK-018 완료 다음 자리, 다른 후순위 큐(TASK-012/013/020)보다 먼저 진행
+**우선순위**: 최우선 — 사용자 명시 지정 (2026-04-25)
+**관련**: 신규 ADR (착수 시 작성·번호 부여 예정, 다음 가용 ADR-030)
+
+### 배경
+`ui/app.py` 853줄 단일 Streamlit이 7탭(채팅·도서관·문서·잡·대화·시스템·평가)을 모두 담당. 알려진 한계:
+- `st.tabs`가 프로그램적 탭 전환 미지원 → 도서관·랜딩의 자동 이동 트리거 4건이 토스트 안내만 남기고 멈춤
+- 모바일에서 `file_uploader` 표시 누락(ISSUE-001), suggestions 배지 클릭 무반응(ISSUE-002) 등 모바일 UX 한계
+- 사용자 화면(채팅·도서관·대화)과 관리자 화면(문서·잡·시스템·평가)이 한 앱에 섞여 있어 외부 공개·단순화·인증 도입 모두 어려움
+- 인증 없음 — 외부 접근 시 사용자별 데이터 격리 불가
+
+### 목표
+사용자 측 화면(채팅·도서관·대화)을 NextJS로 분리하고 Clerk로 인증한다. 관리자 측 화면(문서·잡·시스템·평가)은 Streamlit에 그대로 둔다(코드 동결). LLM·RAG 처리는 모두 FastAPI 단일 진실. NextJS는 thin client.
+
+### 아키텍처 결정 (초안, 착수 시 ADR-030으로 확정)
+
+- **분리 정책**: 사용자 = NextJS / 관리자 = Streamlit (포트 분리, 동일 FastAPI 백엔드 공유)
+- **인증**: NextJS만 Clerk 보호. Streamlit은 LAN 무인증 그대로 (Streamlit 동결 정책)
+- **인증 분리 전략 (Origin 분기)**:
+  | 요청 출처 / 헤더 | 처리 |
+  |---|---|
+  | `Authorization: Bearer <Clerk JWT>` | Clerk 검증 → `user_id = clerk.user_id` 주입 |
+  | 헤더 없음 + LAN/localhost origin | `user_id = 'admin'` 자동 주입 (Streamlit + 로컬 스크립트) |
+  | 헤더 없음 + 외부 origin | `401 Unauthorized` |
+- **상태 관리**: TanStack Query (서버 상태) + URL state (스코프·세션) + Zustand (필요 시 클라이언트 상태)
+- **UI**: shadcn/ui (Radix 기반, 접근성·다크모드 내장)
+- **API 클라이언트**: `openapi-typescript`로 OpenAPI 스키마 자동 변환
+- **인증 보류 묶음 영향**: (가) Clerk(앱 내 인증)만 부분 해제. **나머지 4개(ISSUE-001 / 관리자 UI 2단계 / HTTPS 배포 / 관리자 UI 버튼)는 보류 유지**
+
+### 페이지 구성 (2 + 사이드바 흡수)
+- `/` 또는 `/chat` — 채팅 (URL state로 `session_id`, `doc_filter`, `category`, 추후 `series`)
+- `/library` — 도서관 (URL state로 `q`, `type`, `category`)
+- `/conversations` 라우트 없음 (사이드바에 흡수)
+
+### 레이아웃 (AppShell)
+- **상단 헤더**: 앱명 + 카테고리 칩(라벨만, 첫 칩 `🌐 전체`, NULL 카테고리는 `기타` 통일 표기)
+- **사이드바**: ＋ 새 대화 / 대화 목록(자기 user_id만) / 하단 📚 도서관 링크. 데스크톱 펼침, 모바일 drawer 닫힘
+- **메인**: 활성 스코프 배지(있을 때) + 페이지 본문
+
+### 활성 스코프 배지 (3 타입, 한 번에 하나)
+우선순위: **series > category > doc** (단순화)
+- 📚 시리즈 한정 (TASK-020 완료 후 활성)
+- 📂 카테고리 한정
+- 📖 문서 한정
+- 🌐 전체 (배지 미표시, 기본)
+
+### 사용자 흐름 — NextJS 측
+- 채팅: 메시지 히스토리, 후속 질문 배지(NextJS 본질 해결), 소스 expander, doc_filter/category_filter, 빈 채팅 랜딩 카드(요약·카테고리 분포·주제 칩·예시 질문·최근 문서 카드·전체 expander)
+- 도서관: 검색·형식·카테고리 필터, 카드 그리드, 그룹핑(기타 마지막), 카드 상세(abstract·sample questions·meta), [이 책에 대해 묻기]·[카테고리에 묻기]
+- 대화(사이드바): 자기 user_id 세션 목록·새 대화·세션 클릭 시 채팅으로 이동(`?session_id=`)·hover 시 🗑️
+- 세션 제목: 첫 질문 일부 자동 사용 (현재 백엔드 정책 유지)
+
+### 데이터 모델 변경
+- `conversations.user_id TEXT NOT NULL` 컬럼 추가 (sentinel idempotent 마이그레이션, advisory lock)
+- 인덱스 `ix_conversations_user_id`
+- 기존 행 백필: `'admin'` 일괄 업데이트 (삭제 안 함)
+- Streamlit 신규 세션도 미들웨어가 `'admin'`으로 자동 부여
+
+### 백엔드 영향 (FastAPI 측)
+- `apps/middleware/auth.py` (신규) — Clerk JWT 검증 + Origin 분기 + 'admin' 기본값
+- `apps/schemas/query.py` — `QueryRequest.category_filter: Optional[str]` 추가 (현재 `doc_filter`만)
+- `packages/rag/{pipeline,retriever}.py` — `category_filter` 통과, Qdrant 필터 절(`payload.category`)
+- `apps/routers/query.py` — request 통과, user_id 주입
+- `apps/routers/conversations.py` — `user_id` 필터, owner 검증(다른 user_id 접근 시 404)
+- `packages/db/repository.py` — conversations CRUD에 user_id 통과
+- LangSmith 트레이스 — `category_filter`·`user_id` 메타 추가
+- CORS — NextJS dev origin(`http://localhost:3000`) 허용
+
+### 범위 — 에이전트 (착수 시)
+
+**NextJS 프로젝트:**
+- [ ] `web/` 디렉터리 신설 — NextJS 14/15 App Router · TypeScript · ESLint · prettier
+- [ ] `@clerk/nextjs` 통합 — `<ClerkProvider>`, `middleware.ts` 보호 라우트, `<SignIn/>·<SignUp/>·<UserButton/>` 컴포넌트
+- [ ] shadcn/ui 셋업 (button, card, input, select, dialog, sheet, sidebar, tabs/segments, badge, scroll-area, toast)
+- [ ] TanStack Query Provider, OpenAPI 클라이언트(`openapi-typescript`)
+- [ ] AppShell — 상단 헤더(카테고리 칩) + 사이드바(대화·도서관) + 메인
+- [ ] `/chat` 페이지 — 메시지 히스토리·소스 expander·후속 질문·empty state(카테고리·주제 칩·예시·최근 문서)·doc_filter·category_filter
+- [ ] `/library` 페이지 — 필터 바·카드 그리드·그룹핑(기타 마지막)·카드 상세 토글
+- [ ] 사이드바 대화 목록 — 자기 user_id만 자동 refetch·세션 클릭 라우팅·삭제 hover 액션
+- [ ] 활성 스코프 배지 + 해제 흐름
+- [ ] URL state 라우팅 — 도서관→채팅 자동 이동(NextJS App Router native)
+- [ ] 모바일 drawer + 가로 스크롤 카테고리 칩
+- [ ] 에러·로딩·빈 데이터 처리
+
+**FastAPI 측 보강:**
+- [ ] `apps/middleware/auth.py` — Clerk JWT 검증 + Origin 분기(LAN→admin) + 외부 origin 401
+- [ ] `category_filter` 추가 (스키마·pipeline·retriever·router·LangSmith)
+- [ ] CORS 허용
+- [ ] `conversations.user_id` 마이그레이션 + repository 필터
+- [ ] owner 검증 (404 응답)
+
+**문서:**
+- [ ] ADR-030 — 사용자/관리자 UI 분리, Clerk 결정·대안 비교(Auth0·Supabase Auth·자체 구현·Cloudflare Access), Origin 분기 전략, 인증 묶음 부분 해제 방침
+- [ ] `wiki/architecture/stack.md` — NextJS·shadcn/ui·TanStack Query·Clerk 추가
+- [ ] `wiki/api/endpoints.md` — `category_filter`·CORS·인증 미들웨어 동작
+- [ ] `wiki/features/admin_ui.md` — 분리 정책 명시 + Streamlit 범위(관리자 잔류) + 동결 정책
+- [ ] `wiki/security.md` — Clerk 키 보관, 인증 분리(Origin 분기), 사용자 데이터 격리
+- [ ] `wiki/onboarding/setup.md` — `cd web && pnpm dev` 절차, Clerk 키 발급 가이드
+- [ ] `wiki/deployment/runbook.md` — docker-compose에 NextJS 서비스 추가, 포트 분리(8501 admin / 3000 user / 8000 API)
+- [ ] `project-wiki/changelog.md` — 신규 버전(코드 변경 큼)
+- [ ] `wiki/overview.md` — 진행표·최근 결정·완료 태스크
+- [ ] `log.md` impl 항목
+
+### 의도적 제외
+- **Streamlit 측 모든 수정** — 사용자 명시 지시까지 동결 (메모리 `feedback_streamlit_no_edit`). 안내 문구·hide 토글·인증 통합 일체
+- **HTTPS 배포·도메인** — 별건(TASK-012 Cloudflare Tunnel과 묶이는 흐름)
+- **관리자 UI 2단계** — 보류 묶음에 잔류
+- **ISSUE-001 모바일 업로드** — 보류 묶음에 잔류 (관리자 측이라 NextJS와 무관)
+- **사용자 vs 관리자 역할 분리** — Clerk Organizations·publicMetadata role 미사용. 모든 로그인 사용자 동등
+- **비밀번호 로그인** — 비번 관리 부담 회피. 이메일 OTP만
+- **소셜 로그인** — Phase 1 미포함 (필요 시 후속)
+- **'admin' 사용자에 NextJS UI 접근** — Streamlit 대화는 Streamlit에서만 본다는 분리 정책. NextJS 사용자 사이드바엔 자기 user_id 세션만
+- **답변 스트리밍(SSE)** — 별건 후속 검토. Phase 1 미포함
+- **시리즈 카드·시리즈 스코프 배지** — TASK-020 완료 시점에 NextJS에 추가하는 흐름. NextJS는 우선 `series_id NULL` 가정 동작
+- **다국어** — 한국어 단일
+- **PWA(설치 가능)** — 별건 후속 검토
+- **관리자 모드 NextJS 이전** — 인증 묶음 추가 해제 시 재검토
+- **사용자 측 시리즈 편집** — read-only (관리자 전용, TASK-020 영역)
+- **익명 사용** — 로그인 필수
+- **B2B/SSO/SAML/Clerk Organizations** — Pro 이상 기능, 현 단계 미사용
+
+### 외부 의존·키 (사전 합의 사항)
+- Clerk 계정 생성 (사용자 직접) — Free 플랜 (10k MAU/월 무료)
+- API 키 2~3개 (`NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`, 선택 `CLERK_WEBHOOK_SECRET`)
+- 신규 패키지: `@clerk/nextjs`, NextJS 14/15, shadcn/ui, TanStack Query, openapi-typescript
+
+### 완료 기준
+- `cd web && pnpm dev` 한 줄로 사용자 UI 기동
+- 채팅·도서관·대화(사이드바) 3 영역 모두 동작
+- 자동 페이지 이동 4 트리거가 모두 정상 작동(Playwright 검증)
+- 모바일 viewport에서 drawer·카테고리 칩·카드 그리드·후속 질문 배지 정상(ISSUE-002 본질 해결 확인)
+- `category_filter` 적용 시 해당 카테고리 문서만 검색됨
+- Clerk 미인증 외부 origin → `/sign-in` 리다이렉트
+- Streamlit 호출(LAN, 헤더 없음) → user_id `'admin'`으로 자동 처리, 코드 변경 0
+- 사용자 A가 사용자 B 세션 GET 시 404
+- FastAPI 8000 외부 노출 시 헤더 없는 외부 origin 401
+- ADR-030, 위키 8개 페이지 갱신, changelog 신버전
+
+### 회귀 전략
+- Streamlit은 그대로 살아 있어 사용자 UI 미공개 시 즉시 회귀
+- NextJS 빌드 실패 시 Streamlit으로 즉시 회귀 (현재 8501 그대로 운영)
+- `category_filter` 백엔드 변경은 default `None` → 기존 호출 100% 후방호환
+- 인증 미들웨어는 `AUTH_ENABLED=false` 토글로 도입 시점 분리 가능 (Clerk 미발급 환경에서 테스트용)
+- conversations 마이그레이션 down: `ALTER TABLE conversations DROP COLUMN user_id` 별도 마이그레이션
+- CORS는 dev에서만 허용, prod에선 reverse proxy
+
+### 리스크
+- **Origin 분기의 LAN 신뢰 가정** — FastAPI 8000을 외부 노출하면 LAN IP 위장 가능. 외부 노출 시점에 reverse proxy로 Origin 정규화 필수
+- **모바일 동작 검증** — Playwright만으로는 실기기 호환 100% 보장 못 함. 실제 iOS Safari·Android Chrome 실측 필요
+- **Streamlit/NextJS 디자인 일관성** — 의도적 분리이므로 큰 문제 아님. 외부 노출 시점에 정리
+- **OpenAPI 스키마 동기화** — FastAPI 변경 시 NextJS 클라이언트 재생성 필요. CI에 빌드 단계 추가
+- **Clerk Free 플랜 한도** — 10k MAU/월. 1인·소규모 무관, 외부 공개 확장 시 점검
+- **마이그레이션 충돌** — bulk_ingest 또는 indexer 진행 중 ALTER 실행 시 락 대기. TASK-018 패턴(advisory lock + sentinel) 재사용으로 회피
+- **'admin' 사용자 데이터 누적** — Streamlit 사용자 세션이 모두 'admin' 단일 누적. 운영 데이터 폭증 시 별도 정리 정책 필요(현 단계 무영향)
+
+### 산정 합계
+**7~9일 (집중 작업, 중앙값 7~8일)** — Clerk 통합 + Origin 분기 미들웨어 + user_id 마이그레이션 + 사용자별 세션 격리 보호 라우트 +1.5~2일 합산.
+
+---
+
+## TASK-020: Series/묶음 문서 — 1급 시민 모델 + 색인 시점 자동 묶기 + 관리자 검수
+
+**상태**: queued (후순위, 2026-04-25 큐잉)
+**우선순위**: 낮음 — 사용자 "착수" 지시 시 진행
+**관련**: 신규 ADR (착수 시 작성·번호 부여 예정, 다음 가용 ADR-029)
+
+### 배경
+하나의 저작이 여러 파일로 쪼개져 인덱싱되는 경우(예: 30챕터 책)가 흔함. 현재 데이터 모델은 업로드 1건 = `documents` 1행이라 같은 책의 챕터들이 흩어져 있다. 결과:
+- 도서관 카드가 30개로 흩어져 가시성 ↓
+- "이 책에 대해 묻기"는 1챕터에만 한정. 책 전체에 대한 질의 불가
+- 카테고리·태그·요약이 챕터별로 따로 산정되어 일관성 ↓
+
+### 목표
+시리즈/묶음을 1급 시민으로 도입(Option A 스키마). 색인 시점에 휴리스틱이 자동 묶기를 수행하고, 관리자는 사후 검수(Confirm/Detach)로 정정한다. 사용자는 도서관에서 시리즈 카드 단위로 탐색하고, 채팅에서 시리즈 한정 스코프로 질의할 수 있다.
+
+### 아키텍처 결정 (초안, 착수 시 신규 ADR로 확정)
+
+**Option D 채택 — Series 1급 시민 + 자동 묶기 하이브리드.**
+
+검토한 대안:
+- **A**: Series 1급 시민(스키마) — 깔끔하나 묶는 흐름이 사용자 부담
+- **B**: 태그 기반 느슨한 묶음(`series:os3ep`) — 1급 시민 아님, UI 그룹화 자연스럽지 않음
+- **C**: 제목 prefix 휴리스틱 자동 — 사용자 입력 0이지만 휴리스틱은 반드시 오작동
+- **D (채택)**: A 스키마 + 색인 시점 자동 묶기 + 관리자 검수 — 1급 시민 + 자동화 + 정정 가능
+
+### 데이터 모델 (초안)
+```sql
+CREATE TABLE series (
+  series_id    TEXT PRIMARY KEY,
+  title        TEXT NOT NULL,
+  description  TEXT,
+  cover_doc_id TEXT,            -- 대표 문서 (선택)
+  series_type  TEXT DEFAULT 'book',  -- book | series | volume
+  created_at   TIMESTAMPTZ
+);
+
+ALTER TABLE documents
+  ADD COLUMN series_id           TEXT REFERENCES series(series_id),
+  ADD COLUMN volume_number       INT,            -- 1, 2, 3 ... (nullable)
+  ADD COLUMN volume_title        TEXT,           -- "Chapter 1: Intro"
+  ADD COLUMN series_match_status TEXT DEFAULT 'none';
+  -- enum: none | auto_attached | suggested | confirmed | rejected
+
+CREATE INDEX ix_documents_series ON documents(series_id);
+```
+
+**Qdrant payload**: 각 청크에 `series_id`, `series_title` 추가 — payload 부분 갱신(재인덱싱 회피) + keyword index.
+
+### 색인 시점 자동 묶기 흐름
+indexer_worker BackgroundTasks 체인을 확장: `summary → classify → series_match`.
+
+신뢰도 임계값으로 분기:
+
+| 신뢰도 | 조건 | 처리 |
+|---|---|---|
+| **High** | 동일 source 폴더 + 공통 prefix ≥ 8자 + 동일 doc_type + 숫자 시퀀스(Chapter N / Vol N / 단순 번호) | **auto_attached** — `series_id` 자동 채움, Qdrant payload 갱신, 신규 시리즈면 `series` 행 자동 생성 |
+| **Medium** | High 조건 일부만 충족 | **suggested** — `series_id NULL` 유지, 검수 큐에만 후보 등록 |
+| **Low / 매칭 없음** | 휴리스틱 후보 0 | 처리 없음 (`status=none`) |
+
+실패 격리: series_match 실패해도 인덱싱은 성공으로 마무리 (TASK-014 summary 패턴 동일).
+
+### 범위 — 에이전트가 할 일 (착수 시)
+
+**백엔드:**
+- [ ] 마이그레이션 `0004_add_series_tables.sql` — sentinel 패턴, advisory lock으로 idempotent (TASK-018 패턴 재사용)
+- [ ] `packages/db/models.py` — `SeriesRecord`, `DocumentRecord`에 series 4컬럼 추가
+- [ ] `packages/db/repository.py` — series CRUD, `attach_to_series`, `detach_from_series`, `update_match_status`
+- [ ] `packages/series/matcher.py` (신규) — 휴리스틱 + 신뢰도 점수 산출. `find_candidates(doc) → list[SeriesCandidate]`
+- [ ] `packages/series/__init__.py` — `series_match_for_doc(doc_id)` 진입점
+- [ ] `packages/vectorstore/qdrant_store.py` — `set_series_payload(doc_ids, series_id, series_title)` (부분 업데이트)
+- [ ] `apps/indexer_worker.py` — BackgroundTasks 체인에 series_match 단계 추가
+- [ ] `apps/schemas/query.py` — `QueryRequest.series_filter: Optional[str]`
+- [ ] `packages/rag/{pipeline.py,retriever.py}` — series_filter 통과, Qdrant 필터 절(`payload.series_id`)
+- [ ] `apps/routers/series.py` (신규) — `GET/POST/PATCH/DELETE /series`, `POST /series/{id}/members`, `POST /documents/{id}/series_match/confirm|reject`
+- [ ] `apps/routers/documents.py` — `/documents` 응답에 series 정보 포함, `series_match_status` 필터
+- [ ] `apps/schemas/documents.py` — `SeriesItem`, `DocumentItem`에 series 필드 추가
+- [ ] LangSmith 트레이스 — `series_filter` 메타 추가
+- [ ] `scripts/suggest_series.py` (신규) — 백필용 휴리스틱 일괄 실행, 보고서 JSON
+
+**Streamlit 관리자 UI:**
+- [ ] 신규 탭 또는 문서 탭 내부 섹션 "시리즈 검수"
+  - 자동 묶기 검수 큐 (`auto_attached`) — [확정] / [Detach] / [다른 시리즈로 이동]
+  - 묶기 후보 큐 (`suggested`) — [시리즈로 생성] / [기존 시리즈에 합치기] / [건너뜀]
+  - 시리즈 편집 — 메타·멤버 관리, 표지 문서 변경
+- [ ] 문서 탭 다중 선택 → [시리즈로 묶기] (수동 경로)
+
+**NextJS (TASK-019 등록 후 그 위에) — 별도 작업이지만 묶음 차원에서 명시:**
+- [ ] 도서관 시리즈 카드 그룹화 렌더 (시리즈 카드 vs 단일 카드)
+- [ ] 시리즈 상세 뷰 (구성 챕터 N개 리스트)
+- [ ] 활성 스코프 배지에 `📚 시리즈 한정` 타입 추가
+- [ ] 시리즈 한정 스코프 라우팅 (`/chat?series=...`)
+
+**문서:**
+- [ ] ADR-029 — Option A/B/C/D 트레이드오프, Option D 결정 근거, 신뢰도 임계값, 실패 격리
+- [ ] `wiki/data/schema.md` — series 테이블·컬럼·payload 갱신
+- [ ] `wiki/api/endpoints.md` — `/series` CRUD + `/query.series_filter` + match confirm/reject
+- [ ] `wiki/features/admin_ui.md` — 시리즈 검수 섹션
+- [ ] `project-wiki/changelog.md` — 신규 버전 (코드 변경 큼)
+- [ ] `wiki/overview.md` — 진행표·최근 결정·완료 태스크
+- [ ] `log.md` impl 항목
+
+### 의도적 제외
+- **재바인딩 무한 시도** — 관리자가 detach한 문서는 동일 휴리스틱으로 다시 자동 묶이지 않도록 `series_match_status=rejected` 마킹으로 기억
+- **사용자 측 시리즈 편집 권한** — 관리자 전용 유지. NextJS 사용자 UI는 read-only
+- **자동 제안 LLM 보조** — 비용·키 사전 합의 규칙(`feedback_cost_keys`)에 따라 별건. 휴리스틱이 부족하면 그때 합의
+- **시리즈와 카테고리·doc 동시 스코프 활성** — 단순화(우선순위: series > category > doc, 한 번에 하나만)
+- **시리즈 자동 분류** — 시리즈 자체에 별도 카테고리·태그 부여하지 않음(멤버 문서의 카테고리를 집계해 표면화만)
+- **시리즈 단위 요약** — 멤버 요약을 합치는 별도 LLM 호출 도입 안 함(별건 후속 가능성)
+
+### 완료 기준
+- 마이그레이션 idempotent(advisory lock + sentinel) 통과
+- Qdrant payload 동기화: 기존 문서 백필 일괄 batch update 성공 (재인덱싱 0)
+- 새 문서 인덱싱 시 series_match 자동 실행됨 — 인덱싱 성공·실패 격리 보장
+- High 신뢰도 케이스: 자동으로 `series_id`/`status=auto_attached`로 채워진 채 done
+- `/query.series_filter` 적용 시 해당 시리즈 멤버 청크만 검색됨, vector·hybrid 양 경로 통과
+- Streamlit 검수 페이지: 두 큐(auto_attached / suggested) 노출 + Confirm/Detach 동작
+- detach된 문서는 `status=rejected` → 동일 휴리스틱이 재바인딩 시도하지 않음
+- 도서관 카드: 시리즈 멤버는 시리즈 카드로 응축, 일반 문서는 단일 카드 (NextJS 도입 시점에)
+
+### 회귀 전략
+- `series_id IS NULL` 문서는 기존 동작 100% 보존 (단일 카드, doc_filter 그대로)
+- `SERIES_ENABLED=true|false` 토글로 도입 시점 분리 가능 (자동 묶기만 비활성화 시 스키마는 유지하되 휴리스틱만 끔)
+- 마이그레이션 rollback: 별도 down 마이그레이션 (`DROP TABLE series`, `ALTER TABLE documents DROP COLUMN ...`)
+- 백필 실패 시 `series_id` NULL로 되돌리는 1줄 SQL
+
+### 리스크 체크
+- **High 신뢰도 임계값이 공격적이면** 잘못된 자동 묶기가 양산되어 관리자 검수 부담 ↑. 보수적 임계값으로 시작 후 운영 데이터로 조정
+- **인덱싱 처리량 영향** — series_match가 모든 신규 문서마다 N개 기존 문서·시리즈와 비교. N 작을 땐 무시 가능, 수천 단위 시 인덱스·캐시 필요 (현 20문서 단계는 무영향)
+- **Qdrant payload 일괄 갱신과 동시 인덱싱 충돌** — indexer_worker 1프로세스라 자연 직렬화로 회피
+- **시리즈 카드 vs 단일 카드의 시각적 일관성** — 도서관 카드 디자인 변동. NextJS 시점에 같이 손보면 비용 작음
+- **관리자 검수 부담 누적** — auto_attached 큐가 방치되면 신뢰도 평가 어려움. 검수 페이지 진입 시 미처리 N건 알림 표시로 완화
 
 ---
 
