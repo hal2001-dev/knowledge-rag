@@ -26,11 +26,14 @@ st.session_state.setdefault("documents_cache", None)
 st.session_state.setdefault("conversations_cache", None)
 st.session_state.setdefault("selected_doc_id", None)
 st.session_state.setdefault("selected_session_id", None)
+# TASK-016: 도서관 탭 → 채팅 탭 doc_filter 라우팅
+st.session_state.setdefault("active_doc_filter", None)       # {"doc_id", "title"} 또는 None
+st.session_state.setdefault("library_expanded_doc", None)    # 카드 상세 토글
 
 st.title("📚 Knowledge RAG")
 
-TAB_CHAT, TAB_DOCS, TAB_CONVOS, TAB_SYSTEM, TAB_EVAL = st.tabs(
-    ["💬 채팅", "📄 문서", "💭 대화", "⚙️ 시스템", "📊 평가"]
+TAB_CHAT, TAB_LIBRARY, TAB_DOCS, TAB_JOBS, TAB_CONVOS, TAB_SYSTEM, TAB_EVAL = st.tabs(
+    ["💬 채팅", "📚 도서관", "📄 문서", "🛠️ 잡", "💭 대화", "⚙️ 시스템", "📊 평가"]
 )
 
 
@@ -64,6 +67,20 @@ with TAB_CHAT:
             st.session_state["session_id"] = None
             st.rerun()
 
+    # TASK-016: 도서관 탭에서 라우팅된 doc_filter 활성 표시 + 해제
+    active_filter = st.session_state.get("active_doc_filter")
+    if active_filter:
+        bf_col_msg, bf_col_clear = st.columns([5, 1])
+        with bf_col_msg:
+            st.info(
+                f"📖 **{active_filter['title'][:60]}** 에 한정해 답변합니다.",
+                icon="📚",
+            )
+        with bf_col_clear:
+            if st.button("전체 검색", help="문서 한정 해제", key="clear_doc_filter"):
+                st.session_state["active_doc_filter"] = None
+                st.rerun()
+
     def _render_suggestions(suggestions: list[str], key_prefix: str):
         """답변 아래에 후속 질문 배지 렌더.
 
@@ -78,7 +95,7 @@ with TAB_CHAT:
             if cols[i].button(sug, key=f"{key_prefix}_sug_{i}", use_container_width=True):
                 st.session_state["_pending_question"] = sug
 
-    # 빈 채팅 empty state — 인덱스 요약 카드 + 예시 질문 5개 (TASK-008)
+    # 빈 채팅 empty state — 인덱스 요약 + 예시 질문 + 주제 칩 + 최근 문서 (TASK-008/017)
     if not st.session_state["messages"]:
         if st.session_state.get("_index_overview") is None:
             code, data = _api_get("/index/overview", timeout=30)
@@ -89,10 +106,24 @@ with TAB_CHAT:
                 st.markdown("#### 👋 이 시스템이 아는 내용")
                 if ov.get("summary"):
                     st.markdown(ov["summary"])
-                if ov.get("titles"):
-                    with st.expander(f"📚 인덱싱된 문서 {ov.get('doc_count', 0)}개"):
-                        for t in ov["titles"]:
-                            st.caption(f"• {t}")
+
+                # TASK-017: 카테고리 분포 — 도서관 탭 진입 안내
+                cats_dist = ov.get("categories") or []
+                if cats_dist:
+                    parts = [f"**{c['label']}** {c['count']}" for c in cats_dist[:6]]
+                    st.caption("📂 카테고리: " + " · ".join(parts) + "  (도서관 탭에서 탐색)")
+
+                # TASK-017: 주제 칩 — 클릭 시 도서관 탭의 검색 박스 사전 채우기 후 이동
+                top_tags = ov.get("top_tags") or []
+                if top_tags:
+                    st.caption("🏷️ 자주 등장하는 주제 (클릭하면 도서관에서 검색)")
+                    chip_cols = st.columns(min(len(top_tags), 6) or 1)
+                    for i, tag in enumerate(top_tags[:6]):
+                        col = chip_cols[i % len(chip_cols)]
+                        if col.button(tag, key=f"land_tag_{i}", use_container_width=True):
+                            st.session_state["library_search"] = tag
+                            st.toast(f"🔍 '{tag}' 검색어를 도서관 탭에 채웠습니다", icon="📚")
+
                 if ov.get("suggested_questions"):
                     st.caption("🎯 예시 질문 (클릭하면 바로 질의됩니다)")
                     cols = st.columns(min(len(ov["suggested_questions"]), 3) or 1)
@@ -100,6 +131,33 @@ with TAB_CHAT:
                         col = cols[i % len(cols)]
                         if col.button(q, key=f"example_q_{i}", use_container_width=True):
                             st.session_state["_pending_question"] = q
+
+                # TASK-017: 최근 문서 카드 — 클릭 시 doc_filter 활성 + 사용자가 다음 질문 입력
+                recent = ov.get("recent_docs") or []
+                if recent:
+                    st.caption("📖 최근 추가된 문서 (클릭하면 해당 책에 한정해 질의)")
+                    rc_cols = st.columns(min(len(recent), 3) or 1)
+                    for i, d in enumerate(recent[:6]):
+                        col = rc_cols[i % len(rc_cols)]
+                        with col, st.container(border=True):
+                            st.markdown(f"**{d['title'][:48]}**")
+                            if d.get("one_liner"):
+                                st.caption(d["one_liner"])
+                            elif d.get("category"):
+                                st.caption(f"_{d['category']}_")
+                            if st.button(
+                                "이 책에 대해 묻기", key=f"land_recent_{d['doc_id']}",
+                                use_container_width=True,
+                            ):
+                                st.session_state["active_doc_filter"] = {
+                                    "doc_id": d["doc_id"], "title": d["title"]
+                                }
+                                st.toast(f"📖 '{d['title'][:40]}' 한정 모드 활성화", icon="📚")
+
+                if ov.get("titles"):
+                    with st.expander(f"전체 문서 {ov.get('doc_count', 0)}개 (도서관 탭으로)"):
+                        for t in ov["titles"]:
+                            st.caption(f"• {t}")
         elif ov.get("summary"):
             st.info(ov["summary"])
 
@@ -130,9 +188,15 @@ with TAB_CHAT:
         with st.chat_message("assistant"):
             with st.spinner("검색 및 답변 생성 중..."):
                 try:
+                    payload = {
+                        "question": question,
+                        "session_id": st.session_state["session_id"],
+                    }
+                    if st.session_state.get("active_doc_filter"):
+                        payload["doc_filter"] = st.session_state["active_doc_filter"]["doc_id"]
                     resp = requests.post(
                         f"{API_BASE}/query",
-                        json={"question": question, "session_id": st.session_state["session_id"]},
+                        json=payload,
                         timeout=60,
                     )
                     if resp.status_code == 200:
@@ -169,7 +233,157 @@ with TAB_CHAT:
 
 
 # ═════════════════════════════════════════════════════════════
-# 탭 2: 문서
+# 탭 2: 도서관 (TASK-016)
+# ═════════════════════════════════════════════════════════════
+with TAB_LIBRARY:
+    st.caption("인덱싱된 문서를 카테고리·요약으로 탐색하고, 특정 문서에 대해 바로 질문할 수 있습니다.")
+
+    # 데이터 로드 — 채팅 탭과 동일 캐시 재사용
+    if st.session_state["documents_cache"] is None:
+        code, data = _api_get("/documents", timeout=10)
+        st.session_state["documents_cache"] = data if code == 200 else {"documents": [], "total": 0}
+
+    lib_docs_data = st.session_state["documents_cache"] or {"documents": [], "total": 0}
+    lib_docs = lib_docs_data.get("documents", [])
+
+    if not lib_docs:
+        st.info("아직 인덱싱된 문서가 없습니다. **문서** 탭에서 업로드해 보세요.")
+    else:
+        # 필터 바 ─────────────────────────────────────────────
+        f_col_q, f_col_type, f_col_cat = st.columns([3, 1, 2])
+        with f_col_q:
+            search_q = st.text_input(
+                "검색", placeholder="제목·요약·태그…", key="library_search",
+                label_visibility="collapsed",
+            )
+        with f_col_type:
+            doc_type_options = sorted({d.get("doc_type") or "book" for d in lib_docs})
+            doc_type_filter = st.selectbox(
+                "형식", options=["(전체)"] + doc_type_options,
+                key="library_doc_type", label_visibility="collapsed",
+            )
+        with f_col_cat:
+            cat_options = sorted({d.get("category") for d in lib_docs if d.get("category")})
+            category_filter = st.selectbox(
+                "카테고리",
+                options=["(전체)"] + cat_options + ["(미분류)"],
+                key="library_category", label_visibility="collapsed",
+            )
+
+        # 필터 적용
+        def _matches(d: dict) -> bool:
+            if doc_type_filter != "(전체)" and (d.get("doc_type") or "book") != doc_type_filter:
+                return False
+            cat = d.get("category")
+            if category_filter == "(미분류)":
+                if cat:
+                    return False
+            elif category_filter != "(전체)":
+                if cat != category_filter:
+                    return False
+            if search_q:
+                q = search_q.lower().strip()
+                hay_parts = [
+                    d.get("title", ""),
+                    (d.get("summary") or {}).get("one_liner", "") or "",
+                    (d.get("summary") or {}).get("abstract", "") or "",
+                    " ".join((d.get("summary") or {}).get("topics") or []),
+                    " ".join(d.get("tags") or []),
+                ]
+                hay = " ".join(p.lower() for p in hay_parts if p)
+                if q not in hay:
+                    return False
+            return True
+
+        filtered = [d for d in lib_docs if _matches(d)]
+
+        # 카테고리 그룹핑 — 동일 카테고리는 한 섹션, "(미분류)"는 마지막
+        from collections import defaultdict as _dd
+        groups: dict[str, list[dict]] = _dd(list)
+        for d in filtered:
+            groups[d.get("category") or "(미분류)"].append(d)
+
+        st.caption(f"총 {len(filtered)}/{len(lib_docs)}개 문서")
+
+        ordered_keys = sorted([k for k in groups if k != "(미분류)"]) + (
+            ["(미분류)"] if "(미분류)" in groups else []
+        )
+
+        for cat_key in ordered_keys:
+            docs_in_cat = groups[cat_key]
+            with st.container():
+                st.markdown(f"#### {cat_key}  ·  {len(docs_in_cat)}")
+                # 3-column 카드 그리드
+                cols = st.columns(3)
+                for i, d in enumerate(docs_in_cat):
+                    col = cols[i % 3]
+                    with col, st.container(border=True):
+                        doc_id = d["doc_id"]
+                        title = d["title"][:60]
+                        sm = d.get("summary") or {}
+                        one_liner = sm.get("one_liner") or ""
+                        topics = (sm.get("topics") or [])[:5]
+                        conf = d.get("category_confidence")
+                        review_badge = ""
+                        if conf is not None and conf < 0.4:
+                            review_badge = " ⚠️"
+
+                        st.markdown(f"**{title}**{review_badge}")
+                        if one_liner:
+                            st.caption(one_liner)
+                        else:
+                            st.caption("_요약 생성 중…_")
+                        if topics:
+                            st.caption("· " + " · ".join(topics))
+
+                        b_detail, b_ask = st.columns(2)
+                        if b_detail.button("상세", key=f"lib_detail_{doc_id}", use_container_width=True):
+                            st.session_state["library_expanded_doc"] = (
+                                None if st.session_state["library_expanded_doc"] == doc_id else doc_id
+                            )
+                        if b_ask.button(
+                            "이 책에 대해 묻기", key=f"lib_ask_{doc_id}",
+                            use_container_width=True, type="primary",
+                        ):
+                            st.session_state["active_doc_filter"] = {
+                                "doc_id": doc_id, "title": d["title"]
+                            }
+                            # 사용자가 첫 질문을 정해 입력하도록 채팅 탭으로 이동만 유도
+                            st.toast(f"📖 '{d['title'][:40]}' 한정 모드 활성화 — 채팅 탭으로 이동", icon="📚")
+
+                        # 카드 상세 expander — library_expanded_doc 토글로 표시
+                        if st.session_state["library_expanded_doc"] == doc_id:
+                            st.divider()
+                            if sm.get("abstract"):
+                                st.markdown(sm["abstract"])
+                            sample_qs = sm.get("sample_questions") or []
+                            if sample_qs:
+                                st.caption("💡 이 책에서 나올 수 있는 질문")
+                                for j, q in enumerate(sample_qs):
+                                    if st.button(
+                                        q, key=f"lib_sq_{doc_id}_{j}",
+                                        use_container_width=True,
+                                    ):
+                                        st.session_state["active_doc_filter"] = {
+                                            "doc_id": doc_id, "title": d["title"]
+                                        }
+                                        st.session_state["_pending_question"] = q
+                                        st.toast("📖 질문 전달 — 채팅 탭에서 응답을 확인하세요", icon="💬")
+                            meta_lines = []
+                            if d.get("source"):
+                                meta_lines.append(f"source: `{d['source'][:60]}`")
+                            if d.get("file_type"):
+                                meta_lines.append(f"형식: `{d['file_type']}`")
+                            if d.get("indexed_at"):
+                                meta_lines.append(f"인덱싱: `{d['indexed_at'][:10]}`")
+                            if conf is not None:
+                                meta_lines.append(f"신뢰도: `{conf}`")
+                            if meta_lines:
+                                st.caption(" · ".join(meta_lines))
+
+
+# ═════════════════════════════════════════════════════════════
+# 탭 3: 문서
 # ═════════════════════════════════════════════════════════════
 with TAB_DOCS:
     st.subheader("업로드")
@@ -324,7 +538,85 @@ with TAB_DOCS:
 
 
 # ═════════════════════════════════════════════════════════════
-# 탭 3: 대화
+# 탭 4: 잡 (TASK-018)
+# ═════════════════════════════════════════════════════════════
+with TAB_JOBS:
+    st.caption("색인 워커가 처리 중인 작업 큐. 큐 모드(`INGEST_MODE=queue`)에서만 의미가 있습니다.")
+
+    head_col, autoref_col, refresh_col = st.columns([4, 1, 1])
+    with head_col:
+        st.subheader("색인 작업")
+    with autoref_col:
+        autorefresh = st.toggle("자동 새로고침", value=False, key="jobs_autorefresh")
+    with refresh_col:
+        if st.button("새로고침", key="jobs_refresh"):
+            pass  # rerun trigger
+
+    # 1) 상태별 카운터
+    counters: dict[str, int] = {}
+    failed_jobs: list[dict] = []
+    code, lc = _api_get("/jobs", params={"limit": 200}, timeout=10)
+    if code != 200 or not isinstance(lc, dict):
+        st.error("API 응답 실패 — uvicorn이 떠 있는지 확인하세요.")
+    else:
+        all_jobs = lc.get("jobs", [])
+        for j in all_jobs:
+            counters[j["status"]] = counters.get(j["status"], 0) + 1
+
+        m_col1, m_col2, m_col3, m_col4 = st.columns(4)
+        m_col1.metric("pending", counters.get("pending", 0))
+        m_col2.metric("in_progress", counters.get("in_progress", 0))
+        m_col3.metric("done", counters.get("done", 0))
+        m_col4.metric("failed", counters.get("failed", 0))
+
+        st.divider()
+
+        # 2) 최근 잡 표
+        recent = sorted(all_jobs, key=lambda j: j.get("enqueued_at", ""), reverse=True)[:30]
+        if not recent:
+            st.caption("잡 기록이 없습니다.")
+        else:
+            st.caption(f"최근 {len(recent)}개 (전체 {len(all_jobs)})")
+            h_id, h_status, h_title, h_retry, h_when, h_doc = st.columns([1, 1.2, 4, 0.8, 2, 1])
+            h_id.markdown("**ID**")
+            h_status.markdown("**상태**")
+            h_title.markdown("**제목**")
+            h_retry.markdown("**retry**")
+            h_when.markdown("**enqueued**")
+            h_doc.markdown("**doc_id**")
+
+            STATUS_BADGE = {
+                "pending":     "⏳ pending",
+                "in_progress": "⚙️ 진행중",
+                "done":        "✅ 완료",
+                "failed":      "❌ 실패",
+                "cancelled":   "⏹ 취소",
+            }
+            for j in recent:
+                c_id, c_status, c_title, c_retry, c_when, c_doc = st.columns([1, 1.2, 4, 0.8, 2, 1])
+                c_id.caption(f"#{j['id']}")
+                c_status.caption(STATUS_BADGE.get(j["status"], j["status"]))
+                c_title.caption(j["title"][:60])
+                c_retry.caption(str(j["retry_count"]))
+                ts = j.get("enqueued_at", "")[:19].replace("T", " ")
+                c_when.caption(ts)
+                c_doc.caption((j.get("doc_id") or "")[:8])
+                if j["status"] == "failed" and j.get("error"):
+                    with st.expander(f"job #{j['id']} 실패 사유"):
+                        st.code(j["error"][:1500], language=None)
+
+    # 자동 새로고침 — Streamlit 내장. 5초마다 rerun
+    if autorefresh:
+        try:
+            from streamlit_autorefresh import st_autorefresh  # 선택적 의존성
+            st_autorefresh(interval=5_000, key="jobs_autorefresh_tick")
+        except ImportError:
+            # 폴백: HTML meta refresh (탭 전환 시에도 도는 단점 있음)
+            st.caption("ℹ 자동 새로고침은 `streamlit-autorefresh` 패키지가 설치되어야 합니다 (`pip install streamlit-autorefresh`). 현재는 [새로고침] 버튼을 눌러주세요.")
+
+
+# ═════════════════════════════════════════════════════════════
+# 탭 5: 대화
 # ═════════════════════════════════════════════════════════════
 with TAB_CONVOS:
     head_col, refresh_col = st.columns([5, 1])

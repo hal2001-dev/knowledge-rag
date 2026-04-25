@@ -19,3 +19,8 @@ services:
     volumes:
       - ./data/pg_data:/var/lib/postgresql/data
     restart: unless-stopped
+
+# TASK-018 (ADR-028) — 색인 워커는 호스트 venv에서 실행한다 (앱 컨테이너 미도입).
+#   터미널 1: .venv/bin/uvicorn apps.main:app --host 127.0.0.1 --port 8000
+#   터미널 2: .venv/bin/python -m apps.indexer_worker
+# 앱 컨테이너 도입 시 indexer 서비스를 여기 추가 — Dockerfile은 별건 TASK.

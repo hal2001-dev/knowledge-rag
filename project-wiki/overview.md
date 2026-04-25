@@ -1,7 +1,7 @@
 # Project Overview
 
 **상태**: active
-**마지막 업데이트**: 2026-04-23
+**마지막 업데이트**: 2026-04-25
 **관련 페이지**: `pipeline.md` _(미작성)_, `stack.md` _(미작성)_
 
 ---
@@ -61,6 +61,11 @@
 
 > [decisions.md](wiki/architecture/decisions.md) 참고
 
+- **ADR-028 (2026-04-25)**: 색인 워커 분리 — Postgres `ingest_jobs` 큐(SKIP LOCKED) + 독립 워커 프로세스(`python -m apps.indexer_worker`). FastAPI는 enqueue+202만, 워커가 인덱싱·요약·분류 인라인 처리. `INGEST_MODE=queue|sync` 토글로 회귀 가능. 마이그레이션은 `pg_advisory_xact_lock`으로 동시 기동 race 해소. bulk_ingest `--via-queue` 추가
+- **ADR-027 (2026-04-25)**: 랜딩 카드 v2 — `/index/overview` 응답에 `top_tags`/`categories`/`recent_docs` 추가. 빈 채팅에 카테고리 분포·주제 칩·최근 문서 카드 노출. 추가 LLM 호출 0 (모두 DB 데이터로 파생). 후방호환 default 빈배열
+- **ADR-026 (2026-04-25)**: 사용자 도서관 탭 — 채팅 옆 신규 탭에 카테고리 그룹 카드 그리드 + 검색/형식/카테고리 필터 + "이 책에 대해 묻기" doc_filter 라우팅. `/query` 경로에 `doc_filter` 인자 관통(vector·hybrid 양쪽). 카드 상세 토글에 abstract/sample_questions
+- **ADR-025 (2026-04-25)**: 카테고리 메타데이터 — 단일 Qdrant 컬렉션 + payload index(`doc_id|doc_type|category|tags` 4 keyword), 자동 분류는 categories.yaml 룰 매칭 우선·LLM(gpt-4o-mini) fallback. 파일럿 20문서 20/20 정확. PATCH `/documents/{id}` + 인덱싱 폼 옵션 파라미터 도입
+- **ADR-024 (2026-04-25)**: 문서 자동 요약 — gpt-4o-mini(LLM_BACKEND=openai 재활용) + Postgres `summary JSONB` 영구 캐시 + 인덱싱 후 BackgroundTasks 비동기 훅. 16문서 파일럿 환각 0건. ingest 라우트의 event loop 차단 핫픽스(`asyncio.to_thread`) 동반. K015/K016/K017 입력 데이터 완비
 - **ADR-023 (2026-04-23)**: 하이브리드 검색 도입 — Qdrant 네이티브 sparse(BM25) + dense, RRF 융합. 한국어는 Kiwi로 명사·동사·외국어만 추출해 BM25 적합성 확보. 현 dataset에서 vector와 Hit@3 동률(1.0)이지만 정확 용어·숫자·고유명사 매칭 향상 여력. `SEARCH_MODE=hybrid` 기본, `vector`로 회귀 가능
 - **ADR-022 (2026-04-23)**: 폴더 단위 일괄 색인 CLI(`scripts/bulk_ingest.py`). 재귀 탐색·L1 중복 스킵·결과 JSON 리포트. 관리자 UI 버튼·API는 인증·공개배포 묶음과 함께 미래 도입
 - **ADR-021 (2026-04-22)**: DELETE 고아 파일 정리 + HybridChunker `max_tokens=480` 명시. 토큰 경고 0건, 회귀 0

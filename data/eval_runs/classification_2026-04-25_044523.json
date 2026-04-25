@@ -1,0 +1,357 @@
+{
+  "started_at": "2026-04-25T04:45:23.715505+00:00",
+  "finished_at": "2026-04-25T04:45:29.406830+00:00",
+  "elapsed_sec": 5.69,
+  "total": 20,
+  "ok": 20,
+  "failed": 0,
+  "method_counts": {
+    "rule": 16,
+    "llm": 4,
+    "fallback_unknown": 0
+  },
+  "regenerate": true,
+  "dry_run": false,
+  "results": [
+    {
+      "doc_id": "f925ba78-c5f3-4fc7-8fb0-10bcac2bf33c",
+      "title": "클론코딩_트위터",
+      "status": "ok",
+      "doc_type": "book",
+      "category": "web/frontend",
+      "confidence": 0.667,
+      "method": "rule",
+      "tags": [
+        "리액트",
+        "파이어베이스",
+        "웹 개발",
+        "사용자 인증",
+        "데이터 처리"
+      ],
+      "elapsed_ms": 27
+    },
+    {
+      "doc_id": "1980fde0-6cf6-46d9-9d7a-0ff1ad52b542",
+      "title": "클론코딩_영화평점_웹서비스",
+      "status": "ok",
+      "doc_type": "book",
+      "category": "web/frontend",
+      "confidence": 0.167,
+      "method": "rule",
+      "tags": [
+        "리액트",
+        "클론 코딩",
+        "컴포넌트",
+        "API 연동",
+        "영화 앱"
+      ],
+      "elapsed_ms": 20
+    },
+    {
+      "doc_id": "bbc92be6-2eb9-48f7-8a45-b73d623ace9d",
+      "title": "아두이노_드론_만들고_직접_코딩하기",
+      "status": "ok",
+      "doc_type": "book",
+      "category": "robotics",
+      "confidence": 0.9,
+      "method": "llm",
+      "tags": [
+        "아두이노",
+        "MPU-6050",
+        "모터 제어",
+        "센서 데이터",
+        "코드 예제"
+      ],
+      "elapsed_ms": 1207
+    },
+    {
+      "doc_id": "7780b2f1-3084-4d5a-866d-cd9e9073e3c3",
+      "title": "수호비의_폴리머클레이",
+      "status": "ok",
+      "doc_type": "book",
+      "category": "other",
+      "confidence": 0.3,
+      "method": "llm",
+      "tags": [
+        "폴리머 클레이",
+        "케인 만들기",
+        "색 분산 기법",
+        "몬드리안 케인",
+        "불꽃 케인"
+      ],
+      "elapsed_ms": 1463
+    },
+    {
+      "doc_id": "79638f9e-9dba-43a7-be64-0658ab507ff9",
+      "title": "밑바닥부터_시작하는_딥러닝4",
+      "status": "ok",
+      "doc_type": "book",
+      "category": "ai/ml",
+      "confidence": 0.136,
+      "method": "rule",
+      "tags": [
+        "IA 밴디트 알고리즘",
+        "강화 학습",
+        "몬테카를로법",
+        "TD법",
+        "DeZero",
+        "신경망"
+      ],
+      "elapsed_ms": 40
+    },
+    {
+      "doc_id": "4b69c594-1790-4905-ab46-670caa17c3c7",
+      "title": "드론_제작_완벽_가이드",
+      "status": "ok",
+      "doc_type": "book",
+      "category": "robotics",
+      "confidence": 0.188,
+      "method": "rule",
+      "tags": [
+        "드론 제작",
+        "Crazyflie",
+        "센서 제어",
+        "보드 조립",
+        "오픈소스 프로젝트"
+      ],
+      "elapsed_ms": 35
+    },
+    {
+      "doc_id": "9a2df2d5-410c-4ed6-a344-0f6e9b24ac12",
+      "title": "도메인_주도_설계_구현과_핵심_개념_익히기",
+      "status": "ok",
+      "doc_type": "book",
+      "category": "software/architecture",
+      "confidence": 0.273,
+      "method": "rule",
+      "tags": [
+        "도메인 주도 설계",
+        "계층 구조 아키텍처",
+        "의존성 주입",
+        "애그리거트",
+        "JPA 매핑"
+      ],
+      "elapsed_ms": 26
+    },
+    {
+      "doc_id": "09ab1dbf-a63b-4848-af99-23d088e69b6f",
+      "title": "구글의_안드로이드_프로그래밍",
+      "status": "ok",
+      "doc_type": "book",
+      "category": "mobile/android",
+      "confidence": 0.25,
+      "method": "rule",
+      "tags": [
+        "안드로이드",
+        "프로그래밍",
+        "레이아웃",
+        "이벤트 처리",
+        "Notepad 애플리케이션"
+      ],
+      "elapsed_ms": 21
+    },
+    {
+      "doc_id": "91f74eb5-7b72-497d-99e4-2650862f56df",
+      "title": "교재_C++",
+      "status": "ok",
+      "doc_type": "book",
+      "category": "programming/cpp",
+      "confidence": 0.643,
+      "method": "rule",
+      "tags": [
+        "C++",
+        "형 변환",
+        "Cast 연산자",
+        "객체 지향 프로그래밍",
+        "생성자",
+        "소멸자"
+      ],
+      "elapsed_ms": 35
+    },
+    {
+      "doc_id": "6d8f31f1-5fed-4e07-a62c-70a8100653cd",
+      "title": "가상_면접_사례로_배우는_대규모_시스템_설계_기초",
+      "status": "ok",
+      "doc_type": "book",
+      "category": "software/architecture",
+      "confidence": 0.273,
+      "method": "rule",
+      "tags": [
+        "키값 저장소",
+        "비일관성 해소",
+        "로드밸런서",
+        "URL 단축",
+        "무상태 웹 계층"
+      ],
+      "elapsed_ms": 25
+    },
+    {
+      "doc_id": "2cbb16a4-849b-47ad-8298-7c0944c36aaf",
+      "title": "TCP_IP_소켓프로그래밍_C",
+      "status": "ok",
+      "doc_type": "book",
+      "category": "programming/network",
+      "confidence": 0.429,
+      "method": "rule",
+      "tags": [
+        "TCP/IP",
+        "소켓 프로그래밍",
+        "listen",
+        "accept",
+        "bind",
+        "신호 처리"
+      ],
+      "elapsed_ms": 19
+    },
+    {
+      "doc_id": "919a83b1-2c58-4533-ae58-51e3bc59577e",
+      "title": "Design_Patterns",
+      "status": "ok",
+      "doc_type": "book",
+      "category": "software/architecture",
+      "confidence": 0.136,
+      "method": "rule",
+      "tags": [
+        "디자인 패턴",
+        "Factory Method",
+        "Mediator",
+        "추상 클래스",
+        "객체 지향 프로그래밍"
+      ],
+      "elapsed_ms": 31
+    },
+    {
+      "doc_id": "2eb48721-c9ee-481a-975e-71635f87e1c7",
+      "title": "C++와_CUDA_C로_구현하는_딥러닝_알고리즘",
+      "status": "ok",
+      "doc_type": "book",
+      "category": "ai/ml",
+      "confidence": 0.273,
+      "method": "rule",
+      "tags": [
+        "C++",
+        "CUDA",
+        "딥러닝",
+        "은닉 뉴런",
+        "기울기 하강",
+        "생성적 샘플링"
+      ],
+      "elapsed_ms": 22
+    },
+    {
+      "doc_id": "fa17175b-244b-465f-bb10-5e00c08d1e72",
+      "title": "ADVANCED_UNIX_PROGRAMMING",
+      "status": "ok",
+      "doc_type": "book",
+      "category": "programming/systems",
+      "confidence": 0.5,
+      "method": "rule",
+      "tags": [
+        "UNIX",
+        "시스템 호출",
+        "멀티태스킹",
+        "프로세스 간 통신",
+        "메시지 시스템"
+      ],
+      "elapsed_ms": 21
+    },
+    {
+      "doc_id": "e8b1e5d5-d091-46b9-96f9-a385f5a6f4bb",
+      "title": "밑바닥부터_시작하는_딥러닝",
+      "status": "ok",
+      "doc_type": "book",
+      "category": "ai/ml",
+      "confidence": 0.273,
+      "method": "rule",
+      "tags": [
+        "딥러닝",
+        "파이썬",
+        "퍼셉트론",
+        "신경망",
+        "순전파",
+        "역전파"
+      ],
+      "elapsed_ms": 21
+    },
+    {
+      "doc_id": "7c03e301-86d8-41f2-82a9-02c08325f3cc",
+      "title": "Learning ROS for Robotics Programming",
+      "status": "ok",
+      "doc_type": "book",
+      "category": "robotics",
+      "confidence": 0.938,
+      "method": "rule",
+      "tags": [
+        "ROS",
+        "로봇 프로그래밍",
+        "노드 생성",
+        "메시지 발행",
+        "컴퓨터 비전"
+      ],
+      "elapsed_ms": 24
+    },
+    {
+      "doc_id": "b0459673-11d8-44b6-9a18-2467bade87cc",
+      "title": "중복테스트-원본",
+      "status": "ok",
+      "doc_type": "note",
+      "category": "other",
+      "confidence": 0.3,
+      "method": "llm",
+      "tags": [
+        "중복 테스트",
+        "원본 자료"
+      ],
+      "elapsed_ms": 1242
+    },
+    {
+      "doc_id": "53f676a9-cf57-4311-87e1-5f5461b244c9",
+      "title": "테스트문서",
+      "status": "ok",
+      "doc_type": "note",
+      "category": "other",
+      "confidence": 0.3,
+      "method": "llm",
+      "tags": [
+        "헌법재판소",
+        "탄핵",
+        "위헌법률심판"
+      ],
+      "elapsed_ms": 1213
+    },
+    {
+      "doc_id": "4cb67745-ecce-4b33-ac74-7af97eb9db4b",
+      "title": "Learning ROS for Robotics Programming_ A practical, instructive, and comprehensive guide to introduce yourself to ROS, the top-notch, leading robotics framework ( PDFDrive )",
+      "status": "ok",
+      "doc_type": "book",
+      "category": "robotics",
+      "confidence": 0.562,
+      "method": "rule",
+      "tags": [
+        "ROS",
+        "로봇 프로그래밍",
+        "Arduino",
+        "내비게이션 스택",
+        "비용 맵"
+      ],
+      "elapsed_ms": 40
+    },
+    {
+      "doc_id": "a1bcf2a8-b310-46dd-a5c8-9cc6a6b42ec0",
+      "title": "Learning ROS for Robotics Programming_ A practical, instructive, and comprehensive guide to introduce yourself to ROS, the top-notch, leading robotics framework ( PDFDrive )",
+      "status": "ok",
+      "doc_type": "book",
+      "category": "robotics",
+      "confidence": 0.75,
+      "method": "rule",
+      "tags": [
+        "ROS",
+        "로봇 프로그래밍",
+        "노드 생성",
+        "TF 트리",
+        "rosbag"
+      ],
+      "elapsed_ms": 30
+    }
+  ]
+}

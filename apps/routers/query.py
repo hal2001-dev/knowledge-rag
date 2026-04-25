@@ -35,6 +35,7 @@ def query(
             top_k=request.top_k,
             score_threshold=request.score_threshold,
             history=history,
+            doc_filter=request.doc_filter,
         )
 
     # 사용자 질문 + 어시스턴트 답변 저장

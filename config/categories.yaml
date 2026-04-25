@@ -1,0 +1,107 @@
+# TASK-015 (ADR-025): 자동 분류용 카테고리 트리.
+# 보유 16문서(웹/딥러닝/시스템 설계/로보틱스/프로그래밍 등) 기준 초기 시드.
+# 새 카테고리는 여기에 id·label·keywords를 추가하면 자동 매칭 + LLM fallback에서 즉시 활용된다.
+# id는 "<topic>/<sub>" 형식 권장. 단순 단일 토큰도 허용.
+
+version: 1
+categories:
+  - id: ai/ml
+    label: AI / 머신러닝
+    keywords:
+      - 딥러닝
+      - deep learning
+      - 신경망
+      - neural network
+      - machine learning
+      - 머신러닝
+      - CUDA
+      - 인공지능
+      - 모델 학습
+      - 강화학습
+      - 자연어 처리
+
+  - id: software/architecture
+    label: 소프트웨어 아키텍처 / 설계
+    keywords:
+      - 도메인 주도 설계
+      - DDD
+      - 디자인 패턴
+      - design pattern
+      - 시스템 설계
+      - 대규모 시스템
+      - 아키텍처
+      - 키값 저장소
+      - 무상태
+      - 마이크로서비스
+      - 분산 시스템
+
+  - id: programming/cpp
+    label: C / C++
+    keywords:
+      - C++
+      - C 언어
+      - CUDA C
+      - 형 변환
+      - 객체 지향
+      - STL
+      - 템플릿
+
+  - id: programming/network
+    label: 네트워크 프로그래밍
+    keywords:
+      - TCP/IP
+      - TCP IP
+      - 소켓
+      - socket
+      - 네트워크 프로그래밍
+      - HTTP
+      - 클라이언트 서버
+
+  - id: programming/systems
+    label: 시스템 프로그래밍
+    keywords:
+      - UNIX
+      - Linux
+      - 시스템 프로그래밍
+      - 커널
+      - 프로세스
+      - 시스템 콜
+
+  - id: web/frontend
+    label: 웹 / 프론트엔드
+    keywords:
+      - React
+      - 리액트
+      - 파이어베이스
+      - Firebase
+      - 프론트엔드
+      - 웹 개발
+      - JavaScript
+      - TypeScript
+      - 사용자 인증
+
+  - id: mobile/android
+    label: 모바일 / 안드로이드
+    keywords:
+      - 안드로이드
+      - Android
+      - Kotlin
+      - 모바일 앱
+      - iOS
+      - Swift
+
+  - id: robotics
+    label: 로보틱스
+    keywords:
+      - ROS
+      - Robot Operating System
+      - 로봇
+      - 로봇 프로그래밍
+      - 드론
+      - drone
+      - 노드 생성
+      - 메시지 발행
+
+  - id: other
+    label: 기타
+    keywords: []

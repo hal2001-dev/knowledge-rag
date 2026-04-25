@@ -111,7 +111,9 @@ def main():
                         help="동시 업로드 수 (기본 1 순차). 2+ 시 Docling 메모리·L1 UNIQUE 충돌 주의")
     parser.add_argument("--dry-run", action="store_true", help="실제 업로드 없이 대상 파일만 출력")
     parser.add_argument("--fail-fast", action="store_true", help="첫 실패 시 전체 중단 (기본은 계속)")
-    parser.add_argument("--api-base", default="http://localhost:8000", help="API 서버 URL")
+    parser.add_argument("--api-base", default="http://localhost:8000", help="API 서버 URL (HTTP 모드)")
+    parser.add_argument("--via-queue", action="store_true",
+                        help="HTTP 거치지 않고 Postgres ingest_jobs 큐에 직접 enqueue (TASK-018). FastAPI 미기동 상태에서도 실행 가능")
     parser.add_argument("--report", default=None,
                         help="결과 JSON 저장 경로 (기본: data/eval_runs/bulk_ingest_<ts>.json)")
     args = parser.parse_args()
@@ -151,12 +153,20 @@ def main():
     settings = get_settings()
     max_mb = settings.max_upload_size_mb
 
-    # API health check
-    if not _check_api(args.api_base):
-        print(f"✗ API 서버에 연결 실패: {args.api_base}")
-        print("  먼저 서버를 실행하세요: uvicorn apps.main:app")
-        sys.exit(3)
-    print(f"✓ API 응답 정상 ({args.api_base}/health)")
+    # 모드별 사전 점검
+    if args.via_queue:
+        # TASK-018: Postgres에 직접 enqueue. FastAPI는 띄우지 않아도 됨 (워커는 별도)
+        from packages.db.connection import init_db
+        init_db(settings.postgres_url)
+        print(f"✓ Postgres 연결 정상 (via-queue 모드, FastAPI 불필요)")
+        print(f"  ⚠ 처리는 indexer 워커가 담당합니다. 'python -m apps.indexer_worker' 실행 확인")
+    else:
+        # 기존 HTTP 모드
+        if not _check_api(args.api_base):
+            print(f"✗ API 서버에 연결 실패: {args.api_base}")
+            print("  먼저 서버를 실행하세요: uvicorn apps.main:app")
+            sys.exit(3)
+        print(f"✓ API 응답 정상 ({args.api_base}/health)")
     print()
 
     # tqdm은 optional 의존성. 없으면 단순 카운터
@@ -166,66 +176,125 @@ def main():
     except ImportError:
         iterator = files
 
-    counters = {"ok": 0, "duplicate": 0, "failed": 0, "skipped_too_large": 0}
+    counters = {"ok": 0, "enqueued": 0, "duplicate": 0, "failed": 0, "skipped_too_large": 0}
     results: list[dict] = []
     started_at = datetime.now(timezone.utc)
     t_start = time.monotonic()
 
-    for p in iterator:
-        rel = p.relative_to(root).as_posix()
-        size_mb = p.stat().st_size / (1024 * 1024)
-        result: dict = {"path": rel, "size_mb": round(size_mb, 2)}
+    # via-queue 모드는 DB 세션 1개 재사용
+    queue_db = None
+    if args.via_queue:
+        import hashlib as _hashlib
+        import shutil as _shutil
+        import uuid as _uuid
+        from packages.db.connection import get_session
+        from packages.db.repository import get_document_by_hash
+        from packages.jobs.queue import enqueue_job
+        upload_dir = Path(settings.upload_dir).resolve()
+        upload_dir.mkdir(parents=True, exist_ok=True)
+        queue_db = next(get_session())
 
-        if size_mb > max_mb:
-            counters["skipped_too_large"] += 1
-            result["status"] = "skipped_too_large"
-            result["reason"] = f"size {size_mb:.1f}MB > max {max_mb}MB"
-            results.append(result)
-            continue
+    try:
+        for p in iterator:
+            rel = p.relative_to(root).as_posix()
+            size_mb = p.stat().st_size / (1024 * 1024)
+            result: dict = {"path": rel, "size_mb": round(size_mb, 2)}
 
-        title = _derive_title(p, root, args.title_from)
-        source_val = (args.source_prefix or "") + rel
-        try:
-            with open(p, "rb") as fh:
-                resp = requests.post(
-                    f"{args.api_base}/ingest",
-                    files={"file": (p.name, fh.read())},
-                    data={"title": title, "source": source_val},
-                    timeout=1800,
-                )
-            if resp.status_code == 200:
-                body = resp.json()
-                counters["ok"] += 1
-                result.update(status="ok", doc_id=body.get("doc_id"),
-                              chunk_count=body.get("chunk_count"),
-                              has_tables=body.get("has_tables"),
-                              has_images=body.get("has_images"))
-            elif resp.status_code == 409:
-                detail = resp.json().get("detail", {})
-                counters["duplicate"] += 1
-                existing_id = detail.get("doc_id") if isinstance(detail, dict) else None
-                result.update(status="duplicate", doc_id=existing_id)
-            else:
-                counters["failed"] += 1
-                detail = None
+            if size_mb > max_mb:
+                counters["skipped_too_large"] += 1
+                result["status"] = "skipped_too_large"
+                result["reason"] = f"size {size_mb:.1f}MB > max {max_mb}MB"
+                results.append(result)
+                continue
+
+            title = _derive_title(p, root, args.title_from)
+            source_val = (args.source_prefix or "") + rel
+
+            # ─── via-queue 모드 ───────────────────────────────
+            if args.via_queue:
                 try:
-                    detail = resp.json().get("detail")
-                except Exception:
-                    detail = resp.text[:200]
-                result.update(status="failed", http_status=resp.status_code, error=detail)
+                    raw = p.read_bytes()
+                    chash = _hashlib.sha256(raw).hexdigest()
+                    existing = get_document_by_hash(queue_db, chash)
+                    if existing is not None:
+                        counters["duplicate"] += 1
+                        result.update(status="duplicate", doc_id=existing.doc_id)
+                        results.append(result)
+                        continue
+                    new_doc_id = str(_uuid.uuid4())
+                    dest = upload_dir / f"{new_doc_id}{p.suffix.lower()}"
+                    _shutil.copyfile(p, dest)
+                    job = enqueue_job(
+                        queue_db,
+                        doc_id=new_doc_id,
+                        file_path=str(dest),
+                        title=title,
+                        source=source_val,
+                        content_hash=chash,
+                    )
+                    counters["enqueued"] += 1
+                    result.update(status="enqueued", doc_id=new_doc_id, job_id=job.id)
+                except Exception as e:
+                    counters["failed"] += 1
+                    result.update(status="failed", error=str(e)[:200])
+                    if args.fail_fast:
+                        results.append(result)
+                        print(f"\n✗ fail-fast (enqueue): {rel}: {e}")
+                        break
+                results.append(result)
+                continue
+
+            # ─── HTTP 모드 (기존) ─────────────────────────────
+            try:
+                with open(p, "rb") as fh:
+                    resp = requests.post(
+                        f"{args.api_base}/ingest",
+                        files={"file": (p.name, fh.read())},
+                        data={"title": title, "source": source_val},
+                        timeout=1800,
+                    )
+                if resp.status_code == 200:
+                    body = resp.json()
+                    # queue 모드면 status="pending" + job_id, sync 모드면 status="done"
+                    if body.get("status") == "pending":
+                        counters["enqueued"] += 1
+                        result.update(status="enqueued", doc_id=body.get("doc_id"),
+                                      job_id=body.get("job_id"))
+                    else:
+                        counters["ok"] += 1
+                        result.update(status="ok", doc_id=body.get("doc_id"),
+                                      chunk_count=body.get("chunk_count"),
+                                      has_tables=body.get("has_tables"),
+                                      has_images=body.get("has_images"))
+                elif resp.status_code == 409:
+                    detail = resp.json().get("detail", {})
+                    counters["duplicate"] += 1
+                    existing_id = detail.get("doc_id") if isinstance(detail, dict) else None
+                    result.update(status="duplicate", doc_id=existing_id)
+                else:
+                    counters["failed"] += 1
+                    detail = None
+                    try:
+                        detail = resp.json().get("detail")
+                    except Exception:
+                        detail = resp.text[:200]
+                    result.update(status="failed", http_status=resp.status_code, error=detail)
+                    if args.fail_fast:
+                        results.append(result)
+                        print(f"\n✗ fail-fast: {rel} ({resp.status_code})")
+                        break
+            except requests.exceptions.RequestException as e:
+                counters["failed"] += 1
+                result.update(status="failed", error=str(e)[:200])
                 if args.fail_fast:
                     results.append(result)
-                    print(f"\n✗ fail-fast: {rel} ({resp.status_code})")
+                    print(f"\n✗ fail-fast (네트워크): {rel}: {e}")
                     break
-        except requests.exceptions.RequestException as e:
-            counters["failed"] += 1
-            result.update(status="failed", error=str(e)[:200])
-            if args.fail_fast:
-                results.append(result)
-                print(f"\n✗ fail-fast (네트워크): {rel}: {e}")
-                break
 
-        results.append(result)
+            results.append(result)
+    finally:
+        if queue_db is not None:
+            queue_db.close()
 
     elapsed = time.monotonic() - t_start
     finished_at = datetime.now(timezone.utc)
@@ -258,8 +327,9 @@ def main():
     print()
     print("=== 결과 ===")
     print(f"total               : {len(files)}")
-    print(f"ok (신규 색인)       : {counters['ok']}")
-    print(f"duplicate (409 스킵) : {counters['duplicate']}")
+    print(f"ok (sync 색인)      : {counters['ok']}")
+    print(f"enqueued (큐 모드)   : {counters['enqueued']}")
+    print(f"duplicate (스킵)    : {counters['duplicate']}")
     print(f"skipped_too_large    : {counters['skipped_too_large']}")
     print(f"failed               : {counters['failed']}")
     print(f"elapsed              : {elapsed:.1f}s")

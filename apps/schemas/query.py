@@ -10,6 +10,10 @@ class QueryRequest(BaseModel):
     )
     top_k: Optional[int] = None
     score_threshold: Optional[float] = None
+    doc_filter: Optional[str] = Field(
+        None,
+        description="TASK-016: 특정 doc_id에 한정해 검색. 도서관 탭의 '이 책에 대해 묻기'.",
+    )
 
 
 class SourceItem(BaseModel):

@@ -22,6 +22,140 @@
 
 ---
 
+## [0.22.0] - 2026-04-25
+
+### Added
+- **색인 워커 분리** (TASK-018, ADR-028): Postgres `ingest_jobs` 큐 + 독립 워커 프로세스. FastAPI는 enqueue+202만, indexer 워커가 SKIP LOCKED claim 후 인덱싱·요약·분류
+- 마이그레이션 `0003_add_ingest_jobs.sql` — sentinel(`table`, `ingest_jobs`)
+- `connection.py` sentinel 시스템 일반화 — column/table 양쪽 지원, `pg_advisory_xact_lock`으로 동시 기동 시 마이그레이션 race 해소
+- `packages/db/models.py` `IngestJobRecord`
+- `packages/jobs/queue.py` — `enqueue_job`, `claim_next_job`(SKIP LOCKED), `mark_done`, `mark_failed`, `get_job`, `list_jobs`
+- `apps/indexer_worker.py` — entry point `python -m apps.indexer_worker`, 폴링 루프, SIGTERM 핸들러, retry 3회, 인라인 summary+classify 호출
+- `apps/routers/jobs.py` — `GET /jobs/{id}`, `GET /jobs?status=&limit=`
+- `apps/routers/ingest.py` — `INGEST_MODE=queue` 분기, 사용자 명시 doc_type/category/tags를 잡 레코드에 저장
+- `IngestResponse.job_id: Optional[int]`
+- `scripts/bulk_ingest.py` `--via-queue` — HTTP 거치지 않고 직접 enqueue (FastAPI 미기동 환경에서도 동작)
+- docker-compose 주석 가이드 — uvicorn + worker 두 프로세스 표준 운영 절차
+
+### Changed
+- `apps/config.py` `ingest_mode: "queue" | "sync"` 추가 (기본 queue)
+- `bulk_ingest` 결과 카운터에 `enqueued` 추가
+- 마이그레이션 적용 흐름이 advisory lock으로 직렬화 — 동시 기동에도 안전
+
+### 검증 (스모크)
+- 작은 파일 1건: enqueue → claim → 인덱싱(4초) → 요약 → 분류(LLM fallback `note / software/architecture`) → done. 총 9초
+- 잡 상태 머신: `pending → in_progress → done` 추적 정상
+- 사용자 입력 분류 미지정 시 자동 분류 자연 동작
+- `INGEST_MODE=sync`로 1줄 전환 시 기존 동작 복원 (회귀 0)
+
+### 관련 ADR
+- ADR-028 (Postgres 큐 결정·SKIP LOCKED·advisory lock·BackgroundTasks 마이그레이션 흐름)
+
+---
+
+## [0.21.0] - 2026-04-25
+
+### Added
+- **랜딩 카드 v2** (TASK-017, ADR-027): 빈 채팅 카드에 카테고리 분포 한 줄 + 주제 칩 6개 + 최근 문서 카드 3 grid + 전체 문서 expander
+- `/index/overview` 응답 확장: `top_tags[]`, `categories[{id,label,count}]`, `recent_docs[{doc_id,title,one_liner,category}]`
+- `apps/schemas/documents.py` `RecentDocItem` 신설, `IndexOverviewResponse` 3필드 추가(default 빈배열로 후방호환)
+- 주제 칩 클릭 → `library_search` 사전 채우기, 최근 문서 카드의 [이 책에 대해 묻기] → `active_doc_filter` (TASK-016 라우팅 재사용)
+- `categories.yaml` label 매핑 — 카테고리 id를 한국어 라벨로 표면화
+
+### Changed
+- 빈 채팅 empty state 레이아웃 재구성 — summary → 카테고리 분포 → 주제 칩 → 예시 질문 → 최근 문서 카드 → 전체 문서 expander 순
+
+### 검증
+- 추가 LLM 호출 0회 (모든 신규 필드는 DB 데이터로 파생)
+- 응답 페이로드 ~1.5KB → ~3KB (현 20문서)
+- 캐시 무효화 흐름 변화 없음 (기존 `_overview_cache` 그대로)
+
+### 관련 ADR
+- ADR-027 (응답 확장 vs 신규 엔드포인트 트레이드오프)
+
+---
+
+## [0.20.0] - 2026-04-25
+
+### Added
+- **사용자 도서관 탭** (TASK-016, ADR-026): 채팅 옆 신규 탭에 카테고리 그룹 카드 그리드 + 검색/형식/카테고리 필터 + "이 책에 대해 묻기" doc_filter 라우팅
+- 카드 상세 토글 — abstract / sample_questions 버튼 / meta(source/file_type/indexed_at/confidence)
+- 채팅 탭 상단 활성 배지 — 도서관에서 라우팅된 doc_filter 표시 + [전체 검색] 해제
+- `apps/schemas/query.py` `QueryRequest.doc_filter: Optional[str]`
+- `packages/rag/{pipeline.py,retriever.py}` — `doc_filter`/`doc_id` 인자 관통 (vector·hybrid 양쪽). LangSmith 태그·메타에 `doc_filter` 표기
+- `apps/routers/query.py` — request → pipeline 통과
+- `ui/app.py` `TAB_LIBRARY`, `active_doc_filter` 세션 상태, `library_expanded_doc` 카드 토글
+
+### Changed
+- `st.tabs` 순서: 채팅 → **도서관(신규)** → 문서 → 대화 → 시스템 → 평가 (사용자 우선 정렬)
+
+### 검증
+- 현 20문서: 카테고리 8개 + (미분류) 0건. 카드 그리드·필터·doc_filter 라우팅 정상
+- doc_filter 추가 비용 미미 (Qdrant filter 절만 추가)
+- 카드의 confidence < 0.4 ⚠️ 배지 — 점토 공예/헌법재판소/더미 문서가 admin 검수 대상으로 자동 표면화
+
+### 관련 ADR
+- ADR-026 (도서관 탭 통합 결정·doc_filter 라우팅·카드 그리드 vs 페이지 분리 트레이드오프)
+
+---
+
+## [0.19.0] - 2026-04-25
+
+### Added
+- **카테고리 메타데이터 + 자동 분류** (TASK-015, ADR-025): `documents`에 `doc_type`/`category`/`category_confidence`/`tags` 추가, 단일 Qdrant 컬렉션 + payload 동기화 + keyword index, 룰 매칭 우선·LLM fallback
+- Postgres 마이그레이션 `0002_add_classification_columns.sql` — sentinel `doc_type`으로 idempotent 처리
+- `config/categories.yaml` — 초기 카테고리 9개(ai/ml, software/architecture, programming/cpp|network|systems, web/frontend, mobile/android, robotics, other)
+- `packages/classifier/` — `CategoryClassifier`, `infer_doc_type`, `load_categories`. 키워드 매칭 → LLM fallback (gpt-4o-mini, JSON mode)
+- `packages/vectorstore/qdrant_store.py` — `_ensure_payload_indexes`, `set_classification_payload(doc_id, doc_type, category, tags)` (부분 업데이트, doc_id 필터)
+- `packages/db/repository.py` — `update_document_classification`, `list_documents_without_category`
+- `apps/routers/documents.py` — `PATCH /documents/{id}` (DocumentPatchRequest), `classify_and_summarize_for_doc` 백그라운드 헬퍼 (summary→classify 순차)
+- `apps/routers/ingest.py` — `POST /ingest` 폼에 `doc_type`/`category`/`tags` 옵션 파라미터. 사용자 명시값 우선
+- `apps/schemas/documents.py` — `DocumentItem`에 분류 4필드 추가, `DocumentPatchRequest`
+- `scripts/classify_documents.py` — `--dry-run/--regenerate/--limit/--doc-id/--report` + method 통계(rule/llm/fallback_unknown)
+
+### Changed
+- `init.sql` — 분류 컬럼·인덱스·CHECK 제약 동시 추가(신규 환경)
+- 기본 인덱싱 흐름: 사용자 분류 미지정 시 summary 생성 후 같은 백그라운드 turn에 자동 분류
+
+### 검증
+- 파일럿 20문서: rule 16건(LLM 0회) + LLM fallback 4건(≈$0.001), 총 5.7초, 정확도 20/20
+- doc_type 휴리스틱 정확(pdf→book, txt→note, docx→report)
+- LLM low-confidence (< 0.4) 사례 — 점토 공예/헌법재판소/더미 문서가 'other' + confidence 0.3으로 정직하게 표면화
+
+### 관련 ADR
+- ADR-025 (단일 컬렉션 결정·룰 매칭 우선·LLM fallback·회귀 조건)
+
+---
+
+## [0.18.0] - 2026-04-25
+
+### Added
+- **문서 자동 요약** (TASK-014, ADR-024): `summary` JSONB 영구 캐시 + 인덱싱 후 비동기 훅 + admin 강제 재생성 API
+- `packages/summarizer/` — `document_summarizer.py`, `prompts.py` (system + few-shot 2건, 환각 차단 규칙)
+- Postgres 마이그레이션 `0001_add_summary_columns.sql` — `summary JSONB`, `summary_model TEXT`, `summary_generated_at TIMESTAMPTZ`
+- `packages/db/connection.py` — sentinel 컬럼 존재 검사 후 ALTER 회피 (idempotent, AccessExclusiveLock 충돌 방지)
+- `packages/db/repository.py` — `update_document_summary`, `list_documents_without_summary`
+- `apps/routers/documents.py` — `GET /documents/{id}/summary`, `POST /documents/{id}/summary/regenerate`, `generate_summary_for_doc(doc_id)` 백그라운드 헬퍼
+- `apps/schemas/documents.py` — `SummaryResponse`, `DocumentItem`에 `summary`/`summary_model`/`summary_generated_at` 필드
+- `scripts/generate_summaries.py` — `--dry-run`/`--regenerate`/`--limit`/`--doc-id`/`--report` 옵션, 결과 JSON 리포트
+- `.env` 토글 `SUMMARY_ENABLED=true|false` (기본 true)
+
+### Changed
+- `apps/routers/ingest.py` — `pipeline.ingest`를 `asyncio.to_thread`로 위임. async 라우트의 event loop 차단 핫픽스(bulk_ingest 진행 중에도 `/query`·`/health` 응답 가능). 응답 후 `BackgroundTasks`로 `generate_summary_for_doc` 자동 호출
+- `packages/db/models.py` `DocumentRecord` — summary 3개 컬럼 추가
+- `packages/code/models.py` `DocRecord` — 동기화
+
+### 검증
+- 파일럿 16문서 모두 success (시범 1 + 일괄 15) — 평균 3.7s/문서, 총 56초, 비용 ≈ $0.08
+- 한국어 / 영문 / 짧은 문서 무작위 검수 → 환각 0건, 정보 부족 시 빈 배열 정직 처리
+- 영문 원본 → 한국어 요약 + 기술 용어 원어 유지
+
+### 후속 / 결번
+- TASK-015 자동 분류가 `summary.topics[]`를 `tags[]`로 채택하는 흐름이라 의존 정렬 유효
+- ADR-018은 TASK-006(MCP) 철회로 결번. 다음 가용 ADR은 ADR-025
+
+---
+
 ## [0.16.0] - 2026-04-23
 
 ### Added

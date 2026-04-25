@@ -47,6 +47,14 @@ class Settings(BaseSettings):
     # 인덱스 커버리지 카드 (TASK-008, ADR-020 예정)
     index_overview_enabled: bool = True
 
+    # 문서 요약 (TASK-014, ADR-024) — gpt-4o-mini 재활용. 인덱싱 후 비동기 1회 호출.
+    summary_enabled: bool = True
+
+    # 색인 워커 분리 (TASK-018, ADR-028) — "queue" | "sync"
+    # queue: POST /ingest는 큐 enqueue + 202만, indexer 워커가 처리
+    # sync : 기존 동작 (라우트 안에서 인덱싱 직접 수행) — 회귀용
+    ingest_mode: str = "queue"
+
     # 검색 모드 (TASK-011, ADR-023) — vector | hybrid
     search_mode: str = "vector"
     sparse_model_name: str = "Qdrant/bm25"

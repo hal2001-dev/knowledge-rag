@@ -13,6 +13,7 @@ from qdrant_client.http.models import (
     Fusion,
     FusionQuery,
     MatchValue,
+    PayloadSchemaType,
     PointStruct,
     Prefetch,
     SparseVector,
@@ -52,6 +53,7 @@ class QdrantDocumentStore:
         self._sparse = sparse_embedder if search_mode == "hybrid" else None
 
         self._ensure_collection()
+        self._ensure_payload_indexes()
 
         # vector 모드만 기존 langchain_qdrant 재사용 (scroll·기본 삭제 등)
         # hybrid 모드는 raw Qdrant SDK로 직접 처리
@@ -129,6 +131,31 @@ class QdrantDocumentStore:
                 f"Qdrant 컬렉션 '{self._collection}'의 dense 차원({current})이 "
                 f"현재 임베딩 차원({self._dim})과 다릅니다. 재인덱싱 필요."
             )
+
+    def _ensure_payload_indexes(self) -> None:
+        """TASK-015: 검색 필터·집계용 payload 인덱스. 이미 있으면 무해(무시).
+
+        - metadata.doc_id: 문서 단위 조회·삭제(이미 사용 중)
+        - metadata.doc_type: enum 필터 (book/article/...)
+        - metadata.category: 카테고리 단일 문자열 필터
+        - metadata.tags: 태그 배열 (Qdrant keyword 인덱스가 array를 자동 지원)
+        """
+        targets = [
+            "metadata.doc_id",
+            "metadata.doc_type",
+            "metadata.category",
+            "metadata.tags",
+        ]
+        for field_name in targets:
+            try:
+                self._client.create_payload_index(
+                    collection_name=self._collection,
+                    field_name=field_name,
+                    field_schema=PayloadSchemaType.KEYWORD,
+                )
+            except Exception as e:
+                # 이미 존재하면 ApiException 발생 — 무시
+                logger.debug(f"payload 인덱스 {field_name} skip: {e}")
 
     # ─────────────────────────────────────────────────────
     # 문서 추가
@@ -271,6 +298,44 @@ class QdrantDocumentStore:
                 "as_retriever()는 vector 모드에서만 지원. hybrid는 similarity_search_with_score 사용."
             )
         return self._store.as_retriever(search_kwargs={"k": k})
+
+    def set_classification_payload(
+        self,
+        doc_id: str,
+        doc_type: Optional[str] = None,
+        category: Optional[str] = None,
+        tags: Optional[list[str]] = None,
+    ) -> bool:
+        """TASK-015: doc_id에 속한 모든 청크의 payload에 분류 정보를 일괄 업데이트.
+
+        None인 키는 손대지 않는다. set_payload는 부분 업데이트라 다른 metadata 키를 보존.
+        """
+        payload: dict = {}
+        if doc_type is not None:
+            payload["metadata.doc_type"] = doc_type
+        if category is not None:
+            payload["metadata.category"] = category
+        if tags is not None:
+            payload["metadata.tags"] = list(tags)
+        if not payload:
+            return False
+        try:
+            self._client.set_payload(
+                collection_name=self._collection,
+                payload=payload,
+                points=Filter(
+                    must=[
+                        FieldCondition(
+                            key="metadata.doc_id",
+                            match=MatchValue(value=doc_id),
+                        )
+                    ]
+                ),
+            )
+            return True
+        except Exception as e:
+            logger.warning(f"set_payload 실패 doc_id={doc_id}: {e}")
+            return False
 
     def scroll_by_doc_id(self, doc_id: str, limit: int = 10) -> list[ScoredChunk]:
         """특정 doc_id의 청크를 chunk_index 순으로 스크롤. 관리자 UI용."""

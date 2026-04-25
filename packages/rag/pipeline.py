@@ -91,6 +91,7 @@ class RAGPipeline:
         initial_k: int | None = None,
         score_threshold: float | None = None,
         history: list[dict] | None = None,
+        doc_filter: str | None = None,
     ) -> dict:
         top_k = top_k or self._settings.default_top_k
         initial_k = initial_k or self._settings.default_initial_k
@@ -109,13 +110,14 @@ class RAGPipeline:
                 f"reranker:{self._reranker.backend}",
                 f"llm:{llm_backend}",
                 f"suggestions:{self._settings.suggestions_enabled}",
-            ],
+            ] + ([f"doc_filter:{doc_filter[:8]}"] if doc_filter else []),
             metadata={
                 "reranker_backend": self._reranker.backend,
                 "llm_backend": llm_backend,
                 "suggestions_enabled": self._settings.suggestions_enabled,
                 "suggestions_count": self._settings.suggestions_count,
                 "llm_model": llm_model,
+                "doc_filter": doc_filter,
             },
         ):
             chunks = retrieve(
@@ -125,6 +127,7 @@ class RAGPipeline:
                 initial_k=initial_k,
                 top_n=top_k,
                 score_threshold=score_threshold,
+                doc_id=doc_filter,
             )
 
         if not chunks:

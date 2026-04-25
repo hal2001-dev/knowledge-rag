@@ -1,15 +1,26 @@
+import asyncio
 import hashlib
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
 from apps.config import get_settings
 from apps.dependencies import get_db, get_pipeline
-from apps.routers.documents import invalidate_index_overview_cache
+from apps.routers.documents import (
+    classify_and_summarize_for_doc,
+    generate_summary_for_doc,
+    invalidate_index_overview_cache,
+)
 from apps.schemas.ingest import IngestResponse
-from packages.db.repository import create_document, get_document_by_hash, to_doc_record
+from packages.db.repository import (
+    create_document,
+    get_document_by_hash,
+    to_doc_record,
+    update_document_classification,
+)
+from packages.jobs.queue import enqueue_job
 from packages.rag.pipeline import RAGPipeline
 
 router = APIRouter()
@@ -17,9 +28,13 @@ router = APIRouter()
 
 @router.post("/ingest", response_model=IngestResponse)
 async def ingest(
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     title: str = Form(...),
     source: str = Form(""),
+    doc_type: str | None = Form(None),
+    category: str | None = Form(None),
+    tags: str | None = Form(None),
     pipeline: RAGPipeline = Depends(get_pipeline),
     db: Session = Depends(get_db),
 ):
@@ -54,10 +69,45 @@ async def ingest(
     upload_path.parent.mkdir(parents=True, exist_ok=True)
     upload_path.write_bytes(content)
 
-    # 원본 파일은 data/uploads/{doc_id}{ext}로 영구 보관한다 (재인덱싱 가능하도록).
-    # 인덱싱 실패 시에만 업로드 파일을 제거한다.
+    # 사용자 명시 분류값 파싱 (큐·sync 모드 공통)
+    parsed_tags: list[str] | None = None
+    if tags is not None:
+        parsed_tags = [t.strip() for t in tags.split(",") if t.strip()]
+
+    # ─── 큐 모드 (TASK-018, ADR-028) ────────────────────────────
+    if settings.ingest_mode == "queue":
+        try:
+            job = enqueue_job(
+                db,
+                doc_id=doc_id,
+                file_path=str(upload_path),
+                title=title,
+                source=source or file.filename or "",
+                content_hash=content_hash,
+                user_doc_type=doc_type,
+                user_category=category,
+                user_tags=parsed_tags,
+            )
+        except Exception:
+            upload_path.unlink(missing_ok=True)
+            raise
+
+        return IngestResponse(
+            doc_id=doc_id,
+            title=title,
+            status="pending",
+            chunk_count=0,
+            has_tables=False,
+            has_images=False,
+            duplicate=False,
+            job_id=job.id,
+        )
+
+    # ─── sync 모드 (회귀용) ─────────────────────────────────────
+    # async 라우트 안의 sync 호출은 event loop를 막으므로 스레드풀로 위임
     try:
-        record = pipeline.ingest(
+        record = await asyncio.to_thread(
+            pipeline.ingest,
             file_path=str(upload_path),
             title=title,
             source=source or file.filename or "",
@@ -70,8 +120,30 @@ async def ingest(
         upload_path.unlink(missing_ok=True)
         raise
 
-    # 새 문서 추가로 인덱스 요약 캐시 무효화 (TASK-008)
     invalidate_index_overview_cache()
+
+    user_provided_category = any(v is not None for v in (doc_type, category, parsed_tags))
+    if user_provided_category:
+        update_document_classification(
+            db,
+            doc_id=doc.doc_id,
+            doc_type=doc_type,
+            category=category,
+            category_confidence=1.0 if category else None,
+            tags=parsed_tags,
+        )
+        pipeline._store.set_classification_payload(
+            doc_id=doc.doc_id,
+            doc_type=doc_type,
+            category=category if category is not None else "",
+            tags=parsed_tags,
+        )
+
+    if settings.summary_enabled:
+        if user_provided_category:
+            background_tasks.add_task(generate_summary_for_doc, doc.doc_id)
+        else:
+            background_tasks.add_task(classify_and_summarize_for_doc, doc.doc_id)
 
     return IngestResponse(
         doc_id=doc.doc_id,

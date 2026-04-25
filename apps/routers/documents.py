@@ -13,11 +13,28 @@ from apps.schemas.documents import (
     DeleteResponse,
     DocumentItem,
     DocumentListResponse,
+    DocumentPatchRequest,
     IndexOverviewResponse,
+    RecentDocItem,
+    SummaryResponse,
 )
+import yaml as _yaml
+from pathlib import Path as _Path
+from packages.classifier import CategoryClassifier
 from packages.code.logger import get_logger
-from packages.db.repository import delete_document, get_document, list_documents, to_doc_record
+from packages.db.connection import get_session
+from packages.db.repository import (
+    delete_document,
+    get_document,
+    list_documents,
+    to_doc_record,
+    update_document_classification,
+    update_document_summary,
+)
 from packages.rag.pipeline import RAGPipeline
+from packages.summarizer.document_summarizer import summarize_document
+
+VALID_DOC_TYPES = {"book", "article", "paper", "note", "report", "web", "other"}
 
 logger = get_logger(__name__)
 router = APIRouter()
@@ -32,6 +49,111 @@ def invalidate_index_overview_cache() -> None:
     global _overview_cache, _overview_cache_key
     _overview_cache = None
     _overview_cache_key = None
+
+
+def _classify_doc(db, pipeline, settings, record) -> None:
+    """단일 문서 자동 분류 — DB + Qdrant payload 동시 갱신. 실패는 logger.warning."""
+    try:
+        classifier = CategoryClassifier.from_settings(settings)
+        classifier.llm = pipeline._llm  # 기존 LLM 인스턴스 재사용
+        result = classifier.classify(
+            title=record.title or record.doc_id,
+            file_type=record.file_type or "pdf",
+            source=record.source or "",
+            summary=record.summary,
+        )
+        update_document_classification(
+            db,
+            doc_id=record.doc_id,
+            doc_type=result.doc_type,
+            category=result.category,
+            category_confidence=result.confidence,
+            tags=result.tags,
+        )
+        pipeline._store.set_classification_payload(
+            doc_id=record.doc_id,
+            doc_type=result.doc_type,
+            category=result.category if result.category is not None else "",
+            tags=result.tags,
+        )
+        logger.info(
+            f"분류 완료 doc_id={record.doc_id} doc_type={result.doc_type} "
+            f"category={result.category} method={result.method}"
+        )
+    except Exception as e:
+        logger.warning(f"classify 실패 doc_id={record.doc_id}: {e}")
+
+
+def classify_and_summarize_for_doc(doc_id: str) -> None:
+    """배경 작업 — summary 생성 후 같은 turn에 자동 분류 (TASK-014 + TASK-015)."""
+    settings = get_settings()
+    pipeline = get_pipeline()
+
+    db_gen = get_session()
+    db = next(db_gen)
+    try:
+        # summary 먼저
+        if settings.summary_enabled:
+            _generate_summary_inner(db, pipeline, settings, doc_id)
+            db.expire_all()  # summary가 채워진 record를 다시 읽도록
+
+        record = get_document(db, doc_id)
+        if record is None:
+            return
+        _classify_doc(db, pipeline, settings, record)
+    finally:
+        db.close()
+
+
+def _generate_summary_inner(db, pipeline, settings, doc_id: str) -> None:
+    """공유 summary 생성 로직. db/pipeline은 호출자 책임."""
+    record = get_document(db, doc_id)
+    if record is None:
+        logger.warning(f"summary 생성: 문서 없음 doc_id={doc_id}")
+        return
+    try:
+        chunks = pipeline._store.scroll_by_doc_id(doc_id, limit=10)
+    except Exception as e:
+        logger.warning(f"summary scroll 실패 doc_id={doc_id}: {e}")
+        return
+    if not chunks:
+        return
+    try:
+        result = summarize_document(
+            title=record.title or doc_id,
+            chunks=chunks,
+            settings=settings,
+            llm=pipeline._llm,
+        )
+    except Exception as e:
+        logger.warning(f"summary LLM 실패 doc_id={doc_id}: {e}")
+        return
+    if not result.one_liner and not result.abstract:
+        return
+    update_document_summary(
+        db, doc_id=doc_id, summary=result.to_dict(), model=result.model
+    )
+    logger.info(
+        f"summary 생성 완료 doc_id={doc_id} model={result.model} "
+        f"one_liner={result.one_liner!r}"
+    )
+
+
+def generate_summary_for_doc(doc_id: str) -> None:
+    """배경 작업 — 인덱싱 직후 또는 강제 재생성 시 호출 (TASK-014).
+
+    사용자가 분류값을 명시한 경우에만 호출됨(분류 자동화는 classify_and_summarize_for_doc).
+    """
+    settings = get_settings()
+    if not settings.summary_enabled:
+        return
+    pipeline = get_pipeline()
+    db_gen = get_session()
+    db = next(db_gen)
+    try:
+        _generate_summary_inner(db, pipeline, settings, doc_id)
+    finally:
+        db.close()
 
 
 @router.get("/documents", response_model=DocumentListResponse)
@@ -170,16 +292,161 @@ def index_overview(
         summary = f"현재 {doc_count}개 문서가 인덱싱되어 있습니다."
         suggested_questions = []
 
+    # 3) TASK-017 — K014/K015 데이터 합성: 주제 칩(top_tags), 카테고리 분포, 최근 문서 카드
+    tag_counter: Counter = Counter()
+    cat_counter: Counter = Counter()
+    for r in records:
+        for t in (r.tags or []):
+            if isinstance(t, str) and t.strip():
+                tag_counter[t.strip()] += 1
+        if r.category:
+            cat_counter[r.category] += 1
+
+    top_tags = [t for t, _ in tag_counter.most_common(12)]
+
+    # 카테고리 label 보강: categories.yaml과 매칭. 없으면 id 그대로.
+    cat_labels: dict[str, str] = {}
+    try:
+        cats_path = _Path(__file__).parent.parent.parent / "config" / "categories.yaml"
+        if cats_path.exists():
+            data = _yaml.safe_load(cats_path.read_text(encoding="utf-8")) or {}
+            for c in data.get("categories", []):
+                cat_labels[c["id"]] = c.get("label", c["id"])
+    except Exception:
+        pass
+    categories_dist = [
+        {"id": cid, "label": cat_labels.get(cid, cid), "count": cnt}
+        for cid, cnt in cat_counter.most_common()
+    ]
+
+    # 최근 문서 카드(상위 6개) — recent ordered already(list_documents desc)
+    recent_docs: list[RecentDocItem] = []
+    for r in records[:6]:
+        sm = r.summary or {}
+        recent_docs.append(
+            RecentDocItem(
+                doc_id=r.doc_id,
+                title=r.title or r.doc_id,
+                one_liner=(sm.get("one_liner") or "").strip() or None,
+                category=r.category,
+            )
+        )
+
     response = IndexOverviewResponse(
         doc_count=doc_count,
         titles=titles[:20],
         top_headings=top_headings[:10],
         summary=summary,
         suggested_questions=suggested_questions,
+        top_tags=top_tags,
+        categories=categories_dist,
+        recent_docs=recent_docs,
     )
     _overview_cache = response.model_dump()
     _overview_cache_key = cache_key
     return response
+
+
+@router.patch("/documents/{doc_id}", response_model=DocumentItem)
+def patch_document(
+    doc_id: str,
+    payload: DocumentPatchRequest,
+    pipeline: RAGPipeline = Depends(get_pipeline),
+    db: Session = Depends(get_db),
+):
+    """TASK-015: 사용자가 자동 분류 결과를 수정. 인증 미도입 단계라 로컬 LAN 전용."""
+    if get_document(db, doc_id) is None:
+        raise HTTPException(status_code=404, detail=f"문서를 찾을 수 없음: {doc_id}")
+
+    if payload.doc_type is not None and payload.doc_type not in VALID_DOC_TYPES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"doc_type은 {sorted(VALID_DOC_TYPES)} 중 하나여야 합니다.",
+        )
+
+    confidence = 1.0 if payload.category is not None else None
+    updated = update_document_classification(
+        db,
+        doc_id=doc_id,
+        doc_type=payload.doc_type,
+        category=payload.category,
+        category_confidence=confidence,
+        tags=payload.tags,
+    )
+    if updated is None:
+        raise HTTPException(status_code=404, detail=f"문서를 찾을 수 없음: {doc_id}")
+
+    pipeline._store.set_classification_payload(
+        doc_id=doc_id,
+        doc_type=payload.doc_type,
+        category=payload.category,
+        tags=payload.tags,
+    )
+
+    return DocumentItem(**vars(to_doc_record(updated)))
+
+
+@router.get("/documents/{doc_id}/summary", response_model=SummaryResponse)
+def get_summary(doc_id: str, db: Session = Depends(get_db)):
+    """TASK-014: 문서 요약 조회. 미생성이면 summary=null 로 반환."""
+    record = get_document(db, doc_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail=f"문서를 찾을 수 없음: {doc_id}")
+    return SummaryResponse(
+        doc_id=record.doc_id,
+        title=record.title,
+        summary=record.summary,
+        summary_model=record.summary_model,
+        summary_generated_at=(
+            record.summary_generated_at.isoformat()
+            if record.summary_generated_at
+            else None
+        ),
+    )
+
+
+@router.post("/documents/{doc_id}/summary/regenerate", response_model=SummaryResponse)
+def regenerate_summary(
+    doc_id: str,
+    pipeline: RAGPipeline = Depends(get_pipeline),
+    db: Session = Depends(get_db),
+):
+    """TASK-014: 동기 강제 재생성. 인증 미도입 단계라 로컬 LAN 전용으로 사용."""
+    settings = get_settings()
+    if not settings.summary_enabled:
+        raise HTTPException(status_code=503, detail="summary_enabled=false")
+
+    record = get_document(db, doc_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail=f"문서를 찾을 수 없음: {doc_id}")
+
+    chunks = pipeline._store.scroll_by_doc_id(doc_id, limit=10)
+    if not chunks:
+        raise HTTPException(status_code=409, detail="해당 문서의 청크가 없습니다.")
+
+    result = summarize_document(
+        title=record.title or doc_id,
+        chunks=chunks,
+        settings=settings,
+        llm=pipeline._llm,
+    )
+    if not result.one_liner and not result.abstract:
+        raise HTTPException(status_code=502, detail="요약 생성 실패 (빈 결과)")
+
+    updated = update_document_summary(
+        db, doc_id=doc_id, summary=result.to_dict(), model=result.model
+    )
+    return SummaryResponse(
+        doc_id=updated.doc_id,
+        title=updated.title,
+        summary=updated.summary,
+        summary_model=updated.summary_model,
+        summary_generated_at=(
+            updated.summary_generated_at.isoformat()
+            if updated.summary_generated_at
+            else None
+        ),
+    )
 
 
 @router.get("/documents/{doc_id}/chunks", response_model=ChunkPreviewResponse)

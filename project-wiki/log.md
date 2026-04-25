@@ -5,6 +5,248 @@
 
 ---
 
+## [2026-04-25] impl | TASK-018 완료 — 색인 워커 분리 (ADR-028)
+
+### 코드
+- `packages/db/migrations/0003_add_ingest_jobs.sql` 신설 — `ingest_jobs` 테이블, sentinel은 `("table", "ingest_jobs")`
+- `packages/db/connection.py` — sentinel 시스템을 column/table 양쪽 지원, `pg_advisory_xact_lock`으로 동시 기동 race 해소(uvicorn + worker 동시 시작 시 `pg_type` UNIQUE 충돌 방지)
+- `packages/db/models.py` `IngestJobRecord` 신설 (status CHECK, retry_count, error)
+- `packages/jobs/__init__.py`, `packages/jobs/queue.py` — `enqueue_job`, `claim_next_job(SKIP LOCKED)`, `mark_done`, `mark_failed`, `get_job`, `list_jobs`
+- `apps/indexer_worker.py` 신설 — `python -m apps.indexer_worker`, 폴링(3→15s backoff), claim → pipeline.ingest → summary/classify 인라인 → mark_done. SIGTERM graceful, retry 3
+- `apps/config.py` `ingest_mode: "queue"|"sync"` (기본 queue)
+- `apps/routers/ingest.py` — queue/sync 분기. queue 모드는 enqueue + 202 + `{job_id}` 응답
+- `apps/routers/jobs.py` 신설 — read-only 조회 API
+- `apps/main.py` — jobs 라우터 등록
+- `apps/schemas/ingest.py` — `IngestResponse.job_id` 옵션 필드
+- `scripts/bulk_ingest.py` — `--via-queue` 옵션 (HTTP 거치지 않고 직접 enqueue), `enqueued` 카운터
+- `docker-compose.yml` — uvicorn + worker 운영 절차 주석
+
+### 검증 (스모크)
+- 작은 파일 1건 (327B txt): enqueue → claim(0s) → 인덱싱(4s) → summary(4s) → classify(1s) → done. 총 9초
+- 잡 상태: `pending → in_progress → done` 추적 정상, retry_count=0
+- 자동 분류 LLM fallback: `note / software/architecture / 0.3`
+- 큐 모드 전환 후 `/query`·`/health` 응답성 영향 없음
+
+### 운영 인시던트 (이 turn에서 발견·해소)
+- uvicorn + worker 동시 기동 시 `0003_add_ingest_jobs.sql` 마이그레이션을 두 프로세스가 동시 실행 → `pg_type_typname_nsp_index` UNIQUE 위반. 워커가 즉시 죽음
+- 해소: `pg_advisory_xact_lock(<project_id>)`로 트랜잭션 단위 직렬화 + 모든 sentinel 통과 시 빠른 경로(lock 없이 종료) + lock 획득 후 sentinel 재확인. 운영 중 추가 마이그레이션 시 동일 패턴 적용
+
+### 모델 결정 — Postgres 큐 (의존성 0)
+- 후보: Redis+RQ/Celery (인프라 +1) / 파일시스템 inbox (race) / uvicorn workers≥2 (자원 경합 잔존)
+- 선택: Postgres 기존 인프라 재사용. SKIP LOCKED로 멀티 워커 안전. 잡 상태·retry·에러 가시성 확보
+
+### 의도적 제외
+- stale `in_progress` 자동 회수 — 후속 housekeeping 잡 별건
+- 워커 N개 동시 운영 검증 (`INDEXER_CONCURRENCY` env 노출) — 별건
+- 잡 진행 UI — admin 인증 도입 후
+- 앱 컨테이너 Dockerfile + docker-compose `indexer` 서비스 — 별건
+- 큐 메트릭(처리량·lag·실패율) Prometheus — 별건
+
+### 관련 페이지
+- architecture/decisions.md ADR-028 신규
+- changelog.md [0.22.0]
+- roadmap.md 실행 큐 ✅ TASK-018 추가, 후순위 TASK-012/013만 잔존
+- overview.md 진행표·최근 결정 갱신
+
+### 실행 큐 최종 (이번 라운드)
+```
+✅ TASK-001~011 → ✅ TASK-014 → ✅ TASK-015 → ✅ TASK-016 → ✅ TASK-017 → ✅ TASK-018
+→ 🕐 TASK-012 (Cloudflare Tunnel, 후순위)
+→ 🕐 TASK-013 (MkDocs, 후순위)
+→ 🛑 인증·공개배포 묶음 (보류)
+```
+
+---
+
+## [2026-04-25] impl | TASK-017 완료 — 랜딩 카드 v2 (ADR-027)
+
+### 코드
+- `apps/schemas/documents.py` — `RecentDocItem` 신설, `IndexOverviewResponse`에 `top_tags`/`categories`/`recent_docs` 추가
+- `apps/routers/documents.py` `index_overview` 끝에 분포 계산 + categories.yaml label 매칭 + 최근 6개 미니 카드 데이터 생성
+- `ui/app.py` 빈 채팅 카드 — 카테고리 분포 한 줄, 주제 칩(library_search 사전 채우기), 최근 문서 3-grid 카드(active_doc_filter 라우팅), 전체 문서 expander
+
+### 검증
+- 추가 LLM 호출 0 (모든 데이터 파생)
+- 응답 페이로드 ~1.5KB → ~3KB (현 20문서)
+- 캐시 무효화 흐름 변화 없음
+
+### 의도적 제외
+- 칩 IDF·blacklist 정제 — 별건
+- 카드 상세 modal — Streamlit 1.36+ st.dialog 검증 후 별건
+- 최근 문서 정렬 옵션 — 별건
+
+### 관련 페이지
+- architecture/decisions.md ADR-027 신규
+- changelog.md [0.21.0]
+- roadmap.md 실행 큐 ✅ TASK-017 추가, 다음은 TASK-018(색인 워커 분리)
+- overview.md 진행표·최근 결정 갱신
+
+### 실행 큐
+```
+✅ TASK-001~011 → ✅ TASK-014 → ✅ TASK-015 → ✅ TASK-016 → ✅ TASK-017
+→ 🆕 TASK-018 (큐잉, 색인 워커 분리)
+→ 🕐 TASK-012/013 (후순위)
+```
+
+---
+
+## [2026-04-25] impl | TASK-016 완료 — 사용자 도서관 탭 (ADR-026)
+
+### 코드
+- `ui/app.py` — `TAB_LIBRARY` 신설(채팅 직후·문서 직전), 검색/형식/카테고리 필터, 카테고리 그룹 카드 그리드(3 col), 카드 상세 토글(abstract/sample_questions/meta), confidence < 0.4 ⚠️ 배지
+- 채팅 탭 상단 — 활성 doc_filter 배지 + [전체 검색] 해제 버튼, `/query` POST에 doc_filter 필드 동봉
+- `apps/schemas/query.py` `QueryRequest.doc_filter` 추가
+- `packages/rag/retriever.py` — `retrieve(... doc_id=)` 인자 추가
+- `packages/rag/pipeline.py` — `query(... doc_filter=)` 추가, LangSmith 태그·메타에 `doc_filter` 표기
+- `apps/routers/query.py` — request 통과
+- 신규 API 없음 — 기존 `GET /documents` 응답에 K014/K015 4필드가 이미 들어 있어 그대로 재사용
+
+### 검증
+- 현 20문서: 카테고리 8개 + (미분류) 0. 카드 그리드·필터·doc_filter 라우팅 정상
+- vector·hybrid 양쪽 모두 doc_id 인자 이미 지원해서 backend 변경 최소
+- doc_filter 활성 시 검색 latency 추가 비용 미미 (Qdrant filter 절)
+
+### 의도적 제외
+- 카드 상세 modal 전환 (Streamlit 1.36+ `st.dialog`) — 의존성 검증 후 별건
+- 다중 문서 한정·카테고리 패싯 한정 — 별건
+- 사용자 PATCH (카테고리 잘못 분류 즉석 수정) — admin 인증 도입 후
+
+### 관련 페이지
+- architecture/decisions.md ADR-026 신규
+- changelog.md [0.20.0]
+- roadmap.md 실행 큐 ✅ TASK-016 추가, TASK-017 in-progress 표시
+- overview.md 진행표·최근 결정 갱신
+
+### 실행 큐
+```
+✅ TASK-001~011 → ✅ TASK-014 → ✅ TASK-015 → ✅ TASK-016
+→ 🆕 TASK-017 (착수 예정, 랜딩 카드 확장) → 🆕 TASK-018 (큐잉, 색인 워커 분리)
+→ 🕐 TASK-012/013 (후순위)
+```
+
+---
+
+## [2026-04-25] impl | TASK-015 완료 — 카테고리 메타데이터 + 자동 분류 (ADR-025)
+
+### 코드
+- `packages/db/migrations/0002_add_classification_columns.sql` 신설 — `doc_type`/`category`/`category_confidence`/`tags`, CHECK enum, 인덱스. sentinel 컬럼(`doc_type`)으로 idempotent
+- `packages/db/{models,repository}.py` 동기화 — `update_document_classification`, `list_documents_without_category`
+- `packages/code/models.py` `DocRecord` 분류 4필드 추가
+- `config/categories.yaml` — 초기 9 카테고리(보유 20문서 기반)
+- `packages/classifier/` 신설 — `CategoryClassifier.classify(title, file_type, source, summary)` 룰 매칭 → LLM fallback. doc_type은 file_type/source 휴리스틱
+- `packages/vectorstore/qdrant_store.py` — `_ensure_payload_indexes` (4 keyword index), `set_classification_payload` (`set_payload(points=Filter(...))` 부분 업데이트)
+- `apps/routers/documents.py` — `PATCH /documents/{id}` 신규, `classify_and_summarize_for_doc` 백그라운드 헬퍼 (summary→classify 순차), `_generate_summary_inner` 분리
+- `apps/routers/ingest.py` — `doc_type/category/tags` 옵션 폼, 사용자 명시값 우선 분기
+- `apps/schemas/documents.py` — `DocumentItem` 4필드, `DocumentPatchRequest`
+- `scripts/classify_documents.py` 신설
+
+### 검증 (파일럿 20문서)
+- rule 16건 + LLM fallback 4건, 총 5.7초, 비용 ≈ $0.001
+- 정확도 수동 검수 20/20 (웹/딥러닝/시스템 설계/로보틱스/프로그래밍/모바일/기타 모두 의도 일치)
+- doc_type 휴리스틱 정확(pdf=book, txt/md=note, docx=report)
+- LLM low-confidence 사례 정직 표면화 — 폴리머클레이/헌법재판소/더미 문서가 `other` + 0.3
+
+### 모델 결정 — gpt-4o-mini (ADR-024 토글 인프라 재사용)
+- 별도 키 추가 없이 LLM fallback에서 동일 모델 사용. 비용은 룰 매칭 우선이라 매우 작음
+- 향후 categories.yaml 확장 시 룰 매칭 비율이 더 높아짐 (LLM 호출 비율 감소)
+
+### Qdrant payload 운영 메모
+- `client.set_payload(...)`는 `points=` 키워드 인자가 Filter/FilterSelector/IDs 모두 받음 (qdrant-client 1.17.1). 처음 `points_selector=`로 호출했다가 TypeError → 수정
+- 4 keyword 인덱스(`metadata.doc_id|doc_type|category|tags`) 추가 — 향후 검색 시 필터 비용 0~수ms 예상
+
+### 의도적 제외
+- 검색 시 메타데이터 필터·부스팅 (별건, payload index만 깔아 둠)
+- 패싯 사이드바·다중 라벨 분류 (TASK-016에서 일부, 본격은 별건)
+- categories.yaml GUI 편집 (수기 편집 유지)
+- 신뢰도 임계 미만 시 NULL 강제 — 정보 보존 우선으로 confidence를 표면 노출
+
+### 관련 페이지
+- architecture/decisions.md ADR-025 신규
+- changelog.md [0.19.0]
+- roadmap.md 실행 큐 ✅ TASK-015 추가, TASK-016 in-progress 표시
+- overview.md 진행표·최근 결정 갱신
+
+### 실행 큐
+```
+✅ TASK-001~011 → ✅ TASK-014 → ✅ TASK-015 → 🆕 TASK-016 (착수 예정, 도서관 탭)
+→ 🆕 TASK-017 (큐잉) → 🆕 TASK-018 (큐잉, 색인 워커 분리)
+→ 🕐 TASK-012/013 (후순위)
+```
+
+---
+
+## [2026-04-25] impl | TASK-014 완료 — 문서 자동 요약 (ADR-024)
+
+### 코드
+- `packages/db/migrations/0001_add_summary_columns.sql` 신설 — `summary JSONB`, `summary_model`, `summary_generated_at`
+- `packages/db/connection.py` — sentinel 컬럼 존재 검사 후 ALTER 회피 (idempotent, AccessExclusiveLock 충돌 방지)
+- `packages/db/models.py` `DocumentRecord` 3컬럼 추가, `init.sql`에 content_hash 누락분 동시 보정
+- `packages/db/repository.py` — `update_document_summary`, `list_documents_without_summary`
+- `packages/code/models.py` `DocRecord` 동기화
+- `packages/summarizer/` 신설 — `document_summarizer.summarize_document()` (1회 LLM 호출, JSON mode 강제, 첫 8청크·청크당 1500자) + `prompts.py` (system + few-shot 2건)
+- `apps/config.py` — `summary_enabled: bool = True`
+- `apps/routers/documents.py` — `GET/POST /documents/{id}/summary[/regenerate]` 2개 + `generate_summary_for_doc()` 백그라운드 헬퍼
+- `apps/schemas/documents.py` — `SummaryResponse`, `DocumentItem` 확장
+- `apps/routers/ingest.py` — `BackgroundTasks` 훅으로 인덱싱 후 비동기 요약 생성
+- **핫픽스**: `apps/routers/ingest.py`의 async 라우트 안에서 sync `pipeline.ingest`를 `asyncio.to_thread`로 위임 — bulk_ingest 중에도 `/query`·`/health` 응답 가능. (TASK-018 색인 워커 분리 전 임시 완화)
+- `scripts/generate_summaries.py` 신설 — `--dry-run`/`--regenerate`/`--limit`/`--doc-id`/`--report`
+
+### 검증 (파일럿 16문서)
+- 시범 1건 + 일괄 15건 모두 ok, 평균 3.7s/문서, 총 56초, 비용 ≈ $0.08
+- 환각 0건 (한국어 시스템 설계 / 영문 ROS / 짧은 더미 무작위 검수)
+- 영문 원본 → 한국어 요약, 기술 용어("ROS", "USB 카메라 드라이버") 원어 유지
+- 정보 부족 문서는 `target_audience=""`, `sample_questions=[]`로 정직하게 빈값
+
+### 모델 결정 — gpt-4o-mini
+- 사용자 합의: 신규 `ANTHROPIC_API_KEY` 부담 회피, 기존 `LLM_BACKEND=openai` 인프라(ADR-014) 재활용
+- 한국어 자연스러움·환각 억제는 Anthropic Haiku 4.5 우위 가능성 있으나, 파일럿 결과 카탈로그·랜딩 용도로 충분
+- 향후 정량 비교 필요해지면 토글로 1시간 내 전환 가능 — 회귀 조건 ADR-024에 명시
+
+### 의도적 제외
+- Hierarchical summary (긴 책 앞부분 편향 보강) — 후속 별건
+- 요약 검색 필터·부스팅 — TASK-015 자동 분류와 함께 별건
+- admin 인증 — 인증·공개배포 묶음 해제까지 `regenerate` API는 로컬 LAN 전용
+
+### 운영 인시던트 (이 turn에서 발견·해소)
+- 사용자 환경에서 4시간째 진행 중이던 `bulk_ingest` PID 39830이 `documents` 테이블에 `AccessShareLock` 보유 → 신규 ALTER 마이그레이션이 `AccessExclusiveLock` 대기로 dead-wait → uvicorn workers 5분 startup hang의 직접 원인
+- 해소: bulk_ingest 종료 + sentinel 컬럼 사전 검사 패치(IF NOT EXISTS이지만 ALTER 시도 자체가 lock 잡음) + uvicorn 재기동
+- 별도 발견: `async def ingest` 안에서 sync `pipeline.ingest`(Docling 파싱) 직접 호출이 event loop를 블록 → bulk 동시 진행 시 `/query`·`/health` 응답 불능. `asyncio.to_thread`로 핫픽스
+- 근본 해결은 색인 프로세스 분리(TASK-018) — 별도 큐잉 예정
+
+### 관련 페이지
+- architecture/decisions.md ADR-024 신규
+- changelog.md [0.18.0]
+- roadmap.md 실행 큐 ✅ TASK-014 추가, TASK-018 큐잉
+- overview.md 진행표·최근 결정 갱신
+
+### 실행 큐
+```
+✅ TASK-001~011 → ✅ TASK-014 → 🆕 TASK-018 큐잉 예정 (색인 워커 분리)
+→ 🆕 TASK-015~017 (큐잉, K014 입력 데이터 확보 완료)
+→ 🕐 TASK-012/013 (후순위)
+```
+
+---
+
+## [2026-04-25] queue | TASK-014~017 — "지식 도서관(Knowledge Library)" 묶음 큐잉
+
+- 배경: 사용자 요구는 "검색 품질"이 아니라 **"이 RAG에 어떤 정보가 있는지 사용자가 탐색 가능하게"**. admin 문서 목록(TASK-005)은 운영자용이라 사용자 탐색에 부적합. 채팅 진입 시 "뭐 물어볼지 모르겠다" cold-start 문제 해소 + 인덱싱된 전체 문서를 카테고리별로 일람·요약 즉시 확인 가능해야 함
+- 대화 경로: 메타데이터 활용 검토 → 카테고리 관리 부재 확인 → 카테고리 추출 방법 검토 → 컬렉션 분리 vs 단일+payload 결정 → 사용자가 의도를 "corpus 가시화"로 재정의 → 요약 + 전체 문서 카탈로그 + 카테고리 그룹 요구로 정리
+- 4개 TASK 분할:
+  - **TASK-014 문서 요약** — Claude Haiku 4.5, JSONB 영구 캐시, 한 줄/개요/주제/예시 질문 5필드, 일회성 ~$0.1 (47문서)
+  - **TASK-015 자동 분류** — doc_type/category/tags, TASK-014 topics를 tags로 채택, categories.yaml 매칭 + LLM fallback, 단일 Qdrant 컬렉션 유지
+  - **TASK-016 도서관 탭** — 카테고리 그룹·요약 모달·"이 책에 대해 묻기" 액션, doc_filter 검색 한정 라우팅
+  - **TASK-017 랜딩 확장** — TASK-008(완료, ADR-020) 카드를 주제 칩·최근 문서·전체 도서관 진입로로 확장
+- 의존: K014 → K015 (요약의 topics 활용) → K016 (둘 다 필요) → K017 (K016 컴포넌트 재사용)
+- 단일 컬렉션 유지 결정: 컬렉션 분리는 "임베딩 모델을 유형별로 달리 써야 할 때"까지 보류, ADR에 회귀 조건 명시 예정
+- 자동 분류 우선: 사용자 입력 부담 제거가 핵심, 신뢰도 낮으면 NULL + admin 검토 배지
+- 의도적 제외: 검색 시 메타데이터 필터·부스팅(별건 후속), 카테고리 트리 GUI 편집(YAML 수기), 원문 미리보기, 사용자별 개인화
+- 실행 큐: TASK-001~011 ✅ → 🕐 TASK-012/013 (후순위) → **🆕 TASK-014~017 (큐잉)**
+- 반영: roadmap(실행 큐·진행표·4개 상세 정의), log(이 엔트리)
+- ADR: 착수 시 신규 번호 부여 — TASK-014(요약 모델·스키마), TASK-015(단일 컬렉션 + 자동 분류), TASK-016(탭 통합 + doc_filter)
+
+---
+
 ## [2026-04-23] queue | TASK-013 — MkDocs Material + GitHub Pages 문서 사이트 큐잉 (후순위)
 
 - 배경: project-wiki/는 5단계 중첩 구조가 정보 조직의 핵심. GitHub Wiki는 flat 전제라 네비게이션 손실 큼. 외부 공개·검색 가능한 경로 필요하지만 현 구조 재작성 없이

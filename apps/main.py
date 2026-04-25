@@ -5,7 +5,7 @@ from pathlib import Path
 from fastapi import FastAPI
 
 from apps.config import get_settings
-from apps.routers import conversations, documents, ingest, query
+from apps.routers import conversations, documents, ingest, jobs, query
 from packages.code.logger import get_logger
 from packages.db.connection import init_db
 from packages.db.models import Base
@@ -63,6 +63,7 @@ app.include_router(ingest.router, tags=["ingest"])
 app.include_router(query.router, tags=["query"])
 app.include_router(documents.router, tags=["documents"])
 app.include_router(conversations.router, tags=["conversations"])
+app.include_router(jobs.router, tags=["jobs"])
 
 
 @app.get("/health")

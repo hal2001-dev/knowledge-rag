@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import Boolean, CheckConstraint, Column, DateTime, Float, ForeignKey, Index, Integer, String, Text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, relationship
 
 
@@ -20,6 +21,22 @@ class DocumentRecord(Base):
     has_images = Column(Boolean, default=False)
     indexed_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     status = Column(String(32), default="done")
+    summary = Column(JSONB, nullable=True)
+    summary_model = Column(Text, nullable=True)
+    summary_generated_at = Column(DateTime(timezone=True), nullable=True)
+
+    # TASK-015 (ADR-025): 카테고리 메타데이터
+    doc_type = Column(String(16), nullable=False, default="book")
+    category = Column(String(64), nullable=True)
+    category_confidence = Column(Float, nullable=True)
+    tags = Column(JSONB, nullable=False, default=list)
+
+    __table_args__ = (
+        CheckConstraint(
+            "doc_type IN ('book','article','paper','note','report','web','other')",
+            name="documents_doc_type_check",
+        ),
+    )
 
 
 class ConversationRecord(Base):
@@ -39,6 +56,35 @@ class ConversationRecord(Base):
         back_populates="conversation",
         cascade="all, delete-orphan",
         order_by="MessageRecord.created_at",
+    )
+
+
+class IngestJobRecord(Base):
+    """TASK-018: 색인 작업 큐 — FastAPI는 enqueue, indexer 워커가 SKIP LOCKED claim."""
+    __tablename__ = "ingest_jobs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    doc_id = Column(Text, nullable=True, index=True)
+    file_path = Column(Text, nullable=False)
+    title = Column(Text, nullable=False)
+    source = Column(Text, nullable=False, default="")
+    content_hash = Column(String(64), nullable=True)
+    user_doc_type = Column(String(16), nullable=True)
+    user_category = Column(String(64), nullable=True)
+    user_tags = Column(JSONB, nullable=True)
+    status = Column(String(16), nullable=False, default="pending")
+    retry_count = Column(Integer, nullable=False, default=0)
+    error = Column(Text, nullable=True)
+    enqueued_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
+    started_at = Column(DateTime(timezone=True), nullable=True)
+    finished_at = Column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending','in_progress','done','failed','cancelled')",
+            name="ingest_jobs_status_check",
+        ),
+        Index("ix_ingest_jobs_status_enqueued", "status", "enqueued_at"),
     )
 
 

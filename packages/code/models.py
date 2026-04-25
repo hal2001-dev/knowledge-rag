@@ -23,6 +23,13 @@ class DocRecord:
     indexed_at: str
     status: str = "done"
     content_hash: Optional[str] = None
+    summary: Optional[dict] = None
+    summary_model: Optional[str] = None
+    summary_generated_at: Optional[str] = None
+    doc_type: str = "book"
+    category: Optional[str] = None
+    category_confidence: Optional[float] = None
+    tags: list = field(default_factory=list)
 
 
 @dataclass

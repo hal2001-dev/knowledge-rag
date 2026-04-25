@@ -1,7 +1,7 @@
 # 로드맵
 
 **상태**: active
-**마지막 업데이트**: 2026-04-23
+**마지막 업데이트**: 2026-04-25
 **관련 페이지**: [overview.md](overview.md), [features.md](wiki/requirements/features.md)
 
 ---
@@ -27,6 +27,11 @@
 ```
 ✅ TASK-001 → ✅ TASK-003 → ✅ TASK-004 → ✅ TASK-002 → ✅ TASK-005
 → ✅ TASK-007 → ✅ TASK-008 → ✅ TASK-009 → ✅ TASK-010 → ✅ TASK-011
+→ ✅ TASK-014 (2026-04-25 완료, ADR-024) — 문서 자동 요약 (gpt-4o-mini, JSONB 캐시, BackgroundTasks 훅)
+→ ✅ TASK-015 (2026-04-25 완료, ADR-025) — 카테고리 메타데이터 + 자동 분류 (룰 매칭 + LLM fallback, 단일 컬렉션 + payload 인덱스)
+→ ✅ TASK-016 (2026-04-25 완료, ADR-026) — 도서관 탭 + doc_filter 라우팅 (카테고리 그룹 카드 그리드, "이 책에 대해 묻기")
+→ ✅ TASK-017 (2026-04-25 완료, ADR-027) — 랜딩 카드 v2 (카테고리 분포·주제 칩·최근 문서 카드)
+→ ✅ TASK-018 (2026-04-25 완료, ADR-028) — 색인 워커 분리 (Postgres `ingest_jobs` 큐 + indexer 프로세스, SKIP LOCKED claim, advisory lock 마이그레이션 race 해소)
 → 🕐 TASK-012 (후순위, 2026-04-23 큐잉) — Cloudflare Tunnel + Access 외부 노출 게이트웨이 (코드 0줄, 운영 문서 중심)
 → 🕐 TASK-013 (후순위, 2026-04-23 큐잉) — MkDocs Material + GitHub Pages 문서 사이트 (현재 project-wiki/ 구조 유지, CI 자동 배포)
 → 🛑 인증·공개배포 전체 묶음 (사용자 지시까지 전부 보류, 2026-04-22)
@@ -46,6 +51,10 @@
 | TASK-011 | 하이브리드 검색(BM25 + dense + RRF, Kiwi 한국어 전처리) — 정확 용어·숫자 매칭 여력 확보 |
 | (후순위) TASK-012 | Cloudflare Tunnel + Access 외부 노출 게이트웨이 — 이메일 OTP 하나로 외부 테스트 가능, 앱 코드 수정 0 |
 | (후순위) TASK-013 | MkDocs Material + GitHub Pages — 현재 위키 구조를 손대지 않고 정적 사이트·검색·사이드바 확보 |
+| **TASK-014** | **문서별 자동 요약(한 줄 + 개요 + 주제 + 예시 질문) 영구 캐시 — 카탈로그·랜딩·소스 카드 공용 데이터** |
+| **TASK-015** | **doc_type/category/tags 자동 채움 — 사용자 입력 부담 없이 카탈로그 그룹핑·검색 필터 활성화 가능** |
+| **TASK-016** | **"도서관" 탭 — 인덱싱된 전체 문서를 카테고리별로 일람, 요약 클릭 한 번에 해당 문서로 질문 시작** |
+| **TASK-017** | **랜딩 카드 확장 — 빈 채팅에서 주제 칩·최근 추가 문서·"이 시스템이 아는 것" 즉시 노출** |
 | (보류) 인증·공개배포 묶음 | 모바일 업로드, 앱 내 인증, 관리자/사용자 경로 분리, 재인덱싱/벤치 버튼 — 사용자 지시까지 전부 보류 |
 
 상세 개선점은 [overview.md](overview.md)의 "예정 태스크 완료 시 사용자 개선점" 섹션 참고.
@@ -623,6 +632,356 @@ Cloudflare 계정·도메인 소유자 인증·대시보드 GUI가 필요한 작
 - **MkDocs 한국어 검색 인덱싱 품질** — 일부 토큰화 문제 가능, 필요 시 `lunr-languages` 설정 또는 CJK 호환 검색 플러그인 교체
 - **GitHub Actions 무료 시간(2,000분/월)** — 이 용도로는 수 분/월 수준, 여유 충분
 - **Private 저장소 + Pages** — Free 플랜은 public만 가능(현재 public이라 무관). 나중에 private로 바꿀 때 재검토
+
+---
+
+## TASK-014~017 묶음 — "지식 도서관(Knowledge Library)" 사용자 가시성
+
+**상태**: queued (2026-04-25 큐잉)
+**우선순위**: 중간~높음 — 사용자 명시 요구. 검색 품질이 아닌 **"이 RAG에 어떤 정보가 있는지" 탐색 가능성** 개선
+**착수 전제조건**: 현재 진행 중인 `bulk_ingest /Volumes/shared/ingaged` (34개 PDF, 2026-04-25 10:38 시작, ETA 14:15 KST 전후) **완료 후** 데이터 작업(마이그레이션·요약 배치·자동 분류 배치) 시작. 코드·문서·ADR 초안 작성은 ingest 도중에도 가능하나, `apps/main.py` 라우트 등록·`ALTER TABLE`·`overwrite_payload` 등은 ingest 종료까지 보류
+**관련**: 신규 ADR (착수 시 번호 부여, 단일 컬렉션 + 메타데이터 전략·자동 분류 결정 기록)
+
+### 묶음 배경
+사용자가 채팅 화면에서 "이 시스템이 뭘 알고 있는지" 가늠하기 어려움. 현재 admin 문서 목록(TASK-005)은 운영자 관점이지 탐색용이 아님. 인덱싱된 문서를 **사용자가 카탈로그로 일람·요약 조회·해당 문서로 즉시 질의**할 수 있어야 한다.
+
+### 묶음 의존 관계
+```
+TASK-014 (요약)  ─┐
+                 ├──→ TASK-016 (카탈로그 UI) ──→ TASK-017 (랜딩 확장)
+TASK-015 (분류)  ─┘
+```
+- TASK-014/015는 독립 진행 가능하나, TASK-015 자동 분류는 TASK-014 요약의 `topics[]`를 활용하므로 **TASK-014 → TASK-015 권장 순서**
+- TASK-016은 TASK-014/015 데이터 모두 필요
+- TASK-017은 TASK-016의 컴포넌트 재사용해 빈 채팅 카드로 압축
+
+### 묶음 의도적 제외
+- **수동 카테고리 입력 강제** — 자동 추출이 1차, 사용자 수정은 옵션
+- **컬렉션 분리** — 단일 Qdrant 컬렉션 유지, ADR에 회귀 조건 명시
+- **태그 정규화·병합 UI** — 태그 폭주 시 별건
+- **카테고리 트리 GUI 편집** — `config/categories.yaml` 수기 편집부터
+- **검색 필터·부스팅 API 활성화** — 별도 후속 TASK(가칭 TASK-018)로 분리
+
+---
+
+## ~~TASK-014: 문서 요약 시스템~~ — ✅ 완료 (2026-04-25)
+→ ADR-024, changelog [0.18.0]
+
+**결과**: 16문서 파일럿 모두 success(평균 3.7s/문서, 총 56s, 비용 ≈ $0.08), 환각 0건. 모델은 사용자 합의로 **gpt-4o-mini** 채택(`ANTHROPIC_API_KEY` 부담 회피, ADR-014 LLM 토글 인프라 재활용). 향후 정량 비교 필요 시 Anthropic Haiku로 토글 가능.
+
+**부수 핫픽스**: `apps/routers/ingest.py`의 async 라우트 내부 sync 호출이 event loop를 블록하던 문제를 `asyncio.to_thread`로 해소. bulk_ingest 진행 중에도 `/query`·`/health` 응답 가능. 근본 해결은 TASK-018(색인 워커 분리).
+
+---
+
+### 원본 정의 (참고용 보존)
+
+**상태**: queued (2026-04-25 큐잉)
+**우선순위**: 높음 — TASK-015/016/017의 핵심 데이터
+**관련**: 신규 ADR (착수 시 번호 부여)
+
+### 배경
+사용자에게 "이 문서가 뭐에 대한 것인지" 즉시 보여주려면 문서 단위 자연어 요약이 필요. 현재는 제목·source·페이지 수만 노출. 카탈로그·랜딩·소스 카드 어디서도 의미 단서가 부족.
+
+### 목표
+문서당 **한 줄 요약 + 개요 + 주제 태그 + 예시 질문**을 1회 생성·영구 캐시. 후속 TASK 모두에서 재사용.
+
+### 설계 결정 (초안)
+- **모델**: Claude Haiku 4.5 (`claude-haiku-4-5-20251001`) — 비용·지연 최적, 한국어 품질 충분
+- **입력**: 문서당 첫 5~10청크(약 2~4K 토큰). 100+ 청크 긴 책은 hierarchical 보강은 후속(현재는 앞부분 편향 감수)
+- **저장**: Postgres `documents.summary JSONB` 영구 캐시 — 재인덱싱 시에만 재생성. 사용자 "재요약" 버튼은 강제 재생성 트리거
+- **JSON 스키마**:
+  ```json
+  {
+    "one_liner": "한 줄 요약 (40자 이내)",
+    "abstract": "3~5문장 개요",
+    "topics": ["주제1", "주제2", "주제3"],
+    "target_audience": "초급/중급/고급 + 대상 독자",
+    "sample_questions": ["문서로 답할 수 있는 구체 질문 3개"]
+  }
+  ```
+- **환각 차단**: 프롬프트에 "문서에 없는 내용 생성 금지", `sample_questions`는 불확실하면 빈 배열 허용
+- **실패 격리**: summary 생성 실패해도 인덱싱은 성공. `summary_generated_at = NULL` 상태로 남겨 배치에서 재시도
+
+### 범위
+- [ ] Postgres 마이그레이션 — `documents`에 `summary JSONB`, `summary_model VARCHAR`, `summary_generated_at TIMESTAMPTZ` 추가
+- [ ] `packages/summarizer/document_summarizer.py` 신설 — Anthropic SDK, JSON schema 강제, prompt caching 적용
+- [ ] 프롬프트 템플릿 (`packages/summarizer/prompts.py`) — 한국어 자연어, 환각 방지, 예시 2~3개 few-shot
+- [ ] `scripts/generate_summaries.py` — 미요약 문서 일괄 처리, 진행률·재시도·rate limit·진행 로그
+- [ ] 신규 인덱싱 훅 — `apps/routers/documents.py` 업로드 완료 후 비동기 summary 생성 (실패 무관)
+- [ ] `GET /documents/{doc_id}/summary` API + 응답 스키마
+- [ ] `POST /documents/{doc_id}/summary/regenerate` (admin 전용) — 강제 재생성
+- [ ] 파일럿 배치 — 보유 47문서 실행, 품질 수동 검수 (예상 비용 ~$0.1)
+- [ ] 결과 검수 후 프롬프트 1~2회 튜닝
+- [ ] ADR 작성 (모델·스키마·캐시 정책)
+- [ ] changelog `[0.18.0]` 항목, log.md impl 항목
+
+### 완료 기준
+- 모든 인덱싱 문서가 `summary` JSONB 보유 (또는 NULL + 재시도 큐)
+- API로 단건 조회 가능
+- 신규 업로드 시 자동 생성 (비동기)
+- 프롬프트 출력이 환각 없이 문서 내용에 충실
+
+### 회귀 전략
+- 컬럼 DROP 마이그레이션 역방향
+- API 라우트 제거 시 다른 코드 영향 0 (요약은 부가 정보)
+- 프롬프트 변경 후 결과가 나쁘면 이전 프롬프트로 복원 + 영향 문서만 재생성
+
+### 리스크
+- **앞부분 편향** — 책 서문이 일반적이면 요약 빈약. 100+ 청크 긴 문서엔 후속 hierarchical TASK 필요
+- **API 장애·rate limit** — 배치 재시도, 일 cost cap 설정
+- **품질 편차** — 한국어 전문 서적은 맥락 누락 가능, 검수 + 프롬프트 튜닝 1~2회 필요
+
+---
+
+## TASK-018: 색인 워커 프로세스 분리 — Postgres `ingest_jobs` 큐 + indexer
+
+**상태**: queued (2026-04-25 큐잉)
+**우선순위**: 높음 — bulk_ingest 진행 중 사용자 query 지연·블록 직접 해소
+**관련**: TASK-010(bulk CLI), TASK-014(summary 훅) 핫픽스 후속, 신규 ADR(착수 시 번호 부여, 다음 가용 ADR-025)
+
+### 배경
+- 현재 ingest는 FastAPI 같은 프로세스에서 동기로 처리 — Docling 파싱이 CPU·메모리를 점유하는 동안 `/query`·`/health` 응답이 사용자에게 체감될 정도로 느려짐
+- TASK-014 핫픽스(`asyncio.to_thread`)로 event loop 블록은 풀렸지만, 같은 프로세스 자원 경합은 여전. 큰 PDF 50건 일괄 색인 시 사용자 채팅이 영향
+- bulk_ingest는 HTTP `POST /ingest`를 줄줄이 호출 — uvicorn 재기동·실수 종료에 색인 잡 손실
+
+### 목표
+색인을 **별도 워커 프로세스**로 분리. FastAPI는 사용자 요청만 처리, 색인 잡은 큐에 들어가 워커가 순차 처리. bulk_ingest는 큐에 직접 enqueue.
+
+### 설계 결정 (초안)
+- **큐**: Postgres `ingest_jobs` 테이블. `SELECT … FOR UPDATE SKIP LOCKED`로 멀티 워커도 안전. 의존성 추가 0 (이미 Postgres 사용 중)
+- **상태 머신**: `pending → in_progress → done|failed`, 재시도 카운터·실패 사유·`enqueued_at`/`started_at`/`finished_at`
+- **워커 프로세스**: `apps/indexer_worker.py` — 폴링 루프(2~5초 간격) + 잡 처리 + summary 훅까지 한 번에 (TASK-014 BackgroundTasks를 워커로 이관)
+- **API 변경**: `POST /ingest`는 파일 저장 + 큐 enqueue + 즉시 `202 Accepted` + `{job_id, doc_id, status: "pending"}` 응답
+- **bulk_ingest CLI**: `--via-queue` 옵션 신설 — HTTP 거치지 않고 직접 큐에 enqueue
+- **운영**: docker-compose에 `indexer` 서비스 추가, FastAPI는 `--workers 1`로 충분. 워커 수는 `INDEXER_CONCURRENCY=1` 기본
+- **관측**: 워커 진행을 LangSmith에 기존 `rag.ingest` 트레이스로 묶음, `GET /jobs?status=pending` admin 라우트(인증 미도입 단계는 로컬 LAN 한정)
+
+### 범위 — 코드
+- [ ] Postgres 마이그레이션 `0002_add_ingest_jobs.sql` — `id BIGSERIAL PK, doc_id, file_path, title, source, content_hash, status, retry_count, error, timestamps`
+- [ ] `packages/jobs/queue.py` 신설 — `enqueue()`, `claim()`(SKIP LOCKED), `mark_done()`, `mark_failed()`
+- [ ] `apps/indexer_worker.py` — entry point `python -m apps.indexer_worker`, signal 핸들러로 graceful shutdown
+- [ ] `apps/routers/ingest.py` — 인덱싱 직접 호출 제거, 큐 enqueue + `202` 응답 + `IngestResponse`에 `job_id` 추가
+- [ ] `apps/routers/jobs.py` 신규 — `GET /jobs/{job_id}`, `GET /jobs?status=pending|failed&limit=N`
+- [ ] `scripts/bulk_ingest.py` — `--via-queue` 분기 (HTTP 경로는 deprecation 경고만, 한 릴리스 유지)
+- [ ] docker-compose `indexer` 서비스 (uvicorn 이미지 재사용, command만 다름)
+- [ ] TASK-014 `BackgroundTasks` 훅 제거 → 워커가 인덱싱 직후 같은 트랜잭션 흐름에서 summary 호출
+- [ ] `wiki/architecture/decisions.md` ADR-025 신규 — 큐 선택지 비교, 단일 vs 멀티 워커, 회귀 전략
+- [ ] `changelog.md` `[0.19.0]`, `log.md` impl 항목, `roadmap.md` ✅ 마킹
+
+### 완료 기준
+- bulk_ingest 50건 진행 중에도 `/query` p95 latency가 색인 정지 상태와 동일 (±10%)
+- uvicorn 재기동·indexer 재기동에도 큐의 미완료 잡이 자동 재처리됨
+- `--via-queue` 모드 bulk_ingest가 100% 잡 enqueue 성공
+- TASK-014 summary가 워커에서 정상 트리거(BackgroundTasks 제거 후 회귀 0)
+
+### 의도적 제외
+- Redis/RabbitMQ/Celery — 의존성 추가 없이 Postgres로 충분
+- 분산 워커 (멀티 머신) — 단일 노드 멀티 프로세스만
+- UI 잡 진행 표시 — 별건(관리자 UI 2단계 합류 시점)
+- 워커 자동 스케일링 — 정적 `INDEXER_CONCURRENCY`만
+
+### 회귀 전략
+- 컬럼·서비스 제거 마이그레이션 역방향
+- `ENQUEUE_MODE=sync|queue` 토글로 단계 전환 — sync 모드에서는 기존 동작 회귀
+- bulk_ingest의 `--via-queue` 미지정 시 HTTP 경로 한 릴리스 유지
+
+### 리스크
+- **워커 1개에 PDF 100MB가 걸리면 뒤 잡 모두 대기** — 우선 단일 워커로 단순화, 필요 시 `INDEXER_CONCURRENCY` 증가
+- **FastAPI/워커 모델 메모리 중복** — Reranker는 FastAPI에만, 워커는 Docling만. 임베딩은 둘 다 필요 (배포 메모리 ~2GB 추가 예상)
+- **트랜잭션 경계** — 잡 claim·document INSERT·status update가 분리. SKIP LOCKED로 동시성, 멱등 키(`content_hash`) 유지
+
+---
+
+## ~~TASK-015: 카테고리 메타데이터 + 자동 분류~~ — ✅ 완료 (2026-04-25)
+→ ADR-025, changelog [0.19.0]
+
+**결과**: 파일럿 20문서 정확도 20/20 (rule 16 + LLM 4, 총 5.7초, ≈$0.001). categories.yaml 9개 카테고리 + 단일 Qdrant 컬렉션 유지(payload index 4개) 결정. PATCH `/documents/{id}` 메타데이터 수정 API + ingest 폼 옵션 파라미터 동시 도입.
+
+---
+
+### 원본 정의 (참고용 보존)
+
+**상태**: queued (2026-04-25 큐잉)
+**우선순위**: 중간 — TASK-016 그룹핑의 축
+**관련**: TASK-014(요약 활용), 신규 ADR (단일 컬렉션 + 메타데이터 결정)
+
+### 배경
+현재 `documents` 테이블·Qdrant payload에 분류 필드 0개. 카탈로그 그룹핑·필터·도서관 뷰의 기반이 비어 있음. 책만 인덱싱 중인 상태에서 아티클·논문·메모가 추가될 때 운영 분리 부담을 줄이려면 단일 컬렉션 + 메타데이터 전략이 적합.
+
+### 목표
+문서별 `doc_type`(형식) · `category`(도메인) · `tags`(자유 라벨)를 **수동 입력 부담 없이 자동 채움**. 사용자 입력은 옵션이지 필수 아님.
+
+### 설계 결정 (초안)
+- **단일 Qdrant 컬렉션 유지** — 컬렉션 분리는 "임베딩 모델을 유형별로 달리 써야 할 때"까지 보류. ADR에 회귀 조건 명시
+- **`doc_type` enum**: `book` | `article` | `paper` | `note` | `report` | `web` | `other` (default `book`)
+- **`category`**: 단일 문자열, `config/categories.yaml`로 초기 트리 관리 (계층형 "ai/ml" 허용)
+- **`tags`**: 문자열 배열, **TASK-014 요약의 `topics[]`를 그대로 채택** (별도 입력 UI 없음)
+- **자동 분류 파이프라인**:
+  1. `topics[]`를 `categories.yaml` 라벨과 키워드 매칭 (1차)
+  2. 매칭 실패 시 LLM에 "categories.yaml 중 가장 적합한 1개 + 신뢰도" 분류 요청 (TASK-014 호출과 동일 turn에 통합 가능)
+  3. 신뢰도 낮으면 `category=NULL` 유지, admin UI에 "검토 필요" 배지
+
+### 범위
+- [ ] Postgres 마이그레이션 — `doc_type VARCHAR NOT NULL DEFAULT 'book'`, `category VARCHAR NULL`, `tags JSONB DEFAULT '[]'::jsonb`, CHECK 제약(doc_type enum)
+- [ ] `DocumentRecord`/`DocumentItem` 스키마 동기화
+- [ ] Qdrant payload에 동일 3필드 동기화 (`packages/vectorstore/qdrant_store.py` 인덱싱 경로)
+- [ ] Qdrant payload index 추가 — `doc_type`·`category` keyword 인덱스, `tags` keyword 배열 인덱스 (이후 검색 필터 활성화 시 사용)
+- [ ] 기존 청크 마이그레이션 스크립트 (`scripts/migrate_payload_meta.py`) — scroll → Postgres 조회 → `overwrite_payload` 온라인 업데이트
+- [ ] `config/categories.yaml` 신설 — 사용자 보유 도서 기준 초기 트리 (착수 시 사용자와 확정)
+- [ ] `packages/classifier/category_classifier.py` 신설 — topics 매칭 + LLM fallback
+- [ ] 자동 분류 배치 (`scripts/classify_documents.py`) — 미분류 문서 일괄 실행
+- [ ] 업로드 API 옵션 파라미터 — `doc_type`·`category`·`tags` (모두 optional, 자동 추정 우선)
+- [ ] 업로드 폼: 자동 추정 결과 표시 + "수정" 옵션 (강제 입력 아님)
+- [ ] admin UI 문서 목록에 분류 컬럼 추가, 신뢰도 낮은 문서에 배지
+- [ ] 카테고리·태그 변경 API (`PATCH /documents/{doc_id}`) — 사용자 수정 반영
+- [ ] 테스트 — 스키마 기본값·enum, 마이그레이션 건전성, 자동 분류 정확도 (수동 라벨 10개 비교)
+- [ ] ADR 작성 (단일 컬렉션 결정, 자동 분류 전략, 컬렉션 분리 회귀 조건)
+- [ ] changelog `[0.19.0]`, log.md impl 항목
+
+### 의도적 제외 (후속)
+- 검색 시 메타데이터 필터·부스팅 (별건 TASK)
+- 패싯 검색 사이드바 (TASK-016에서 일부, 본격은 별건)
+- 카테고리 트리 GUI 편집 — YAML 수기 편집
+
+### 완료 기준
+- 모든 문서가 `doc_type`(필수) + `category`(or NULL) + `tags[]`(or [])로 채워짐
+- 새 업로드 시 자동 분류 실행, 실패는 NULL 허용
+- Qdrant payload index 생성 확인 (`get_collection`으로 확인)
+- 기존 47문서 백필 완료, 회귀 0
+
+### 회귀 전략
+- 마이그레이션 역방향: 컬럼·인덱스 DROP
+- Qdrant payload 필드는 default 처리 — 삭제 안 해도 무해
+- UI 토글로 분류 표시 off 가능
+
+### 리스크
+- **categories.yaml 조기 동결** — 초기 카테고리 변동 잦음, 재분류 배치 필요성 인지
+- **자동 분류 오류** — LLM이 잘못된 카테고리 부여 가능, "검토 필요" 배지 + 사용자 수정 경로 필수
+- **Qdrant payload 업데이트 부하** — 컬렉션 크기 비례, `overwrite_payload`로 온라인 처리
+
+---
+
+## TASK-016: 사용자용 문서 카탈로그 UI ("도서관" 탭)
+
+**상태**: queued (2026-04-25 큐잉)
+**우선순위**: 높음 — 사용자 명시 핵심 요구 ("색인된 전체 문서 목록 접근 + 카테고리별 + 요약")
+**관련**: TASK-014(요약), TASK-015(분류), 신규 ADR
+
+### 배경
+admin 문서 목록(TASK-005)은 운영자용. 사용자가 RAG가 아는 내용을 탐색·해당 문서로 질의 시작할 수 있는 별개 UI가 필요. 핵심: 카테고리 그룹·요약 즉시 노출·"이 책에 대해 묻기" 액션.
+
+### 목표
+별도 "도서관" 탭에서 (a) 전체 문서 일람, (b) 카테고리별 그룹 보기, (c) 요약 즉시 확인, (d) 클릭 한 번으로 해당 문서로 한정 질의 시작.
+
+### 설계 결정 (초안)
+- **위치**: Streamlit `st.tabs(["채팅", "도서관", "관리자"])` 통합 — 기존 페이지 구조 유지
+- **기본 뷰**: 카테고리 그룹 (collapsible expander)
+- **대안 뷰**: 평면 그리드(최신순/제목순/카테고리순 정렬)
+- **검색**: 제목·태그·요약 텍스트 ILIKE — Postgres 인덱스(GIN tsvector)로 가속
+- **요약 노출**: 카드에는 `one_liner` + `topics` 칩 3개, "요약 보기" 클릭 시 모달에 abstract + sample_questions
+- **"질문하기" 액션**: 채팅 탭으로 이동 + 입력창에 "이 문서에 대해..." 자동 채움 + `doc_filter={doc_id}` 적용
+- **`doc_filter` 검색 한정**: 검색 시 Qdrant filter `must: doc_id == X` 적용 (이미 가능, 라우트에서 옵션 파라미터로 노출)
+
+### 범위
+- [ ] API 신설:
+  - `GET /library/catalog?category=&doc_type=&q=&sort=&page=&limit=` — 페이지네이션, 정렬
+  - `GET /library/categories` — 카테고리 목록 + 문서 수 집계
+  - `GET /library/recent?limit=5`
+  - `GET /library/stats` — 총 문서 수, 카테고리 수, 최근 추가 건수
+- [ ] 기존 `POST /chat` 또는 `/query`에 `doc_ids: list[str]` 옵션 파라미터 추가 — 특정 문서로 검색 한정
+- [ ] Streamlit `ui/pages/library.py` 신설:
+  - 최상단: 통계 바 + 검색창 + 정렬 셀렉트
+  - 카테고리 그룹: `st.expander`로 카테고리별 문서 카드 그리드 (3열)
+  - 카드 컴포넌트(`ui/components/doc_card.py`): doc_type 아이콘·제목·one_liner·topics 칩·[요약 보기]·[질문하기]
+  - 요약 모달: `st.dialog` 또는 expander에 abstract + sample_questions(클릭 가능 칩) + target_audience + 메타
+  - 필터 사이드바: 카테고리 다중·doc_type 다중·태그 클릭·날짜 범위·"샘플 질문 있음만" 토글
+- [ ] sample_question 칩 클릭 → 채팅 탭 이동 + 질문 + doc_filter 적용
+- [ ] doc_type 아이콘·색상 헬퍼 (`ui/components/badges.py`) — 책📖/아티클📰/논문📄/메모📝/리포트📊/웹🌐
+- [ ] `tabs` 내비게이션 통합 — 기존 채팅 화면 유지
+- [ ] 미분류 문서(`category=NULL`) 별도 그룹 표시 ("미분류")
+- [ ] 빈 카탈로그 상태(0문서) 안내 + "업로드하러 가기" 링크
+- [ ] E2E 테스트 — 카드 렌더링·필터·"질문하기" 액션 라우팅
+- [ ] ADR 작성 (탭 통합 결정, doc_filter 라우팅 패턴)
+- [ ] changelog `[0.20.0]`, log.md impl 항목
+
+### 의도적 제외
+- 원문 미리보기(청크 노출) — 별건, 저작권·UX 별도 검토
+- 패싯 검색 본격 구현(다중 facet 카운트 갱신) — 단순 필터로 시작
+- 문서 간 유사도 네트워크 뷰 — 후기 단계
+- 사용자별 즐겨찾기·읽은 문서 표시 — 별건
+
+### 완료 기준
+- "도서관" 탭에서 전체 문서가 카테고리별 그룹으로 보임
+- 검색·정렬·필터 동작
+- 카드 [요약 보기] → 모달, [질문하기] → 채팅 이동 + 해당 문서 한정 검색
+- 47문서 기준 첫 렌더 1초 이내, 페이지네이션 정상
+
+### 회귀 전략
+- 탭 제거하면 기존 채팅·관리자 화면 영향 0
+- API 라우트는 부가, 제거 시 다른 경로 영향 0
+- `doc_filter` 옵션은 기본 미지정이므로 영향 0
+
+### 리스크
+- **요약 미생성 문서**(TASK-014 부분 실패) — 카드에 "요약 생성 중" placeholder + 재시도 버튼
+- **카테고리 미분류 폭주** — TASK-015 신뢰도 임계 조정 + 검토 배지로 흡수
+- **Streamlit 모달 한계** — `st.dialog` 미지원 버전이면 expander로 폴백
+
+---
+
+## TASK-017: 랜딩 대시보드 확장 (빈 채팅 카드 v2)
+
+**상태**: queued (2026-04-25 큐잉)
+**우선순위**: 중간 — TASK-016의 미니 버전, 1~2일 작업
+**관련**: TASK-008(완료, ADR-020) 확장, TASK-014/015/016 데이터 활용
+
+### 배경
+TASK-008로 빈 채팅에 인덱스 요약 카드 + 예시 질문이 이미 존재. 본 TASK는 그 카드를 **"이 시스템이 아는 것"을 더 풍부하게** 표현하도록 확장. TASK-014 요약과 TASK-015 카테고리 데이터가 채워진 시점에 자연스러움.
+
+### 목표
+빈 채팅 진입 시 "뭘 물어볼지 모르겠다" 상태를 즉시 해소. 주제 칩·예시 질문·최근 추가 문서·"전체 도서관 보기" 진입로 노출.
+
+### 설계 결정 (초안)
+- **TASK-008 카드 확장** — 신규 페이지 X, 기존 빈 채팅 영역에 섹션 추가
+- **데이터 소스**:
+  - 통계: `GET /library/stats`
+  - 주제 칩: 모든 문서의 `topics[]` 빈도 집계 상위 8개
+  - 예시 질문: 무작위 문서 3~5개의 `sample_questions` 샘플링 (요청마다 새로고침)
+  - 최근 추가: `GET /library/recent?limit=3`
+- **상호작용**:
+  - 주제 칩 클릭 → 입력창에 키워드 자동 입력 (전송 X, 사용자가 다듬을 여지)
+  - 예시 질문 칩 클릭 → 입력창에 질문 자동 입력
+  - 최근 문서 카드 [이 책에 대해 묻기] → 채팅 시작 + doc_filter
+  - "전체 도서관 보기" → TASK-016 탭으로 이동
+- **사라지는 시점**: 사용자가 첫 메시지 입력하면 카드 영역 숨김
+
+### 범위
+- [ ] `GET /library/topics?limit=8` — `topics[]` 집계 상위 N개 (Postgres `jsonb_array_elements` + group by)
+- [ ] `GET /library/sample-questions?limit=5` — 무작위 문서의 sample_questions 샘플링
+- [ ] `ui/components/landing_card.py` 신설 — 통계·주제 칩·예시 질문·최근 문서 4섹션
+- [ ] 기존 TASK-008 카드 영역(`ui/app.py` 빈 채팅 분기)에 통합
+- [ ] 칩 클릭 → 입력창 prefill 로직 (Streamlit `st.session_state`)
+- [ ] "전체 도서관 보기" 버튼 → 탭 전환 트리거
+- [ ] E2E 테스트 — 빈 채팅 상태에서 4섹션 렌더, 칩 클릭 prefill, 첫 메시지 후 카드 숨김
+- [ ] changelog `[0.21.0]`, log.md impl 항목 (ADR-020 확장 명시)
+
+### 의도적 제외
+- 사용자별 추천 (개인화 추천 모델) — 별건
+- 주제 클러스터링 기반 동적 그룹 — 후기, 단순 빈도 집계로 시작
+- 카테고리 파이 차트·태그 클라우드 시각화 — 별건 (TASK-016에 일부 통계만)
+
+### 완료 기준
+- 빈 채팅 화면에서 4섹션이 즉시 렌더
+- 칩·카드 클릭 → 입력창 prefill 또는 탭 이동 동작
+- 첫 메시지 입력 시 카드 영역 자연스럽게 숨김
+- 47문서 기준 카드 첫 렌더 500ms 이내
+
+### 회귀 전략
+- 컴포넌트 제거 시 TASK-008 v1 카드로 자동 복원
+- API 라우트는 부가, 제거 시 영향 0
+
+### 리스크
+- **`topics[]` 빈도 편중** — 책 위주 코퍼스에서 특정 주제 폭주 가능, top-N 노출만으로 해소
+- **랜덤 샘플링 일관성** — 새로고침마다 변하면 혼란, 세션 단위 캐시 또는 시드 고정 옵션
 
 ---
 
