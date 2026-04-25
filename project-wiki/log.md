@@ -5,6 +5,61 @@
 
 ---
 
+## [2026-04-25] ops | 32MiB 한도 패치 후속 — 고아 청크 정리 + failed 잡 15건 reset
+
+### 작업
+- Qdrant 고아 청크 정리 — 검증용 단건 동기 ingest(`scripts/debug_single_ingest.py`)가 documents/ingest_jobs DB row 없이 Qdrant에만 직접 넣은 doc_id `e61dce3f-39cc-4a70-9706-523d326c26cb` 1,034 청크를 `points/delete` filter로 제거. 검증 카운트 0
+- 영구 실패 잡 일괄 reset — 32MiB 한도 패치 직전에 retry 3회 모두 같은 페이로드 한도에 막혀 `failed/retry_count=4`로 누적된 15건의 대형 도서 잡을 `pending/retry_count=0/error=NULL`로 되돌림. 모든 잡 traceback 머리가 indexer_worker.py:181 동일 위치라 단일 원인으로 판단
+
+### SQL
+```sql
+UPDATE ingest_jobs
+SET status='pending', retry_count=0, error=NULL,
+    started_at=NULL, finished_at=NULL
+WHERE status='failed' AND retry_count >= 3;
+-- UPDATE 15
+```
+
+### 검증
+- 워커 PID 45535 정상 가동(2:07PM 기동, 폴링 3→15s backoff)
+- reset 직후 폴링 사이클에서 즉시 claim 시작
+
+### 영향 범위
+- 처리 대기 큐가 일시에 15건 추가 — 평균 5분/건(80MB PDF 기준) 가정 시 75분 대기, 워커 직렬 처리. 다른 ingest 요청은 그 뒤로 밀림
+- 처리 중 같은 32MiB 한도 외 다른 원인(예: Docling OOM)으로 실패하는 잡이 있으면 다시 retry 3회 소진 후 `failed`. 그 경우 별건으로 분석
+
+### 후속 — bulk_ingest 재실행
+- `scripts/bulk_ingest.py --dir /Volumes/shared/ingaged --via-queue` 재실행 — 34파일 중 19 duplicate / **15 신규 enqueue** / 0 failed / 15.7s. 리포트 `data/eval_runs/bulk_ingest_2026-04-25T133408Z.json`
+- reset 15건 + 신규 15건 합산해 워커 처리 대기 ≈ 2.5시간
+
+---
+
+## [2026-04-25] fix | Qdrant 32MiB upsert 한도 + UI 시스템 탭 hybrid 표시
+
+### 코드
+- `packages/vectorstore/qdrant_store.py` — `UPSERT_BATCH_SIZE = 256` 상수 도입. hybrid 경로 `add_documents`의 단일 `client.upsert()` 호출을 256건 단위 루프로 분할. dense+sparse+payload 합산 ~8MB 수준(한도의 1/4)로 안전 마진 확보. vector 경로는 `langchain_qdrant` 내부 `batch_size=64` 자동 분할이라 미변경
+- `ui/app.py` 시스템 탭 — `info.config.params.vectors`가 hybrid 모드에서 dict(`{"dense": VectorParams}`)로 반환되는데 UI가 단일 객체 가정으로 `.size`를 직접 접근해 `AttributeError`. dict/객체 분기 + dense 차원·distance + sparse 키 노출. `qdrant_store.DENSE_NAME` 재사용
+
+### 증상 / 영향
+- 1k+ 청크 PDF(예: 80MB / 1,034 청크)가 hybrid 모드에서 일관되게 400으로 영구 실패 — 워커가 retry 3회까지 모두 같은 페이로드 한도에서 막혀 12건의 대형 도서 잡이 `failed/retry_count=4` 누적
+- `ingest_jobs.error`의 `error[:2000]` 상한이 정확히 traceback 끝(`Payload error: JSON payload ...`)을 잘라버려 1차 진단이 어려웠음. 단건 동기 재현(`scripts/debug_single_ingest.py`)으로 끝까지 출력해 회수
+
+### 검증
+- 동일 PDF로 재실행: `1034개 하이브리드 벡터(dense+sparse) 저장 완료 (batch=256)`, 저장 7.6초, 총 5분 12초(파싱 5분이 대부분)
+- 시스템 탭: `mode: hybrid · dense(dense) dim=1536 distance=Distance.COSINE · sparse=[sparse]` 정상 표시
+
+### 부수 발견 (별건)
+- `packages/jobs/queue.py:100`의 `error[:2000]` 슬라이스가 traceback 머리만 남기고 끝부분(예외 메시지)을 잘라 진단 어려움. `error[-2000:]` 또는 컬럼 상한 확대 검토 후속 TASK 후보
+- 12건 누적된 영구 실패 잡 처리(상태 reset → 재처리)는 별건
+
+### 위키 갱신
+- `schema.md` 통째 재작성 — `ingest_jobs` 테이블 + documents의 summary/분류 7컬럼 + 마이그레이션 이력 + UPSERT_BATCH_SIZE 표기
+- `endpoints.md` 통째 재작성 — `/jobs` 2개 + summary/regenerate + PATCH /documents/{id} + chunks + index/overview + /query doc_filter + /ingest queue 모드 응답
+- `decisions.md` 마지막 업데이트 날짜 갱신
+- `changelog.md` 0.22.1 항목 추가
+
+---
+
 ## [2026-04-25] impl | TASK-018 완료 — 색인 워커 분리 (ADR-028)
 
 ### 코드

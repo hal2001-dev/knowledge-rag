@@ -715,11 +715,22 @@ with TAB_SYSTEM:
 
             st.markdown("### 🗃 Qdrant")
             try:
+                from packages.vectorstore.qdrant_store import DENSE_NAME
                 qc = QdrantClient(url=settings.qdrant_url)
                 info = qc.get_collection(settings.qdrant_collection)
                 st.metric("Points", info.points_count)
                 st.caption(f"컬렉션: `{settings.qdrant_collection}`")
-                st.caption(f"dim: {info.config.params.vectors.size} · distance: {info.config.params.vectors.distance}")
+                vecs = info.config.params.vectors
+                if isinstance(vecs, dict):
+                    dense = vecs.get(DENSE_NAME)
+                    sparse_cfg = getattr(info.config.params, "sparse_vectors", None) or {}
+                    sparse_keys = ", ".join(sparse_cfg.keys()) if sparse_cfg else "(없음)"
+                    st.caption(
+                        f"mode: hybrid · dense({DENSE_NAME}) dim={dense.size} "
+                        f"distance={dense.distance} · sparse=[{sparse_keys}]"
+                    )
+                else:
+                    st.caption(f"mode: vector · dim={vecs.size} distance={vecs.distance}")
                 st.caption(f"status: `{info.status}`")
             except Exception as e:
                 st.error(f"Qdrant 연결 실패: {e}")

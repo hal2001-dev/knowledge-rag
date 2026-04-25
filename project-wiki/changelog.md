@@ -22,6 +22,28 @@
 
 ---
 
+## [0.22.1] - 2026-04-25
+
+### Fixed
+- **Qdrant HTTP payload 32MiB 한도 초과로 대형 PDF 색인 실패** ([packages/vectorstore/qdrant_store.py](../packages/vectorstore/qdrant_store.py)):
+  - 증상: 1k+ 청크 PDF(예: 80MB / 1,034 청크)가 hybrid 모드에서 단일 `client.upsert()` 호출 시 ~32MB 페이로드로 400 (`Payload error: JSON payload (33848096 bytes) is larger than allowed (limit: 33554432 bytes)`).
+  - 영향: `ingest_jobs` 큐에서 동일 PDF가 retry 3회까지 모두 같은 지점에서 실패해 영구 `failed`. 12건의 대형 도서 잡이 누적.
+  - 수정: 모듈 상수 `UPSERT_BATCH_SIZE = 256` 도입, hybrid 경로에서 `points`를 256건 단위로 분할 upsert. dense+sparse+payload 합산 ~8MB 수준으로 한도의 1/4. vector 경로는 `langchain_qdrant`가 내부 `batch_size=64`로 자동 분할하므로 미변경.
+  - 검증: 동일 PDF로 단건 동기 재현(`scripts/debug_single_ingest.py`) 성공 — `1034개 하이브리드 벡터(dense+sparse) 저장 완료 (batch=256)`. 저장 7.6초.
+
+- **UI 시스템 탭에서 hybrid 모드 시 `'dict' object has no attribute 'size'`** ([ui/app.py](../ui/app.py)):
+  - 증상: `SEARCH_MODE=hybrid`로 named vectors 컬렉션이면 `info.config.params.vectors`가 `dict`(`{"dense": VectorParams(...)}`)로 반환되는데, UI가 단일 객체 가정으로 `.size` 접근.
+  - 수정: dict/객체 분기 처리. dict면 dense 차원·distance + sparse 키 노출, 단일 객체면 기존 표시. `qdrant_store.DENSE_NAME` 상수 재사용.
+
+### Notes
+- `ingest_jobs.error` 컬럼이 `error[:2000]`로 잘려 traceback 끝(예외 메시지)이 사라지는 부수 이슈 발견. 별건으로 `error[-2000:]` 또는 컬럼 상한 확대 검토 예정.
+
+### 운영 (data fix)
+- 검증용 단건 ingest로 발생한 Qdrant 고아 청크 1건(doc_id `e61dce3f`) 1,034개 정리 (`points/delete` filter)
+- 32MiB 한도 패치 직전 누적된 영구 실패 잡 15건(retry_count=4)을 `pending/retry_count=0/error=NULL`로 일괄 reset → 가동 중인 워커가 즉시 재처리 시작
+
+---
+
 ## [0.22.0] - 2026-04-25
 
 ### Added

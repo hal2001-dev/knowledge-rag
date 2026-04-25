@@ -31,6 +31,10 @@ logger = get_logger(__name__)
 DENSE_NAME = "dense"
 SPARSE_NAME = "sparse"
 
+# Qdrant HTTP payload 한도(기본 32MiB) 회피용. 대형 PDF에서 1k+ 청크가
+# 한 번에 업로드되면 한도 초과로 400. 256은 dense+sparse+payload 합산 ~8MB 수준.
+UPSERT_BATCH_SIZE = 256
+
 
 class CollectionDimensionMismatch(RuntimeError):
     """기존 컬렉션 차원·구조가 현재 설정과 불일치."""
@@ -197,8 +201,13 @@ class QdrantDocumentStore:
                 )
             )
 
-        self._client.upsert(collection_name=self._collection, points=points)
-        logger.info(f"{len(ids)}개 하이브리드 벡터(dense+sparse) 저장 완료")
+        for start in range(0, len(points), UPSERT_BATCH_SIZE):
+            batch = points[start:start + UPSERT_BATCH_SIZE]
+            self._client.upsert(collection_name=self._collection, points=batch)
+        logger.info(
+            f"{len(ids)}개 하이브리드 벡터(dense+sparse) 저장 완료 "
+            f"(batch={UPSERT_BATCH_SIZE})"
+        )
         return ids
 
     # ─────────────────────────────────────────────────────
