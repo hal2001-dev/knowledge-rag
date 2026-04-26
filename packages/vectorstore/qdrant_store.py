@@ -321,21 +321,31 @@ class QdrantDocumentStore:
     ) -> bool:
         """TASK-015: doc_id에 속한 모든 청크의 payload에 분류 정보를 일괄 업데이트.
 
-        None인 키는 손대지 않는다. set_payload는 부분 업데이트라 다른 metadata 키를 보존.
+        Qdrant `set_payload`에 `key="metadata"`를 주면 nested 업데이트 — 즉
+        `payload["metadata"][k] = v` 형태로 들어가 Filter `key="metadata.category"`
+        (dot-notation = nested 해석)와 매칭됨. 인덱싱 시점에 payload["metadata"]가 dict로
+        존재하는 게 전제 (add_documents에서 보장).
+
+        과거 버전(0.23.x 이전)은 key 파라미터 없이 호출해 flat key
+        `payload["metadata.category"]` 로 저장했고, 그 결과 Filter가 매칭하지 않아
+        category_filter가 항상 0건이었다(0.23.1 fix). 기존 데이터는 별도 마이그레이션 필요.
+
+        None인 인자는 손대지 않는다.
         """
         payload: dict = {}
         if doc_type is not None:
-            payload["metadata.doc_type"] = doc_type
+            payload["doc_type"] = doc_type
         if category is not None:
-            payload["metadata.category"] = category
+            payload["category"] = category
         if tags is not None:
-            payload["metadata.tags"] = list(tags)
+            payload["tags"] = list(tags)
         if not payload:
             return False
         try:
             self._client.set_payload(
                 collection_name=self._collection,
                 payload=payload,
+                key="metadata",
                 points=Filter(
                     must=[
                         FieldCondition(

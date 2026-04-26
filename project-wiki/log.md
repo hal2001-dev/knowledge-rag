@@ -5,6 +5,45 @@
 
 ---
 
+## [2026-04-26] fix | 0.23.1 — `set_classification_payload` flat key → nested (ADR-025 잠재 버그)
+
+### 진단
+- TASK-019 Phase 1 라이브 검증 시 `category_filter='ai/ml'` 검색이 0건 매칭 발견
+- doc_filter는 정상 → category 필터 자체의 데이터 모델 문제로 좁혀짐
+- Qdrant scroll로 raw payload 확인:
+  ```
+  payload keys: ['page_content', 'metadata', 'metadata.doc_type', 'metadata.category', 'metadata.tags']
+  metadata.category (nested 안): None
+  payload['metadata.category'] (flat top-level): 'ai/ml'
+  ```
+- ADR-025 `set_classification_payload`가 `set_payload(payload={"metadata.category": "ai/ml"}, ...)` 형태로 호출 → Qdrant는 dict 키를 그대로 top-level 추가. dot-notation을 nested로 해석하지 않음. 반면 Filter `key="metadata.category"` 는 nested 경로 해석 → mismatch
+- ADR-025 도입(2026-04-25) 후 카테고리 한정 검색이 실제로 사용되지 않아 표면화 안 됐던 잠재 버그
+
+### 수정
+- `packages/vectorstore/qdrant_store.py` `set_classification_payload`:
+  - `set_payload(payload={"category":...}, key="metadata", ...)` 형태 — Qdrant가 nested merge로 처리
+  - dict 키 `"metadata.category"` → `"category"` 등으로 단순화
+- `scripts/migrate_classification_payload_to_nested.py` 신규:
+  - 영향: ADR-025부터 작성된 모든 분류 payload
+  - PostgreSQL `documents` 테이블의 doc_type/category/tags를 진실 원천으로 잡아 영향받은 doc_id 청크에 nested set_payload 재적용
+  - `--dry-run`: 영향 범위만 출력
+  - `--cleanup-flat`: 기존 flat key를 delete_payload로 정리 (기본 false — nested 추가만)
+  - flat key 분포·영향 doc 수·적용 카운트 보고
+
+### 적용 절차
+1. 워커 재기동 (현재 가동 중인 워커는 OLD code의 set_classification_payload 그대로 사용 — 새 잡도 flat key 만듦)
+2. `scripts/migrate_classification_payload_to_nested.py --dry-run` 영향 범위 확인
+3. `scripts/migrate_classification_payload_to_nested.py --cleanup-flat` 실행 (nested 추가 + flat 정리)
+4. category_filter 라이브 검증
+
+### TASK-019 Phase 2 영향
+Phase 2 NextJS의 상단 카테고리 칩·도서관 카테고리 필터·`category_filter` URL 라우팅이 이 fix 없이는 항상 0건. Phase 2 진입 전제조건 충족.
+
+### 위키
+- `changelog.md` 0.23.1 항목
+
+---
+
 ## [2026-04-26] ops | fresh start 정리 후 워커 collection 캐시 mismatch — 워커 재기동 + stale 잡 reset
 
 ### 작업

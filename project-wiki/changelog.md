@@ -22,6 +22,22 @@
 
 ---
 
+## [0.23.1] - 2026-04-26
+
+### Fixed
+- **`set_classification_payload` flat key → nested key** (ADR-025 잠재 버그, TASK-019 Phase 1 라이브 검증 시 표면화):
+  - 증상: `category_filter='ai/ml'` 처럼 카테고리 한정 검색 시 매칭 0건. doc_filter는 정상.
+  - 원인: Qdrant `set_payload`에 `key=` 파라미터를 안 줘서 `payload["metadata.category"]`(top-level flat key)로 저장됨. Filter `key="metadata.category"` 는 dot-notation = nested 경로(`payload.metadata.category`)로 해석 → mismatch
+  - 수정: `set_classification_payload`에 `key="metadata"` 추가 + payload dict 키를 `"category"` 등으로 단순화. 결과: `payload["metadata"]["category"]` nested 저장
+  - 데이터 마이그레이션: `scripts/migrate_classification_payload_to_nested.py` 신규. PostgreSQL `documents` 테이블을 진실 원천으로 영향받은 doc_id의 nested set_payload 재적용 + (선택) flat key delete_payload. `--dry-run`/`--cleanup-flat` 옵션
+  - 영향 범위: ADR-025(2026-04-25)부터 도입된 모든 자동/수동 분류 호출. 기존 인덱스의 카테고리 필터가 동작 안 했지만 표면화 안 됐던 이유는 사용자가 카테고리 한정 검색을 실제로 호출하지 않았기 때문 (TASK-019 Phase 1 검증이 첫 호출)
+
+### Notes
+- 워커 재기동 후 신규 분류 호출은 nested로 저장. 기존 flat key는 위 마이그레이션 스크립트로 변환
+- TASK-019 Phase 2 NextJS의 카테고리 칩·도서관 카테고리 필터·`category_filter` 라우팅이 이 fix 없이는 항상 0건 — Phase 2 진입 전제조건
+
+---
+
 ## [0.23.0] - 2026-04-26
 
 ### Added
