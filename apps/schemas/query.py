@@ -14,6 +14,11 @@ class QueryRequest(BaseModel):
         None,
         description="TASK-016: 특정 doc_id에 한정해 검색. 도서관 탭의 '이 책에 대해 묻기'.",
     )
+    category_filter: Optional[str] = Field(
+        None,
+        description="TASK-019: 특정 카테고리(`payload.metadata.category`)에 한정해 검색. "
+                    "상단 카테고리 칩·도서관 카테고리 [이 카테고리에 묻기].",
+    )
 
 
 class SourceItem(BaseModel):

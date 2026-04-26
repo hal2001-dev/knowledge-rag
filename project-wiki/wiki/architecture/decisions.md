@@ -1,6 +1,6 @@
 # Architecture Decision Records (ADR)
 
-**마지막 업데이트**: 2026-04-25
+**마지막 업데이트**: 2026-04-26
 
 설계에서 중요한 결정을 내릴 때마다 여기에 기록합니다.
 "왜 이렇게 했지?" 를 나중에 찾아보기 위한 파일입니다.
@@ -1168,3 +1168,144 @@ UI는 기존 카드 안에 (a) 카테고리 분포 라인 (b) 주제 칩 6개 (c
 - 잡 진행 UI (관리자 탭에 `/jobs?status=` 폴링 표시) — 인증 도입 후
 - 앱 컨테이너 Dockerfile + docker-compose `indexer` 서비스 — 별건
 - 큐 메트릭(처리량·평균 lag·실패율) — Prometheus 익스포터 별건
+
+---
+
+## ADR-030: 사용자 UI를 NextJS로 분리 + Clerk 인증 + FastAPI Origin 분기
+**날짜**: 2026-04-26
+**상태**: accepted (Phase 1 진행 중)
+**관련**: TASK-019, ADR-017(관리자 UI Streamlit 1단계), ADR-026(도서관 doc_filter 라우팅), ISSUE-001/002(모바일 한계), 메모리 `feedback_streamlit_no_edit`
+
+### 배경
+- Streamlit `ui/app.py` 853줄 단일 앱이 사용자(채팅·도서관·대화)와 관리자(문서·잡·시스템·평가) 7탭을 모두 담당
+- `st.tabs`가 프로그램적 탭 전환 미지원 → 도서관·랜딩 카드의 자동 이동 4 트리거가 토스트 안내만 남기고 멈춤. 사용자 UX 마찰의 근본 원인
+- 모바일에서 `file_uploader` 표시 누락(ISSUE-001), suggestions 배지 클릭 무반응(ISSUE-002) — Streamlit 모바일 호환 한계로 0.14.1~0.14.3 3회 수정 시도에도 증상 지속, 결국 보류
+- 인증 없음 → 사용자별 데이터 격리 불가, 외부 공개 진입 어려움
+- 사용자/관리자 화면이 한 앱에 섞여 외부 공개·단순화·점진적 인증 도입 모두 어려움
+
+### 선택지
+1. **사용자 = NextJS, 관리자 = Streamlit (잔류·동결), Clerk 인증** — 채택
+2. Streamlit `st.tabs` → `st.radio` 자체 탭 시스템 패치 — 자동 이동 표면적 해결, 모바일 한계·인증 부재 미해결. 정성적 한계 그대로
+3. 전체를 NextJS로 — 산정 13~15일, 관리자 화면(잡 모니터·시스템 진단·평가)까지 재구현 비용 큼. 1인 운영 단계엔 과함
+4. Streamlit 그대로 + Cloudflare Access (TASK-012)로 인증만 우회 — 외부 노출 가능하나 자동 이동·모바일 한계 미해결, 사용자 격리는 application-level이 아님
+
+### 결정
+**옵션 1**. 이유:
+- Streamlit는 관리자 도구로서 "동결" 운영(메모리 `feedback_streamlit_no_edit`) — 변경 비용 0, 회귀 0
+- 사용자 UX의 본질 문제(자동 이동·모바일·인증)를 근본적으로 해소
+- LLM·RAG는 모두 FastAPI 단일 진실 — NextJS는 thin client (백엔드 중복 0)
+- 인증·공개배포 보류 묶음 5개 중 "앱 내 인증" 항목만 부분 해제 (나머지 4개는 보류 유지로 일관성)
+
+### Clerk 결정 근거 (인증 공급자 비교)
+
+| 후보 | 장점 | 단점 |
+|---|---|---|
+| **Clerk** ⭐ | NextJS 통합 최상급(공식 SDK), 이메일 OTP 즉시, Free 10k MAU/월, drop-in UI | Vendor lock-in (이전 시 마이그레이션 필요) |
+| Auth0 | 성숙도·보안 reputation | NextJS 통합이 Clerk만큼 매끈하지 않음, 가격 더 비쌈 |
+| Supabase Auth | 오픈소스 백엔드 함께 가능 | RAG 백엔드와 별도 Supabase 운영 필요, 현 PostgreSQL과 중복 |
+| 자체 구현 | 완전 통제 | OTP·세션·비번·CSRF·rate-limit 모두 자체 — 1인 운영엔 과부하 |
+| Cloudflare Access (TASK-012) | 코드 0줄 | 엣지 인증 — 사용자별 데이터 격리는 application 레이어 X. 이번 목표 불일치 |
+
+→ **Clerk** 채택. NextJS 공식 통합·이메일 OTP·Free 한도가 1인 운영에 적합.
+
+### 인증 분리 전략 (Origin 분기) — Streamlit 동결 호환 핵심
+
+문제: NextJS는 Clerk JWT 강제, Streamlit은 LAN 무인증·코드 동결. FastAPI는 두 클라이언트 모두 받아야 함.
+
+검토안:
+- **(X) Origin 분기** ⭐ 채택 — JWT 헤더 있으면 검증, 없으면 LAN/localhost origin은 `user_id='admin'`, 외부 origin은 401
+- **(Y) 경로 분기** — `/api/v2/*` 강제, 기존 경로 무인증 — 라우터 이중화 비용
+- **(Z) 헤더 우회** — `X-Internal-Token` 공유 시크릿, Streamlit 코드 수정 필요 — **동결 정책 위반, 비채택**
+
+(X) Origin 분기 동작:
+| 헤더 / 출처 | 처리 |
+|---|---|
+| `Authorization: Bearer <Clerk JWT>` | Clerk JWKS 검증 → `user_id = clerk.user_id` |
+| 헤더 없음 + LAN/localhost origin | `user_id = 'admin'` 자동 (Streamlit + 로컬 스크립트 호환) |
+| 헤더 없음 + 외부 origin | `401 Unauthorized` |
+
+LAN 신뢰 가정에 의존 — 외부 노출 시점에 reverse proxy로 Origin 정규화 필수 (현재는 LAN 한정 단계).
+
+### 데이터 모델 변경
+
+`conversations.user_id` 추가:
+- 마이그레이션 `0004_add_conversations_user_id.sql` (sentinel `("column", "conversations", "user_id")` + advisory lock 직렬화 — TASK-018 패턴 재사용)
+- `user_id TEXT NOT NULL DEFAULT 'admin'` 추가 + `CREATE INDEX ix_conversations_user_id`
+- 기존 행은 DEFAULT 정책으로 자동 `'admin'` 백필 (별도 UPDATE 불필요)
+- `DEFAULT 'admin'`은 **마이그레이션 시 백필 도구로만 사용**, 모델 측 default는 명시 X (모든 새 INSERT는 미들웨어가 user_id를 주입)
+
+### 페이지 구성·레이아웃 (NextJS)
+
+- 라우트: `/chat`, `/library` (`/conversations`는 사이드바로 흡수)
+- AppShell: 상단 카테고리 칩(라벨만, NULL→"기타") + 사이드바(데스크톱 펼침·모바일 drawer 닫힘, ＋새 대화·자기 user_id 대화 목록·하단 📚 도서관) + 메인(활성 스코프 배지 + 본문)
+- 활성 스코프 우선순위: **series > category > doc** (한 번에 하나)
+- 자동 페이지 이동: NextJS App Router native — Streamlit `st.tabs` 한계의 본질 해결
+- 의도적 제외: 답변 스트리밍, 다크모드, 다국어, PWA, Sentry, Analytics, 리치 에디터 (Phase 1)
+
+### 역할·인가 정책
+
+- 모든 로그인 사용자 동등 (Clerk Organizations / publicMetadata role 미사용)
+- 익명 사용 불허 (NextJS는 비로그인 시 `/sign-in` 강제)
+- Streamlit 사용자는 `'admin'` 단일 user_id로 누적
+- NextJS 사용자가 `'admin'` 세션에 접근 불가 (자기 user_id 세션만 사이드바 노출)
+
+### 보류 묶음 영향
+
+2026-04-22 보류 5개 중 **"앱 내 인증"만 부분 해제** (Clerk 도입). 나머지 4개는 그대로 보류:
+- ISSUE-001 (모바일 업로드)
+- 관리자 UI 2단계
+- HTTPS 배포
+- 관리자 전용 UI 버튼
+
+### 구현 (Phase 1 — Clerk 키 불필요)
+
+- ADR-030 작성 (이 항목)
+- `category_filter` 백엔드 추가:
+  - `apps/schemas/query.py` — `QueryRequest.category_filter: Optional[str]`
+  - `packages/rag/{pipeline,retriever}.py` — 인자 통과
+  - `packages/vectorstore/qdrant_store.py` — `similarity_search_with_score`에 `category` 인자 + `payload.metadata.category` Filter 절
+  - `apps/routers/query.py` — request 통과
+  - LangSmith 트레이스 — `category_filter` 메타·태그
+- `conversations.user_id` 마이그레이션 + 모델·repository 갱신
+- FastAPI 인증 미들웨어 (`apps/middleware/auth.py`):
+  - `AUTH_ENABLED=false` 토글 (도입 시점 분리, 키 미발급 환경에서도 stub 동작)
+  - Origin 분기: LAN/localhost (`127.0.0.1`, `localhost`, RFC1918) → `user_id='admin'`
+  - JWT 검증: Clerk JWKS (httpx 캐시 1h) — Phase 2에서 활성
+  - `request.state.user_id` 주입
+- `conversations` 라우터/repository — `user_id` 통과 + owner 검증(404)
+- CORS 허용 (NextJS dev `http://localhost:3000` + 추후 prod 도메인)
+- 스모크 테스트:
+  - Streamlit `POST /query` → user_id `'admin'` 자동 부여
+  - `GET /conversations` → `user_id='admin'` 세션만
+  - `category_filter` 적용 시 해당 카테고리 청크만 검색
+  - 후방호환: `category_filter` 미지정 → 기존 동작 100%
+
+### 구현 (Phase 2 — Clerk 키 필요)
+- `web/` NextJS 14/15 + shadcn/ui + TanStack Query
+- `@clerk/nextjs` 통합 + `middleware.ts`
+- AppShell + `/chat` + `/library` + 사이드바
+- `category_filter` URL state 라우팅 (NextJS App Router native)
+
+### 구현 (Phase 3 — 검증·문서)
+- Playwright 회귀 검증 (3 영역 + 자동 이동 + 모바일 viewport)
+- changelog 신버전, wiki 8개 페이지 갱신, log impl 항목
+
+### 회귀 전략
+- Streamlit 8501 그대로 운영 — NextJS 빌드 실패 시 즉시 회귀
+- `category_filter` default `None` → 기존 호출 100% 후방호환
+- 인증 미들웨어 `AUTH_ENABLED=false` 토글로 도입 시점 분리 (Phase 1엔 기본 false, Phase 2에서 true 전환)
+- conversations down 마이그레이션: `ALTER TABLE conversations DROP COLUMN user_id`
+
+### 리스크
+- **Origin 분기의 LAN 신뢰 가정** — FastAPI 8000을 외부 노출하면 LAN IP 위장 가능. 외부 노출 시점에 reverse proxy로 Origin 정규화 필수
+- **모바일 동작 검증** — Playwright만으로는 실기기 호환 100% 보장 못 함. iOS Safari·Android Chrome 실측 필요
+- **OpenAPI 스키마 동기화** — FastAPI 변경 시 NextJS 클라이언트 재생성 필요. CI에 빌드 단계 추가
+- **Clerk Free 한도** — 10k MAU/월. 1인 운영 무관, 외부 공개 확장 시 점검
+- **마이그레이션 충돌** — bulk_ingest 또는 indexer 진행 중 ALTER 실행 시 락 대기. TASK-018 패턴(advisory lock + sentinel) 재사용으로 회피
+
+### 후속
+- Phase 2 진입 후 `AUTH_ENABLED=true` 전환
+- 시리즈 카드·시리즈 스코프 (TASK-020 완료 시 NextJS에 추가)
+- 답변 스트리밍 SSE 도입 — 별건
+- 외부 공개 시 Cloudflare Tunnel + Access (TASK-012)와 통합 가능 (Clerk 사용자 식별이 살아있는 채로 엣지 보호 추가)
+- 관리자 UI NextJS 이전 — 보류 묶음 추가 해제 시 재검토

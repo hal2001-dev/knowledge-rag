@@ -21,9 +21,10 @@ _MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 # kind: "column" → (table, column) 존재 검사
 #       "table"  → (table,) 존재 검사
 _MIGRATION_SENTINELS: dict[str, tuple] = {
-    "0001_add_summary_columns.sql":         ("column", "documents", "summary"),
-    "0002_add_classification_columns.sql":  ("column", "documents", "doc_type"),
-    "0003_add_ingest_jobs.sql":             ("table", "ingest_jobs"),
+    "0001_add_summary_columns.sql":           ("column", "documents", "summary"),
+    "0002_add_classification_columns.sql":    ("column", "documents", "doc_type"),
+    "0003_add_ingest_jobs.sql":               ("table", "ingest_jobs"),
+    "0004_add_conversations_user_id.sql":     ("column", "conversations", "user_id"),
 }
 
 
@@ -78,7 +79,10 @@ def _apply_alter_migrations(engine) -> None:
         return
 
     # 직렬화: 임의의 64-bit lock id (프로젝트 고유). 다른 프로세스도 같은 id로 대기.
-    LOCK_ID = 0x6B6E6F776C65646765  # 'knowledge'.encode().hex() 일부
+    # pg_advisory_xact_lock는 bigint(signed 64-bit, 최대 2^63-1) — 9바이트 'knowledge'는 한도 초과(잠재 버그).
+    # TASK-018 도입 시 모든 sentinel 충족으로 빠른 경로만 타서 노출 안 됐고, TASK-019 신규 마이그레이션
+    # 0004로 표면화. 'knowledg' 8바이트(0x6B6E6F776C656467 ≈ 7.7e18 < 2^63-1)로 축약.
+    LOCK_ID = int.from_bytes(b"knowledg", "big")
     with engine.begin() as conn:
         conn.execute(text("SELECT pg_advisory_xact_lock(:lid)"), {"lid": LOCK_ID})
         # lock 획득 후 다시 sentinel 확인 — 다른 프로세스가 먼저 적용했을 수 있음

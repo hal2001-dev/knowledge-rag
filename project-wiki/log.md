@@ -5,6 +5,84 @@
 
 ---
 
+## [2026-04-26] impl | TASK-019 Phase 1 — 백엔드 토대 (ADR-030, 0.23.0)
+
+### 코드 변경
+- `apps/middleware/auth.py` (신규) — Origin 분기 인증 미들웨어. `_is_lan_host()` (RFC1918 + loopback + IPv6) + `AuthMiddleware.dispatch()` (JWT 헤더 / LAN origin / 외부 origin 3분기). EXEMPT_PATHS = `/health`, `/docs`, `/redoc`, `/openapi.json`. `AUTH_ENABLED=false`(기본) 시 모든 요청 admin 통과
+- `apps/middleware/__init__.py` (신규) — 패키지 마커
+- `apps/main.py` — CORSMiddleware (`localhost:3000` + `127.0.0.1:3000`) + AuthMiddleware 등록
+- `apps/config.py` — `auth_enabled`(false), `clerk_jwks_url`, `clerk_issuer`, `cors_origins` 4개 신설
+- `apps/schemas/query.py` — `QueryRequest.category_filter: Optional[str]`
+- `apps/routers/query.py` — `Request` 의존성으로 `user_id` 추출, `category_filter` 파이프라인 통과, LangSmith 메타·태그(`session:`, `user:`)
+- `apps/routers/conversations.py` — 4개 엔드포인트 모두 `Request` 의존성 + `user_id` 통과 + owner 검증 (다른 user 세션 GET/DELETE 시 404)
+- `packages/rag/pipeline.py` — `category_filter` 인자 + 우선순위 분기(`doc_filter` 우선, 동시 지정 시 `category_filter` 무시) + LangSmith 태그(`category_filter:<value>`) 메타(`category_filter`)
+- `packages/rag/retriever.py` — `category` 인자 통과
+- `packages/vectorstore/qdrant_store.py` — `similarity_search_with_score(category=...)` + `payload.metadata.category` Filter 절. doc_id와 동시 지정 시 둘 다 must
+- `packages/db/models.py` — `ConversationRecord.user_id String NOT NULL index=True`. 모델 default 미지정 (DB DEFAULT 'admin'은 마이그레이션 백필 전용)
+- `packages/db/conversation_repository.py` — 6개 함수 모두 `user_id` 인자 추가. `get_conversation`/`get_or_create_conversation`/`list_conversations`/`delete_conversation`은 owner 필터, `create_conversation`은 INSERT 시 명시 주입
+- `packages/db/connection.py` — sentinel `0004_add_conversations_user_id.sql`: `("column", "conversations", "user_id")` 추가. **부수 fix: LOCK_ID 9바이트 → 8바이트** (`b"knowledg"` = 0x6B6E6F776C656467, signed bigint 적합)
+- `packages/db/migrations/0004_add_conversations_user_id.sql` (신규) — `ALTER TABLE conversations ADD COLUMN IF NOT EXISTS user_id TEXT NOT NULL DEFAULT 'admin'` + 인덱스
+
+### 마이그레이션 적용 결과 (스모크)
+- 0004 적용 — `conversations.user_id` 컬럼 추가, `ix_conversations_user_id` 생성
+- 기존 29개 행 모두 `user_id='admin'` 자동 백필 (DEFAULT 정책)
+- LOCK_ID 패치로 advisory lock 정상 획득 (이전엔 9바이트 ASCII가 `pg_advisory_xact_lock(bigint)` 한도 초과)
+
+### 격리 검증 (직접 SQLAlchemy 세션)
+| 케이스 | 기대 | 결과 |
+|---|---|---|
+| admin 새 세션 생성 | user_id='admin' | ✅ |
+| clerk_user_abc 새 세션 생성 | user_id='clerk_user_abc' | ✅ |
+| admin이 자기 세션 조회 | 성공 | ✅ |
+| admin이 clerk 세션 조회 | None (격리) | ✅ |
+| admin 목록 카운트 | admin user_id만 (29 + 1 임시 = 30) | ✅ |
+| clerk 목록 카운트 | 1 | ✅ |
+| admin이 clerk 세션 삭제 시도 | False (차단) | ✅ |
+| 정리 후 admin 카운트 | 29 (원상복구) | ✅ |
+
+### 부팅 검증
+- `from apps.main import app` OK
+- 미들웨어 체인: CORSMiddleware → AuthMiddleware (등록 순)
+- LAN host 분기 단위 테스트: 127.0.0.1·localhost·192.168.x·10.x·172.16.x·::1 모두 LAN, 8.8.8.8·example.com 외부 인식
+
+### 부수 발견 (운영 노트)
+- 현재 실행 중인 uvicorn(PID 45489)은 옛 코드 — 새 미들웨어/repository 미적용. DB DEFAULT 'admin' 정책 덕분에 옛 코드도 INSERT 누락 시 자동 백필돼 운영 호환성 유지. 재시작 시점은 사용자 결정
+- 인덱서 워커(PID 45535)는 conversations 미접근이라 재시작 불필요. bulk 인덱싱 진행에 영향 0
+
+### 위키
+- `wiki/architecture/decisions.md` ADR-030 추가 (사용자/관리자 UI 분리, Clerk 채택 + 인증 공급자 비교, Origin 분기 전략)
+- `changelog.md` 0.23.0 항목
+
+### Phase 2 진입 조건
+- `.env`에 `AUTH_ENABLED=true`, `CLERK_JWKS_URL`, `CLERK_ISSUER` 추가
+- `web/.env.local`에 `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY` 추가
+- uvicorn 재시작
+- NextJS 프로젝트 신설(`web/`) → shadcn/ui + TanStack Query + Clerk + AppShell + 페이지 구현
+
+---
+
+## [2026-04-25] doc | TASK-019 착수 전 기술 스펙 확정 — `wiki/architecture/stack.md` 신설
+
+### 합의된 NextJS 기술 스펙
+- 프레임워크: Next.js 15.x (App Router) + React 19 + TypeScript 5 strict, pnpm 9
+- UI: shadcn/ui (Radix + Tailwind 3.4) + lucide-react + sonner + tailwindcss-animate
+- 라우팅·상태: App Router native + nuqs(URL state) + TanStack Query v5 + Zustand v4(필요 시)
+- API·인증: openapi-typescript + openapi-fetch + @clerk/nextjs v5 (이메일 OTP, 비번/소셜 X)
+- 콘텐츠: react-markdown + remark-gfm + rehype-highlight
+- 개발: ESLint + Prettier 3 (+ tailwindcss plugin) + Playwright 1.48+
+- 의도적 제외 (Phase 1): 답변 스트리밍, 다크모드, 다국어, PWA, Sentry, Analytics, 리치 에디터, Vitest, Storybook
+- 호환 이슈 발견 시 Next 14.2 + React 18로 다운그레이드 가능 (비파괴적 결정)
+
+### 갱신
+- `wiki/architecture/stack.md` 신설 (백엔드 + NextJS + Streamlit + 인증 정책 통합)
+- `wiki/index.md` — Architecture 섹션의 stack.md 등록(미작성 → active), 마지막 업데이트 갱신, 페이지 수 25→26
+- `wiki/overview.md` — 상단 관련 페이지에서 `stack.md _(미작성)_` 마커 제거
+
+### 다음 단계
+- Phase 1 진입 — ADR-030 작성 → category_filter 백엔드 추가 → conversations.user_id 마이그레이션 → 인증 미들웨어 → CORS → 스모크 테스트
+
+---
+
 ## [2026-04-25] queue | TASK-019 — 사용자 UI NextJS 분리 + Clerk 인증 (최우선)
 
 ### 합의 사항

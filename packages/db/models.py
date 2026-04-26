@@ -43,6 +43,10 @@ class ConversationRecord(Base):
     __tablename__ = "conversations"
 
     session_id = Column(String, primary_key=True)
+    # TASK-019 (ADR-030): Clerk user_id 또는 'admin' (Streamlit/로컬 호출).
+    # 모델 레벨 default 미지정 — 모든 신규 INSERT는 미들웨어가 명시적으로 user_id 주입.
+    # DB DEFAULT 'admin'은 마이그레이션 백필용으로만 사용.
+    user_id = Column(String, nullable=False, index=True)
     title = Column(Text, default="")
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at = Column(

@@ -70,6 +70,15 @@ class Settings(BaseSettings):
     langchain_project: str = "knowledge-rag"
     langchain_endpoint: str = "https://api.smith.langchain.com"
 
+    # TASK-019 (ADR-030) — 인증 미들웨어 토글 + Clerk
+    # auth_enabled=false (Phase 1 기본): JWT 미검증. LAN/localhost는 'admin', 외부 origin도 'admin' 통과
+    # auth_enabled=true  (Phase 2): JWT 헤더 있으면 Clerk 검증. 헤더 없으면 LAN→'admin', 외부→401
+    auth_enabled: bool = False
+    clerk_jwks_url: str = ""              # 예: https://<your-app>.clerk.accounts.dev/.well-known/jwks.json
+    clerk_issuer: str = ""                # 예: https://<your-app>.clerk.accounts.dev
+    # NextJS dev 서버 origin — CORS 허용
+    cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
+
 
 @lru_cache
 def get_settings() -> Settings:

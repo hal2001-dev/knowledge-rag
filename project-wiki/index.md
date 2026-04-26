@@ -1,7 +1,7 @@
 # Wiki Index
 
-**마지막 업데이트**: 2026-04-23 (TASK-013 큐잉 — MkDocs + GitHub Pages 문서 사이트, 후순위 · 위키 PII 제거 + security.md PII 정책 · rag-commit·rag-lint 스킬에 PII 스캔 추가. 이전: TASK-012 큐잉)
-**총 페이지 수**: 25 (루트 9 + wiki/ 14 + issues/open/ 2)
+**마지막 업데이트**: 2026-04-25 (TASK-019 착수 — NextJS 사용자 UI 분리 + Clerk 인증, ADR-030 예약 · stack.md 신설 · TASK-020 Series 큐잉. 이전: 0.22.1 32MiB 핫픽스, TASK-019/020 큐잉)
+**총 페이지 수**: 26 (루트 9 + wiki/ 15 + issues/open/ 2)
 
 ---
 
@@ -34,7 +34,7 @@
 | [decisions.md](wiki/architecture/decisions.md) | ADR — 설계 결정 기록 | active |
 | [structure.md](wiki/architecture/structure.md) | 전체 프로젝트 디렉터리 구조 + 논리 계층도 + 런타임 토폴로지 | active |
 | `pipeline.md` _(미작성)_ | RAG 파이프라인 전체 흐름 | - |
-| `stack.md` _(미작성)_ | 기술 스택 및 선택 이유 | - |
+| [stack.md](wiki/architecture/stack.md) | 기술 스택 및 선택 이유 (백엔드 + NextJS + Streamlit + 인증) | active |
 
 ---
 

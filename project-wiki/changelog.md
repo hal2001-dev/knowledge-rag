@@ -22,6 +22,45 @@
 
 ---
 
+## [0.23.0] - 2026-04-26
+
+### Added
+- **사용자 UI NextJS 분리 Phase 1 — 백엔드 토대** (TASK-019, ADR-030):
+  - `apps/middleware/auth.py` (신규) — Origin 분기 인증 미들웨어. JWT 헤더 있으면 Clerk 검증(Phase 2 stub), 없으면 LAN/localhost origin은 `user_id='admin'` 자동 부여, 외부 origin은 401. `AUTH_ENABLED=false`(기본)일 땐 모든 요청 admin 통과 (Clerk 키 없이 백엔드 가동 가능).
+  - `apps/middleware/__init__.py` (신규) — 미들웨어 패키지
+  - 마이그레이션 `0004_add_conversations_user_id.sql` — `conversations.user_id TEXT NOT NULL DEFAULT 'admin'` + `ix_conversations_user_id`. sentinel `("column", "conversations", "user_id")`로 idempotent. 기존 29개 행은 DEFAULT 'admin'로 자동 백필.
+  - `category_filter` end-to-end:
+    - `apps/schemas/query.py` `QueryRequest.category_filter: Optional[str]` 추가
+    - `packages/rag/{pipeline,retriever}.py` 인자 통과 + LangSmith 메타·태그
+    - `packages/vectorstore/qdrant_store.py` `similarity_search_with_score(category=...)` + `payload.metadata.category` Filter 절. doc_id와 동시 지정 시 둘 다 must로 AND, pipeline 레이어가 우선순위(doc > category) 결정
+    - `apps/routers/query.py` request 통과
+  - `apps/main.py` — CORSMiddleware (NextJS dev `http://localhost:3000` 허용) + AuthMiddleware 등록
+  - `apps/config.py` — `auth_enabled`(기본 false), `clerk_jwks_url`, `clerk_issuer`, `cors_origins` 4개 필드
+- **conversations 사용자 격리** — 모든 repository 함수가 `user_id` 필수 인자
+  - `create_conversation(user_id, ...)` — INSERT 시 명시 user_id 주입 (DB DEFAULT는 마이그레이션 백필 전용)
+  - `get_conversation(session_id, user_id=...)` — owner 검증 시 user_id 일치 행만 반환
+  - `get_or_create_conversation(session_id, user_id)` — 다른 user 세션 ID를 우연히 알아도 격리(새 세션 생성)
+  - `list_conversations(user_id)` / `delete_conversation(session_id, user_id)` 자기 데이터만
+  - 라우터 4개 모두 `Request.state.user_id` 의존성 통과 + 다른 user 세션 GET 시 404 (403 대신 정보 누출 회피)
+- **위키**:
+  - `wiki/architecture/decisions.md` ADR-030 — 사용자/관리자 UI 분리, Clerk 채택, Origin 분기 전략, 인증 공급자 비교
+  - `wiki/architecture/stack.md` 신설 (백엔드 + NextJS + Streamlit + 인증 정책 통합)
+  - `wiki/index.md` Architecture 섹션 갱신 (stack.md 등록)
+  - `wiki/overview.md` 상단 관련 페이지에서 stack.md 미작성 마커 제거
+
+### Fixed
+- **마이그레이션 `pg_advisory_xact_lock` LOCK_ID 잠재 버그** ([packages/db/connection.py](../packages/db/connection.py)):
+  - 9바이트 `0x6B6E6F776C65646765` (`'knowledge'` ASCII)가 PostgreSQL `bigint`(signed 64-bit, 최대 2^63-1) 한도 초과
+  - TASK-018 도입 시 모든 sentinel 충족으로 빠른 경로만 타서 노출 안 됐고, TASK-019 신규 마이그레이션 0004로 표면화
+  - 8바이트 `'knowledg'` (0x6B6E6F776C656467 ≈ 7.7e18 < 2^63-1)로 축약, 동일 lock id 의도 유지
+
+### Notes
+- `AUTH_ENABLED=false`가 기본 — Phase 2(NextJS + Clerk 통합) 진입 시 `.env`에 `AUTH_ENABLED=true` + Clerk 키 3종 추가 후 활성
+- 현재 실행 중인 uvicorn은 옛 코드 — 재시작 후 새 미들웨어/repository 적용. 인덱서 워커는 conversations 미접근이라 재시작 불필요
+- DEFAULT 'admin' 컬럼 정책 덕분에 옛 코드도 INSERT 시 user_id 누락해도 자동 백필되어 운영 호환성 유지
+
+---
+
 ## [0.22.1] - 2026-04-25
 
 ### Fixed

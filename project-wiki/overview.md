@@ -2,7 +2,7 @@
 
 **상태**: active
 **마지막 업데이트**: 2026-04-25
-**관련 페이지**: `pipeline.md` _(미작성)_, `stack.md` _(미작성)_
+**관련 페이지**: `pipeline.md` _(미작성)_, [stack.md](wiki/architecture/stack.md)
 
 ---
 

@@ -220,12 +220,16 @@ class QdrantDocumentStore:
         k: int = 20,
         score_threshold: float = 0.0,
         doc_id: Optional[str] = None,
+        category: Optional[str] = None,
     ) -> list[ScoredChunk]:
-        filter_condition: Optional[Filter] = None
+        # TASK-019: doc_id, category 동시 지정 시 둘 다 must로. 우선순위 분기는
+        # pipeline 레이어에서 결정하므로 여기서는 받은 인자 그대로 AND 적용.
+        must: list = []
         if doc_id:
-            filter_condition = Filter(
-                must=[FieldCondition(key="metadata.doc_id", match=MatchValue(value=doc_id))]
-            )
+            must.append(FieldCondition(key="metadata.doc_id", match=MatchValue(value=doc_id)))
+        if category:
+            must.append(FieldCondition(key="metadata.category", match=MatchValue(value=category)))
+        filter_condition: Optional[Filter] = Filter(must=must) if must else None
 
         if self._search_mode == "vector":
             results = self._store.similarity_search_with_score(

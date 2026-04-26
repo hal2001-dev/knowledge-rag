@@ -3,8 +3,10 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from apps.config import get_settings
+from apps.middleware.auth import AuthMiddleware
 from apps.routers import conversations, documents, ingest, jobs, query
 from packages.code.logger import get_logger
 from packages.db.connection import init_db
@@ -57,6 +59,19 @@ app = FastAPI(
     description="Docling + Qdrant + PostgreSQL 기반 문서 질의응답 시스템",
     version="0.1.0",
     lifespan=lifespan,
+)
+
+# TASK-019 (ADR-030): NextJS dev origin CORS + Clerk 인증 미들웨어 (Origin 분기).
+# 미들웨어 등록 순서가 곧 적용 순서의 역순 — 마지막에 등록한 게 가장 바깥쪽.
+# CORS는 가장 바깥, Auth는 그 안쪽. OPTIONS preflight는 Auth가 통과시킴.
+_settings = get_settings()
+app.add_middleware(AuthMiddleware, settings=_settings)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[o.strip() for o in _settings.cors_origins.split(",") if o.strip()],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 app.include_router(ingest.router, tags=["ingest"])

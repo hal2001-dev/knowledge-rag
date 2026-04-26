@@ -92,10 +92,15 @@ class RAGPipeline:
         score_threshold: float | None = None,
         history: list[dict] | None = None,
         doc_filter: str | None = None,
+        category_filter: str | None = None,
     ) -> dict:
         top_k = top_k or self._settings.default_top_k
         initial_k = initial_k or self._settings.default_initial_k
         score_threshold = score_threshold if score_threshold is not None else self._settings.default_score_threshold
+
+        # TASK-019: 활성 스코프 우선순위 doc_filter > category_filter (한 번에 하나).
+        # 두 인자가 동시에 들어오면 doc 우선, category는 무시 (파이프라인 단순화).
+        effective_category = None if doc_filter else category_filter
 
         llm_model = getattr(self._llm, "model_name", None) or getattr(self._llm, "model", "")
         llm_backend = self._settings.llm_backend or "openai"
@@ -105,12 +110,18 @@ class RAGPipeline:
         )
         start = time.monotonic()
 
+        scope_tags = []
+        if doc_filter:
+            scope_tags.append(f"doc_filter:{doc_filter[:8]}")
+        elif effective_category:
+            scope_tags.append(f"category_filter:{effective_category}")
+
         with tracing_context(
             tags=[
                 f"reranker:{self._reranker.backend}",
                 f"llm:{llm_backend}",
                 f"suggestions:{self._settings.suggestions_enabled}",
-            ] + ([f"doc_filter:{doc_filter[:8]}"] if doc_filter else []),
+            ] + scope_tags,
             metadata={
                 "reranker_backend": self._reranker.backend,
                 "llm_backend": llm_backend,
@@ -118,6 +129,7 @@ class RAGPipeline:
                 "suggestions_count": self._settings.suggestions_count,
                 "llm_model": llm_model,
                 "doc_filter": doc_filter,
+                "category_filter": effective_category,
             },
         ):
             chunks = retrieve(
@@ -128,6 +140,7 @@ class RAGPipeline:
                 top_n=top_k,
                 score_threshold=score_threshold,
                 doc_id=doc_filter,
+                category=effective_category,
             )
 
         if not chunks:
