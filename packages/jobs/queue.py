@@ -97,7 +97,7 @@ def mark_failed(db: Session, job_id: int, error: str, retry: bool = False) -> No
         job.status = "failed"
         job.finished_at = datetime.now(timezone.utc)
     job.retry_count = (job.retry_count or 0) + 1
-    job.error = error[:2000]  # 상한
+    job.error = error[:4000]  # 상한
     db.commit()
 
 

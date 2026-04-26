@@ -1,0 +1,71 @@
+{
+  "run_id": "2026-04-26T024141Z",
+  "dir": "/Users/hal2001/workspace/temp/ingest",
+  "recursive": true,
+  "include": [
+    ".pdf",
+    ".txt",
+    ".md",
+    ".docx"
+  ],
+  "exclude": [],
+  "title_from": "stem",
+  "source_prefix": "",
+  "workers": 1,
+  "api_base": "http://localhost:8000",
+  "total": 7,
+  "ok": 0,
+  "enqueued": 2,
+  "duplicate": 5,
+  "failed": 0,
+  "skipped_too_large": 0,
+  "started_at": "2026-04-26T02:41:41.162683+00:00",
+  "finished_at": "2026-04-26T02:41:41.379097+00:00",
+  "elapsed_sec": 0.22,
+  "results": [
+    {
+      "path": "ADVANCED_UNIX_PROGRAMMING.pdf",
+      "size_mb": 65.68,
+      "status": "duplicate",
+      "doc_id": "204dfaa2-bff3-4aa7-81af-df175bb0a0ee"
+    },
+    {
+      "path": "C++와_CUDA_C로_구현하는_딥러닝_알고리즘.pdf",
+      "size_mb": 50.97,
+      "status": "duplicate",
+      "doc_id": "c96031ea-5767-41b7-8b0a-c7b53b1df41c"
+    },
+    {
+      "path": "더_이상한_수학책.pdf",
+      "size_mb": 58.81,
+      "status": "enqueued",
+      "doc_id": "6de8afbc-1c9b-4d64-bae3-c2498e5fe5f9",
+      "job_id": 8
+    },
+    {
+      "path": "상대적이며_절대적인_지식의_백과사전.pdf",
+      "size_mb": 56.9,
+      "status": "enqueued",
+      "doc_id": "abecf2fb-a721-4bc2-b3e9-18fb106efcbd",
+      "job_id": 9
+    },
+    {
+      "path": "수호비의_폴리머클레이.pdf",
+      "size_mb": 48.29,
+      "status": "duplicate",
+      "doc_id": "b47bcabf-5841-4404-91b2-43caa1b8ade3"
+    },
+    {
+      "path": "클론코딩_영화평점_웹서비스.pdf",
+      "size_mb": 51.01,
+      "status": "duplicate",
+      "doc_id": "42753ad0-4f34-4a73-9abf-6613ccb23f63"
+    },
+    {
+      "path": "클론코딩_트위터.pdf",
+      "size_mb": 47.56,
+      "status": "duplicate",
+      "doc_id": "65b29cd2-1e69-4c94-8dda-236b74b090d8"
+    }
+  ]
+}

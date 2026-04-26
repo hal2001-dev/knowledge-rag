@@ -1,0 +1,442 @@
+{
+  "run_id": "2026-04-26T090708Z",
+  "dir": "/Users/hal2001/workspace/temp/ingest",
+  "recursive": true,
+  "include": [
+    ".pdf",
+    ".txt",
+    ".md",
+    ".docx"
+  ],
+  "exclude": [],
+  "title_from": "stem",
+  "source_prefix": "",
+  "workers": 1,
+  "api_base": "http://localhost:8000",
+  "total": 61,
+  "ok": 0,
+  "enqueued": 49,
+  "duplicate": 12,
+  "failed": 0,
+  "skipped_too_large": 0,
+  "started_at": "2026-04-26T09:07:08.246490+00:00",
+  "finished_at": "2026-04-26T09:07:11.410414+00:00",
+  "elapsed_sec": 3.16,
+  "results": [
+    {
+      "path": "2001_스페이스_오디세이.pdf",
+      "size_mb": 55.3,
+      "status": "enqueued",
+      "doc_id": "8d4f63b2-324b-4a57-973a-1b5824031d99",
+      "job_id": 40
+    },
+    {
+      "path": "2010_스페이스_오디세이.pdf",
+      "size_mb": 70.08,
+      "status": "enqueued",
+      "doc_id": "79efb04b-84b8-4119-88fe-b55d83663a5d",
+      "job_id": 41
+    },
+    {
+      "path": "2061_스페이스_오디세이.pdf",
+      "size_mb": 46.01,
+      "status": "enqueued",
+      "doc_id": "17cbb435-0f04-43f8-8928-65a7b375c18a",
+      "job_id": 42
+    },
+    {
+      "path": "3001_최후의_오디세이.pdf",
+      "size_mb": 44.67,
+      "status": "enqueued",
+      "doc_id": "d4871fcd-3845-40b5-bbdf-1041fca1b5e4",
+      "job_id": 43
+    },
+    {
+      "path": "ADVANCED_UNIX_PROGRAMMING.pdf",
+      "size_mb": 65.68,
+      "status": "duplicate",
+      "doc_id": "204dfaa2-bff3-4aa7-81af-df175bb0a0ee"
+    },
+    {
+      "path": "C++_프로그래밍의_이해.pdf",
+      "size_mb": 96.86,
+      "status": "enqueued",
+      "doc_id": "b9cc4171-3490-4770-8da5-c7df6f08fb0c",
+      "job_id": 44
+    },
+    {
+      "path": "C++와_CUDA_C로_구현하는_딥러닝_알고리즘.pdf",
+      "size_mb": 50.97,
+      "status": "duplicate",
+      "doc_id": "c96031ea-5767-41b7-8b0a-c7b53b1df41c"
+    },
+    {
+      "path": "CODE_하드웨어와_소프트웨어에_숨어_있는_언어.pdf",
+      "size_mb": 106.2,
+      "status": "enqueued",
+      "doc_id": "f8d7282f-322a-403c-a435-e56c25ab58d4",
+      "job_id": 45
+    },
+    {
+      "path": "Data Structure In Java.pdf",
+      "size_mb": 3.04,
+      "status": "enqueued",
+      "doc_id": "3706deec-8632-47e9-8c06-7423b93f7897",
+      "job_id": 46
+    },
+    {
+      "path": "Design_Patterns.pdf",
+      "size_mb": 100.65,
+      "status": "enqueued",
+      "doc_id": "617c03eb-ce34-4866-aeac-1a26c709b88a",
+      "job_id": 47
+    },
+    {
+      "path": "Modern Web Design Using Javascript & Dom.pdf",
+      "size_mb": 1.09,
+      "status": "enqueued",
+      "doc_id": "1f509e76-a407-4bcb-981e-e7b7c10c6565",
+      "job_id": 48
+    },
+    {
+      "path": "OReilly.Programming.Computer.Vision.with.Python.Jun.2012.RETAIL.eBook-ELOHiM.pdf",
+      "size_mb": 62.4,
+      "status": "enqueued",
+      "doc_id": "991e4f04-0379-474a-9b7e-745fd7e79122",
+      "job_id": 49
+    },
+    {
+      "path": "OReilly.Programming.Google.App.Engine.2nd.Edition.2012.RETAIL.eBook-repackb00k.pdf",
+      "size_mb": 9.03,
+      "status": "enqueued",
+      "doc_id": "2550d672-d150-4d3c-829e-5eefd223b7c2",
+      "job_id": 50
+    },
+    {
+      "path": "TCP_IP_소켓프로그래밍_C.pdf",
+      "size_mb": 71.17,
+      "status": "duplicate",
+      "doc_id": "af03e051-58d9-4f21-8645-fd5bb69d4e79"
+    },
+    {
+      "path": "Teach.Yourself.C.Plus.Plus.in.24.Hours.5th.Edition.2011.pdf",
+      "size_mb": 16.36,
+      "status": "enqueued",
+      "doc_id": "c18ce7d3-8fdc-49f1-8318-a355939179dc",
+      "job_id": 51
+    },
+    {
+      "path": "광기의_산맥에서.pdf",
+      "size_mb": 81.79,
+      "status": "enqueued",
+      "doc_id": "60090e1f-99a1-48c4-97c9-94d316c5f14c",
+      "job_id": 52
+    },
+    {
+      "path": "더_이상한_수학책.pdf",
+      "size_mb": 58.81,
+      "status": "duplicate",
+      "doc_id": "6de8afbc-1c9b-4d64-bae3-c2498e5fe5f9"
+    },
+    {
+      "path": "데드_아일랜드.pdf",
+      "size_mb": 76.97,
+      "status": "enqueued",
+      "doc_id": "d6d64e39-5ab8-453b-bd3b-18f3d48e8afd",
+      "job_id": 53
+    },
+    {
+      "path": "도메인_주도_설계_구현과_핵심_개념_익히기.pdf",
+      "size_mb": 104.61,
+      "status": "enqueued",
+      "doc_id": "96fd2f77-a2bd-4933-b01d-909e0a2a3c24",
+      "job_id": 54
+    },
+    {
+      "path": "디지털_포트리스_01.pdf",
+      "size_mb": 55.29,
+      "status": "enqueued",
+      "doc_id": "2882ffcb-00da-4402-b2fa-a059a3869ec2",
+      "job_id": 55
+    },
+    {
+      "path": "디지털_포트리스_02.pdf",
+      "size_mb": 55.12,
+      "status": "enqueued",
+      "doc_id": "9c747df9-2949-4a50-acdc-be5e28e1b3b0",
+      "job_id": 56
+    },
+    {
+      "path": "리보이츠를_위한_찬송1.pdf",
+      "size_mb": 75.36,
+      "status": "enqueued",
+      "doc_id": "914d2953-cf65-43dd-bba7-538ee1d6b235",
+      "job_id": 57
+    },
+    {
+      "path": "리보이츠를_위한_찬송2.pdf",
+      "size_mb": 70.51,
+      "status": "enqueued",
+      "doc_id": "eda67f8d-353c-4f87-905f-2c552ec5947b",
+      "job_id": 58
+    },
+    {
+      "path": "몽고DB_완벽_가이드.pdf",
+      "size_mb": 115.83,
+      "status": "duplicate",
+      "doc_id": "56d4423c-072b-44c4-b72c-b6c099e18a0c"
+    },
+    {
+      "path": "밑바닥부터_시작하는_딥러닝1.pdf",
+      "size_mb": 59.57,
+      "status": "duplicate",
+      "doc_id": "57e518ce-d1f1-45b7-8af8-6090b4bcf55f"
+    },
+    {
+      "path": "밑바닥부터_시작하는_딥러닝2.pdf",
+      "size_mb": 76.3,
+      "status": "duplicate",
+      "doc_id": "6dd04ac6-c967-4cd5-90a4-8d00e4635632"
+    },
+    {
+      "path": "밑바닥부터_시작하는_딥러닝3.pdf",
+      "size_mb": 99.29,
+      "status": "duplicate",
+      "doc_id": "16c80bec-f53e-42dd-900f-8497a23607bb"
+    },
+    {
+      "path": "밑바닥부터_시작하는_딥러닝4.pdf",
+      "size_mb": 70.06,
+      "status": "enqueued",
+      "doc_id": "1f3b5e61-63da-439c-a278-db83e653bf2b",
+      "job_id": 59
+    },
+    {
+      "path": "별의_계승자.pdf",
+      "size_mb": 56.23,
+      "status": "enqueued",
+      "doc_id": "b54bfaab-f4c3-4af6-b0f2-66e4eda0caa2",
+      "job_id": 60
+    },
+    {
+      "path": "상대적이며_절대적인_지식의_백과사전.pdf",
+      "size_mb": 56.9,
+      "status": "duplicate",
+      "doc_id": "abecf2fb-a721-4bc2-b3e9-18fb106efcbd"
+    },
+    {
+      "path": "성채_1.pdf",
+      "size_mb": 68.53,
+      "status": "enqueued",
+      "doc_id": "a4b90578-d1dd-4e1e-b6db-e1caeee73b3c",
+      "job_id": 61
+    },
+    {
+      "path": "성채_2.pdf",
+      "size_mb": 69.04,
+      "status": "enqueued",
+      "doc_id": "8fad80d8-d420-410a-a0ff-a2c4faec5dcd",
+      "job_id": 62
+    },
+    {
+      "path": "셀_스티븐_킹_2.pdf",
+      "size_mb": 56.46,
+      "status": "enqueued",
+      "doc_id": "b5e33635-8c9e-4845-a3e2-9ec6d48cbb61",
+      "job_id": 63
+    },
+    {
+      "path": "수호비의_폴리머클레이.pdf",
+      "size_mb": 48.29,
+      "status": "duplicate",
+      "doc_id": "b47bcabf-5841-4404-91b2-43caa1b8ade3"
+    },
+    {
+      "path": "스노우_크래쉬1.pdf",
+      "size_mb": 82.74,
+      "status": "enqueued",
+      "doc_id": "964898f8-0c0b-4ae0-82cf-d8763f8c85ea",
+      "job_id": 64
+    },
+    {
+      "path": "스노우_크래쉬2.pdf",
+      "size_mb": 84.17,
+      "status": "enqueued",
+      "doc_id": "c14e9372-6d6a-4347-905a-285a62a9119e",
+      "job_id": 65
+    },
+    {
+      "path": "심연_위의_불길1.pdf",
+      "size_mb": 92.72,
+      "status": "enqueued",
+      "doc_id": "0f2d90e7-f5e2-4891-bc13-8d89bfcc5509",
+      "job_id": 66
+    },
+    {
+      "path": "심연_위의_불길2.pdf",
+      "size_mb": 95.44,
+      "status": "enqueued",
+      "doc_id": "241397c6-2e1e-4d43-913c-5d101544549a",
+      "job_id": 67
+    },
+    {
+      "path": "아두이노_드론_만들고_직접_코딩하기.pdf",
+      "size_mb": 70.38,
+      "status": "enqueued",
+      "doc_id": "3218d669-af9e-4111-b2bb-1669896d23b7",
+      "job_id": 68
+    },
+    {
+      "path": "아버지들의_아버지_#1.pdf",
+      "size_mb": 46.81,
+      "status": "enqueued",
+      "doc_id": "c4d690fd-08d7-46b5-8c14-7c4d486f2e7e",
+      "job_id": 69
+    },
+    {
+      "path": "양심의_문제.pdf",
+      "size_mb": 76.45,
+      "status": "enqueued",
+      "doc_id": "f7c9799b-8397-43c5-9ae3-3c14864472e1",
+      "job_id": 70
+    },
+    {
+      "path": "열혈강의_Java_Design_Pattern.pdf",
+      "size_mb": 79.73,
+      "status": "enqueued",
+      "doc_id": "f808206f-3c23-4e85-8665-3b9ff3d67bca",
+      "job_id": 71
+    },
+    {
+      "path": "영원한_전쟁.pdf",
+      "size_mb": 74.57,
+      "status": "enqueued",
+      "doc_id": "8317380b-e810-431a-bf74-1b08f088d580",
+      "job_id": 72
+    },
+    {
+      "path": "우주바이러스_The_Andromeda_Strain.pdf",
+      "size_mb": 75.13,
+      "status": "enqueued",
+      "doc_id": "5d58358f-2c0d-4db7-8f99-08dd9bee8e61",
+      "job_id": 73
+    },
+    {
+      "path": "울1.pdf",
+      "size_mb": 60.16,
+      "status": "enqueued",
+      "doc_id": "07f0ce47-8327-4636-92b3-0f9b9724644f",
+      "job_id": 74
+    },
+    {
+      "path": "울2.pdf",
+      "size_mb": 80.88,
+      "status": "enqueued",
+      "doc_id": "b7515d1f-ff0b-4be5-933b-6d334a8dd68b",
+      "job_id": 75
+    },
+    {
+      "path": "이상한_수학책.pdf",
+      "size_mb": 77.61,
+      "status": "enqueued",
+      "doc_id": "a5229902-6e40-4f4d-b531-4e1b60fc7f1c",
+      "job_id": 76
+    },
+    {
+      "path": "제대로_배우는_도커.pdf",
+      "size_mb": 85.67,
+      "status": "enqueued",
+      "doc_id": "7534e48d-4568-417c-8c0e-0931113afc16",
+      "job_id": 77
+    },
+    {
+      "path": "제프리_젤드만의_웹표준_가이드.pdf",
+      "size_mb": 112.33,
+      "status": "enqueued",
+      "doc_id": "950318df-d6cf-4458-9482-35ba6ec91c28",
+      "job_id": 78
+    },
+    {
+      "path": "조대협의_서버사이드_대용량_아키텍처와_성능_튜닝.pdf",
+      "size_mb": 113.55,
+      "status": "enqueued",
+      "doc_id": "58e6798a-8032-4baf-87ca-e9fd7c3cc116",
+      "job_id": 79
+    },
+    {
+      "path": "조대협의_서버사이드_소프트웨어_개발과_테스트.pdf",
+      "size_mb": 80.04,
+      "status": "enqueued",
+      "doc_id": "216cda08-ad45-401f-b725-dc9c72c49d34",
+      "job_id": 80
+    },
+    {
+      "path": "좀비_서바이벌_가이드.pdf",
+      "size_mb": 83.81,
+      "status": "enqueued",
+      "doc_id": "c37b262f-1a73-4f23-99fc-5e23cdd0a177",
+      "job_id": 81
+    },
+    {
+      "path": "종말일기_Z.pdf",
+      "size_mb": 103.02,
+      "status": "enqueued",
+      "doc_id": "96cc8042-2a1b-40b9-bd78-8e282c17d82e",
+      "job_id": 82
+    },
+    {
+      "path": "종말일기_Z_암흑의날.pdf",
+      "size_mb": 77.45,
+      "status": "enqueued",
+      "doc_id": "8b3358da-0a77-463e-be7f-a905b7cb1489",
+      "job_id": 83
+    },
+    {
+      "path": "천사들의_제국_상.pdf",
+      "size_mb": 62.45,
+      "status": "enqueued",
+      "doc_id": "ae5fe88c-9d3c-4b3d-96ff-e6b8fcc12007",
+      "job_id": 84
+    },
+    {
+      "path": "천사들의_제국_하.pdf",
+      "size_mb": 64.84,
+      "status": "enqueued",
+      "doc_id": "0c74df2c-f8fc-4edd-871b-10e5f9812ac8",
+      "job_id": 85
+    },
+    {
+      "path": "클론코딩_영화평점_웹서비스.pdf",
+      "size_mb": 51.01,
+      "status": "duplicate",
+      "doc_id": "42753ad0-4f34-4a73-9abf-6613ccb23f63"
+    },
+    {
+      "path": "클론코딩_트위터.pdf",
+      "size_mb": 47.56,
+      "status": "duplicate",
+      "doc_id": "65b29cd2-1e69-4c94-8dda-236b74b090d8"
+    },
+    {
+      "path": "파이썬으로_데이터_주무르기.pdf",
+      "size_mb": 99.16,
+      "status": "enqueued",
+      "doc_id": "fbefc454-4a5d-487b-911f-dfb35db06bcd",
+      "job_id": 86
+    },
+    {
+      "path": "하루하루가_세상의_종말_1.pdf",
+      "size_mb": 77.45,
+      "status": "enqueued",
+      "doc_id": "a015b6dd-97e1-423c-8dbc-7c8949d720ec",
+      "job_id": 87
+    },
+    {
+      "path": "하루하루가_세상의_종말_2.pdf",
+      "size_mb": 79.24,
+      "status": "enqueued",
+      "doc_id": "365a35c9-6123-4ec0-8eee-dd55cfd72573",
+      "job_id": 88
+    }
+  ]
+}

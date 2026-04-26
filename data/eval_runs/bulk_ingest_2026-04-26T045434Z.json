@@ -1,0 +1,230 @@
+{
+  "run_id": "2026-04-26T045434Z",
+  "dir": "/Users/hal2001/workspace/temp/ingest",
+  "recursive": true,
+  "include": [
+    ".pdf",
+    ".txt",
+    ".md",
+    ".docx"
+  ],
+  "exclude": [],
+  "title_from": "stem",
+  "source_prefix": "",
+  "workers": 1,
+  "api_base": "http://localhost:8000",
+  "total": 30,
+  "ok": 0,
+  "enqueued": 23,
+  "duplicate": 7,
+  "failed": 0,
+  "skipped_too_large": 0,
+  "started_at": "2026-04-26T04:54:34.766655+00:00",
+  "finished_at": "2026-04-26T04:54:36.836214+00:00",
+  "elapsed_sec": 2.07,
+  "results": [
+    {
+      "path": "ADVANCED_UNIX_PROGRAMMING.pdf",
+      "size_mb": 65.68,
+      "status": "duplicate",
+      "doc_id": "204dfaa2-bff3-4aa7-81af-df175bb0a0ee"
+    },
+    {
+      "path": "C++_프로그래밍의_이해.pdf",
+      "size_mb": 96.86,
+      "status": "enqueued",
+      "doc_id": "4f5de589-f795-4dc2-8c06-6bd8b037063b",
+      "job_id": 17
+    },
+    {
+      "path": "C++와_CUDA_C로_구현하는_딥러닝_알고리즘.pdf",
+      "size_mb": 50.97,
+      "status": "duplicate",
+      "doc_id": "c96031ea-5767-41b7-8b0a-c7b53b1df41c"
+    },
+    {
+      "path": "CODE_하드웨어와_소프트웨어에_숨어_있는_언어.pdf",
+      "size_mb": 106.2,
+      "status": "enqueued",
+      "doc_id": "717ea6eb-be3a-4f51-b22c-4decbc86591a",
+      "job_id": 18
+    },
+    {
+      "path": "Data Structure In Java.pdf",
+      "size_mb": 3.04,
+      "status": "enqueued",
+      "doc_id": "85fc520f-2636-4507-bc65-6cff9a38f536",
+      "job_id": 19
+    },
+    {
+      "path": "Design_Patterns.pdf",
+      "size_mb": 100.65,
+      "status": "enqueued",
+      "doc_id": "392916c4-d551-44e6-b4ca-ea9e72be1b28",
+      "job_id": 20
+    },
+    {
+      "path": "Modern Web Design Using Javascript & Dom.pdf",
+      "size_mb": 1.09,
+      "status": "enqueued",
+      "doc_id": "bf897c36-0467-4919-ae69-d4e3f18639ba",
+      "job_id": 21
+    },
+    {
+      "path": "OReilly.Programming.Computer.Vision.with.Python.Jun.2012.RETAIL.eBook-ELOHiM.pdf",
+      "size_mb": 62.4,
+      "status": "enqueued",
+      "doc_id": "dd38d948-abc7-4187-8fdf-68b4585a966c",
+      "job_id": 22
+    },
+    {
+      "path": "OReilly.Programming.Google.App.Engine.2nd.Edition.2012.RETAIL.eBook-repackb00k.pdf",
+      "size_mb": 9.03,
+      "status": "enqueued",
+      "doc_id": "a23a9918-9fc8-4dd8-92f9-2adbe353d301",
+      "job_id": 23
+    },
+    {
+      "path": "TCP_IP_소켓프로그래밍_C.pdf",
+      "size_mb": 71.17,
+      "status": "enqueued",
+      "doc_id": "af03e051-58d9-4f21-8645-fd5bb69d4e79",
+      "job_id": 24
+    },
+    {
+      "path": "Teach.Yourself.C.Plus.Plus.in.24.Hours.5th.Edition.2011.pdf",
+      "size_mb": 16.36,
+      "status": "enqueued",
+      "doc_id": "6a974b00-8012-4503-be36-2f48785bb49b",
+      "job_id": 25
+    },
+    {
+      "path": "더_이상한_수학책.pdf",
+      "size_mb": 58.81,
+      "status": "duplicate",
+      "doc_id": "6de8afbc-1c9b-4d64-bae3-c2498e5fe5f9"
+    },
+    {
+      "path": "도메인_주도_설계_구현과_핵심_개념_익히기.pdf",
+      "size_mb": 104.61,
+      "status": "enqueued",
+      "doc_id": "27bc9f0c-f756-4f0b-af04-067107295c14",
+      "job_id": 26
+    },
+    {
+      "path": "몽고DB_완벽_가이드.pdf",
+      "size_mb": 115.83,
+      "status": "enqueued",
+      "doc_id": "56d4423c-072b-44c4-b72c-b6c099e18a0c",
+      "job_id": 27
+    },
+    {
+      "path": "밑바닥부터_시작하는_딥러닝1.pdf",
+      "size_mb": 59.57,
+      "status": "enqueued",
+      "doc_id": "57e518ce-d1f1-45b7-8af8-6090b4bcf55f",
+      "job_id": 28
+    },
+    {
+      "path": "밑바닥부터_시작하는_딥러닝2.pdf",
+      "size_mb": 76.3,
+      "status": "enqueued",
+      "doc_id": "6dd04ac6-c967-4cd5-90a4-8d00e4635632",
+      "job_id": 29
+    },
+    {
+      "path": "밑바닥부터_시작하는_딥러닝3.pdf",
+      "size_mb": 99.29,
+      "status": "enqueued",
+      "doc_id": "16c80bec-f53e-42dd-900f-8497a23607bb",
+      "job_id": 30
+    },
+    {
+      "path": "밑바닥부터_시작하는_딥러닝4.pdf",
+      "size_mb": 70.06,
+      "status": "enqueued",
+      "doc_id": "132bdc0a-266b-4070-afcf-6ee35e742f6a",
+      "job_id": 31
+    },
+    {
+      "path": "상대적이며_절대적인_지식의_백과사전.pdf",
+      "size_mb": 56.9,
+      "status": "duplicate",
+      "doc_id": "abecf2fb-a721-4bc2-b3e9-18fb106efcbd"
+    },
+    {
+      "path": "수호비의_폴리머클레이.pdf",
+      "size_mb": 48.29,
+      "status": "duplicate",
+      "doc_id": "b47bcabf-5841-4404-91b2-43caa1b8ade3"
+    },
+    {
+      "path": "아두이노_드론_만들고_직접_코딩하기.pdf",
+      "size_mb": 70.38,
+      "status": "enqueued",
+      "doc_id": "8f1aa04f-dedd-4651-9fbb-b866104bd578",
+      "job_id": 32
+    },
+    {
+      "path": "열혈강의_Java_Design_Pattern.pdf",
+      "size_mb": 79.73,
+      "status": "enqueued",
+      "doc_id": "8b3261e9-63b2-495f-9f28-932e5f0e23ce",
+      "job_id": 33
+    },
+    {
+      "path": "이상한_수학책.pdf",
+      "size_mb": 77.61,
+      "status": "enqueued",
+      "doc_id": "4826565c-99fb-4fe8-b88c-820e583b7fc7",
+      "job_id": 34
+    },
+    {
+      "path": "제대로_배우는_도커.pdf",
+      "size_mb": 85.67,
+      "status": "enqueued",
+      "doc_id": "03447ee0-886d-4487-9fdb-6c8e51386310",
+      "job_id": 35
+    },
+    {
+      "path": "제프리_젤드만의_웹표준_가이드.pdf",
+      "size_mb": 112.33,
+      "status": "enqueued",
+      "doc_id": "92e75929-10d2-464b-b85b-e2b2bdcb94bf",
+      "job_id": 36
+    },
+    {
+      "path": "조대협의_서버사이드_대용량_아키텍처와_성능_튜닝.pdf",
+      "size_mb": 113.55,
+      "status": "enqueued",
+      "doc_id": "67c8e99f-7513-4985-8d4b-ff4f785c3970",
+      "job_id": 37
+    },
+    {
+      "path": "조대협의_서버사이드_소프트웨어_개발과_테스트.pdf",
+      "size_mb": 80.04,
+      "status": "enqueued",
+      "doc_id": "c8c0e9f6-4dc3-42fc-8f2f-d519c31c8109",
+      "job_id": 38
+    },
+    {
+      "path": "클론코딩_영화평점_웹서비스.pdf",
+      "size_mb": 51.01,
+      "status": "duplicate",
+      "doc_id": "42753ad0-4f34-4a73-9abf-6613ccb23f63"
+    },
+    {
+      "path": "클론코딩_트위터.pdf",
+      "size_mb": 47.56,
+      "status": "duplicate",
+      "doc_id": "65b29cd2-1e69-4c94-8dda-236b74b090d8"
+    },
+    {
+      "path": "파이썬으로_데이터_주무르기.pdf",
+      "size_mb": 99.16,
+      "status": "enqueued",
+      "doc_id": "3750a3bc-51ac-4ea3-87aa-6fdcc7bc4c16",
+      "job_id": 39
+    }
+  ]
+}

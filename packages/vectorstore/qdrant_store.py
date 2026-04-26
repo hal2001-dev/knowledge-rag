@@ -35,6 +35,11 @@ SPARSE_NAME = "sparse"
 # 한 번에 업로드되면 한도 초과로 400. 256은 dense+sparse+payload 합산 ~8MB 수준.
 UPSERT_BATCH_SIZE = 256
 
+# 임베딩·PointStruct 동시 메모리 점유 캡. 한 번에 모든 청크를 임베딩하면
+# 큰 문서(수천 청크)에서 RAM이 GB 단위로 폭발해 시스템이 멈춘 사례 발생.
+# 64청크 단위로 임베딩→upsert→폐기를 반복해 메모리 상한을 둔다.
+EMBED_BATCH_SIZE = 64
+
 
 class CollectionDimensionMismatch(RuntimeError):
     """기존 컬렉션 차원·구조가 현재 설정과 불일치."""
@@ -178,35 +183,42 @@ class QdrantDocumentStore:
             return ids
 
         # hybrid: dense + sparse 동시 upsert (raw SDK)
-        texts = [d.content for d in documents]
-        dense_vecs = self._embeddings.embed_documents(texts)
-        sparse_vecs = self._sparse.embed_documents(texts)
-
-        points: list[PointStruct] = []
+        # 메모리 캡: EMBED_BATCH_SIZE 단위로 임베딩→PointStruct→upsert→폐기.
         ids: list[str] = []
-        for doc, dv, sv in zip(documents, dense_vecs, sparse_vecs):
-            pid = str(uuid.uuid4())
-            ids.append(pid)
-            points.append(
-                PointStruct(
-                    id=pid,
-                    vector={
-                        DENSE_NAME: dv,
-                        SPARSE_NAME: SparseVector(indices=sv.indices, values=sv.values),
-                    },
-                    payload={
-                        "page_content": doc.content,
-                        "metadata": doc.metadata,
-                    },
-                )
-            )
+        total = len(documents)
+        for start in range(0, total, EMBED_BATCH_SIZE):
+            chunk_docs = documents[start:start + EMBED_BATCH_SIZE]
+            texts = [d.content for d in chunk_docs]
+            dense_vecs = self._embeddings.embed_documents(texts)
+            sparse_vecs = self._sparse.embed_documents(texts)
 
-        for start in range(0, len(points), UPSERT_BATCH_SIZE):
-            batch = points[start:start + UPSERT_BATCH_SIZE]
-            self._client.upsert(collection_name=self._collection, points=batch)
+            points: list[PointStruct] = []
+            for doc, dv, sv in zip(chunk_docs, dense_vecs, sparse_vecs):
+                pid = str(uuid.uuid4())
+                ids.append(pid)
+                points.append(
+                    PointStruct(
+                        id=pid,
+                        vector={
+                            DENSE_NAME: dv,
+                            SPARSE_NAME: SparseVector(
+                                indices=sv.indices, values=sv.values
+                            ),
+                        },
+                        payload={
+                            "page_content": doc.content,
+                            "metadata": doc.metadata,
+                        },
+                    )
+                )
+
+            for u_start in range(0, len(points), UPSERT_BATCH_SIZE):
+                batch = points[u_start:u_start + UPSERT_BATCH_SIZE]
+                self._client.upsert(collection_name=self._collection, points=batch)
+
         logger.info(
             f"{len(ids)}개 하이브리드 벡터(dense+sparse) 저장 완료 "
-            f"(batch={UPSERT_BATCH_SIZE})"
+            f"(embed_batch={EMBED_BATCH_SIZE}, upsert_batch={UPSERT_BATCH_SIZE})"
         )
         return ids
 
