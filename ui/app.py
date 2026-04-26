@@ -577,13 +577,11 @@ with TAB_JOBS:
             st.caption("잡 기록이 없습니다.")
         else:
             st.caption(f"최근 {len(recent)}개 (전체 {len(all_jobs)})")
-            h_id, h_status, h_title, h_retry, h_when, h_doc = st.columns([1, 1.2, 4, 0.8, 2, 1])
-            h_id.markdown("**ID**")
-            h_status.markdown("**상태**")
-            h_title.markdown("**제목**")
-            h_retry.markdown("**retry**")
-            h_when.markdown("**enqueued**")
-            h_doc.markdown("**doc_id**")
+            # 컬럼: ID·상태·제목·retry·enqueued·started·finished·duration·doc_id (TASK-019 한정 동결 해제)
+            COL_WIDTHS = [0.5, 0.9, 3.0, 0.6, 1.4, 1.2, 1.2, 0.9, 0.9]
+            h = st.columns(COL_WIDTHS)
+            for col, label in zip(h, ["**ID**", "**상태**", "**제목**", "**retry**", "**enqueued**", "**started**", "**finished**", "**duration**", "**doc_id**"]):
+                col.markdown(label)
 
             STATUS_BADGE = {
                 "pending":     "⏳ pending",
@@ -592,15 +590,47 @@ with TAB_JOBS:
                 "failed":      "❌ 실패",
                 "cancelled":   "⏹ 취소",
             }
+
+            from datetime import datetime, timezone
+
+            def _parse_iso(ts: str | None):
+                if not ts:
+                    return None
+                try:
+                    # API는 isoformat, Z 또는 +00:00 형식. fromisoformat이 둘 다 처리(3.11+)
+                    return datetime.fromisoformat(ts.replace("Z", "+00:00"))
+                except Exception:
+                    return None
+
+            def _fmt_duration(secs: float) -> str:
+                if secs < 60:
+                    return f"{secs:.0f}s"
+                m, s = divmod(int(secs), 60)
+                if m < 60:
+                    return f"{m}m{s:02d}s"
+                h, m = divmod(m, 60)
+                return f"{h}h{m:02d}m"
+
+            now = datetime.now(timezone.utc)
             for j in recent:
-                c_id, c_status, c_title, c_retry, c_when, c_doc = st.columns([1, 1.2, 4, 0.8, 2, 1])
-                c_id.caption(f"#{j['id']}")
-                c_status.caption(STATUS_BADGE.get(j["status"], j["status"]))
-                c_title.caption(j["title"][:60])
-                c_retry.caption(str(j["retry_count"]))
-                ts = j.get("enqueued_at", "")[:19].replace("T", " ")
-                c_when.caption(ts)
-                c_doc.caption((j.get("doc_id") or "")[:8])
+                cells = st.columns(COL_WIDTHS)
+                cells[0].caption(f"#{j['id']}")
+                cells[1].caption(STATUS_BADGE.get(j["status"], j["status"]))
+                cells[2].caption(j["title"][:60])
+                cells[3].caption(str(j["retry_count"]))
+                cells[4].caption((j.get("enqueued_at", "") or "")[:19].replace("T", " "))
+                cells[5].caption((j.get("started_at", "") or "")[:19].replace("T", " ") if j.get("started_at") else "—")
+                cells[6].caption((j.get("finished_at", "") or "")[:19].replace("T", " ") if j.get("finished_at") else "—")
+                # duration: done/failed → finished-started, in_progress → now-started, 그외 → —
+                started_dt = _parse_iso(j.get("started_at"))
+                finished_dt = _parse_iso(j.get("finished_at"))
+                if j["status"] == "in_progress" and started_dt:
+                    cells[7].caption(_fmt_duration((now - started_dt).total_seconds()))
+                elif finished_dt and started_dt:
+                    cells[7].caption(_fmt_duration((finished_dt - started_dt).total_seconds()))
+                else:
+                    cells[7].caption("—")
+                cells[8].caption((j.get("doc_id") or "")[:8])
                 if j["status"] == "failed" and j.get("error"):
                     with st.expander(f"job #{j['id']} 실패 사유"):
                         st.code(j["error"][:1500], language=None)

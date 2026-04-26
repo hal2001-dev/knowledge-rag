@@ -1,0 +1,62 @@
+{
+  "run_id": "2026-04-26T020214Z",
+  "dir": "/Users/hal2001/workspace/temp/ingest",
+  "recursive": true,
+  "include": [
+    ".pdf",
+    ".txt",
+    ".md",
+    ".docx"
+  ],
+  "exclude": [],
+  "title_from": "stem",
+  "source_prefix": "",
+  "workers": 1,
+  "api_base": "http://localhost:8000",
+  "total": 5,
+  "ok": 0,
+  "enqueued": 5,
+  "duplicate": 0,
+  "failed": 0,
+  "skipped_too_large": 0,
+  "started_at": "2026-04-26T02:02:14.502211+00:00",
+  "finished_at": "2026-04-26T02:02:14.671174+00:00",
+  "elapsed_sec": 0.17,
+  "results": [
+    {
+      "path": "ADVANCED_UNIX_PROGRAMMING.pdf",
+      "size_mb": 65.68,
+      "status": "enqueued",
+      "doc_id": "204dfaa2-bff3-4aa7-81af-df175bb0a0ee",
+      "job_id": 3
+    },
+    {
+      "path": "C++와_CUDA_C로_구현하는_딥러닝_알고리즘.pdf",
+      "size_mb": 50.97,
+      "status": "enqueued",
+      "doc_id": "c96031ea-5767-41b7-8b0a-c7b53b1df41c",
+      "job_id": 4
+    },
+    {
+      "path": "수호비의_폴리머클레이.pdf",
+      "size_mb": 48.29,
+      "status": "enqueued",
+      "doc_id": "b47bcabf-5841-4404-91b2-43caa1b8ade3",
+      "job_id": 5
+    },
+    {
+      "path": "클론코딩_영화평점_웹서비스.pdf",
+      "size_mb": 51.01,
+      "status": "enqueued",
+      "doc_id": "42753ad0-4f34-4a73-9abf-6613ccb23f63",
+      "job_id": 6
+    },
+    {
+      "path": "클론코딩_트위터.pdf",
+      "size_mb": 47.56,
+      "status": "enqueued",
+      "doc_id": "65b29cd2-1e69-4c94-8dda-236b74b090d8",
+      "job_id": 7
+    }
+  ]
+}

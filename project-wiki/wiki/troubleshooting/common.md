@@ -1,7 +1,7 @@
 # 트러블슈팅 (Troubleshooting)
 
 **상태**: active
-**마지막 업데이트**: 2026-04-22
+**마지막 업데이트**: 2026-04-26
 **관련 페이지**: `issues/`, [setup.md](../onboarding/setup.md)
 
 이슈가 해결될 때마다 여기에 누적합니다.
@@ -133,6 +133,44 @@ time.sleep(1)  # 요청 간 딜레이 추가
 **임시 회피**: PC에서 업로드, 모바일은 `/query`만 사용
 **근본 해결 방향**: HTTPS 리버스 프록시 배포 후 재확인
 **관련 이슈**: [ISSUE-001-mobile-file-uploader-no-preview.md](../issues/open/ISSUE-001-mobile-file-uploader-no-preview.md)
+
+### Qdrant collection drop 후 잡이 매 retry마다 404로 실패
+
+**발생 상황**: `처음부터 새로` 정리 목적으로 Qdrant collection을 drop(또는 재생성)한 직후, 큐에 새로 enqueue한 잡이 매 retry마다 같은 위치에서 실패. 워커는 살아 있고 다른 에러는 없는데 collection이 "없다"고 응답
+**에러 메시지**:
+```
+qdrant_client.http.exceptions.UnexpectedResponse: Unexpected Response: 404 (Not Found)
+b'{"status":{"error":"Not found: Collection `documents` doesn\'t exist!"}}'
+```
+**원인**:
+- 색인 워커(`apps.indexer_worker`)가 부팅 시점에 한 번만 `_ensure_collection()`을 실행하고 그 후엔 collection 존재를 가정해 raw `client.upsert()`를 호출 (hybrid 모드 경로)
+- 외부에서 collection을 drop해도 워커는 캐시된 가정 그대로 → 매 잡 처리에서 404
+- retry 3회 모두 같은 위치에서 실패 후 영구 `failed`
+**해결**:
+1. 워커 재기동 (init에서 `_ensure_collection()` 재호출 → collection 재생성)
+   ```bash
+   pkill -f "apps.indexer_worker"
+   sleep 3
+   nohup .venv/bin/python -m apps.indexer_worker > /tmp/indexer.log 2>&1 &
+   ```
+2. retry 소진된 잡이나 stuck `in_progress` 잡은 SQL로 reset
+   ```sql
+   UPDATE ingest_jobs
+   SET status='pending', retry_count=0, error=NULL,
+       started_at=NULL, finished_at=NULL
+   WHERE id IN (...);
+   ```
+3. 새 워커가 즉시 polling cycle에서 잡을 다시 claim
+**재발 방지 / 운영 절차**:
+- **인덱싱 데이터 정리 절차에 항상 워커 재기동 포함**:
+  1. (선택) 잡 큐 enqueue 중지
+  2. PostgreSQL `TRUNCATE documents, ingest_jobs, conversations, messages CASCADE`
+  3. Qdrant collection drop
+  4. `data/uploads/*`, `data/markdown/*`, `data/eval_runs/*` 정리
+  5. **워커 재기동** ← 이 단계 누락 시 본 에러 발생
+  6. (선택) FastAPI uvicorn 재기동 (스키마 변경 동반 시)
+**관련**: ADR-028 "stale `in_progress` 잡 자동 회수 미구현" — 본 케이스도 같은 카테고리. housekeeping 잡으로 자동 회수 도입 시 수동 reset 불필요
+**상황 발견**: 2026-04-26 TASK-019 Phase 1 진행 중 fresh start 정리 후 재인덱싱 시도. 잡 #1이 retry 0→1→2→3 모두 동일 404로 실패. 워커 재기동 + reset SQL 1회로 복구
 
 ### `/ingest` 업로드 시 타임아웃 발생
 **발생 상황**: Streamlit UI에서 문서 업로드 후 처리 대기 중 연결 끊김

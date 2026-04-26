@@ -5,6 +5,48 @@
 
 ---
 
+## [2026-04-26] ops | fresh start 정리 후 워커 collection 캐시 mismatch — 워커 재기동 + stale 잡 reset
+
+### 작업
+- 사용자 지시로 인덱싱 데이터 전부 초기화 (TRUNCATE documents/ingest_jobs/conversations/messages CASCADE + Qdrant collection drop + data/uploads/markdown/eval_runs 정리)
+- `bulk_ingest --dir /Volumes/shared/ingaged --via-queue` 재실행 (PDF 2건 enqueue: 가상_면접·읽기_좋은_코드)
+- 워커가 매 retry마다 같은 위치에서 실패 — `404 Not Found: Collection 'documents' doesn't exist!`
+- 진단: 워커(PID 45535, 20시간 가동)가 부팅 시점의 `_ensure_collection()` 결과를 캐시. 외부 collection drop 후 모든 upsert가 404. retry 0→1→2→3 모두 같은 원인
+- 복구:
+  1. 워커 재기동 (새 PID 63036) → init에서 collection 재생성 (hybrid, points=0)
+  2. retry 3으로 stuck `in_progress`였던 잡 #1을 SQL로 reset (`status='pending', retry_count=0, started_at=NULL`)
+  3. 새 워커가 polling cycle에서 #2 처리 → 끝난 후 #1 처리
+
+### 결과
+| 잡 | 책 | 처리 시간 |
+|---|---|---|
+| #2 | 읽기_좋은_코드가_좋은_코드다 | 178초 (~3분) |
+| #1 | 가상_면접_사례로_배우는_대규모_시스템_설계_기초 | finished_at 01:53:15 (started_at은 reset로 NULL되어 duration 측정 불가) |
+
+총 2건 done, 0 failed.
+
+### 부수 데이터 이상
+- 잡 #1의 `started_at`이 NULL — 수동 reset SQL이 컬럼을 NULL로 되돌렸고, 새 워커는 claim 시 started_at을 다시 set하지만 `mark_done`에서 finished_at만 update. 결과적으로 duration 산정 불가 (운영 영향 없음, 단순 메트릭 누락)
+- 다음에 동일 reset 시 `started_at`은 NULL로 두지 말고 워커가 다시 set하도록 두는 게 깔끔
+
+### 별건 / 후속
+- ADR-028 알려진 한계 "stale `in_progress` 자동 회수 미구현"의 본 케이스 manifestation. housekeeping 잡(`started_at < NOW() - 1h` → pending 복귀) 도입하면 이 종류 수동 SQL 불필요
+- `error[:2000]` 슬라이스 버그도 동일 패턴 노출 — traceback 끝 잘려 진단 첫 사이클에 정확한 원인(404)이 안 보임. `error[-2000:]` 또는 컬럼 한도 확대 필요
+- **운영 절차 표준화** — `wiki/troubleshooting/common.md`에 "Qdrant collection drop 후 잡이 매 retry마다 404로 실패" 신규 섹션 추가. 정리 절차 6단계(enqueue 중지·TRUNCATE·collection drop·파일 정리·**워커 재기동**·uvicorn 재기동)를 명시
+
+### Streamlit 잡 탭 — 한정 동결 해제 (사용자 명시)
+- 사용자가 "enqueued만 보이고 종료일자가 없다"는 UX 마찰 지적 → ui/app.py의 잡 탭 표 한정으로 동결 해제
+- 컬럼 6 → 9: `ID │ 상태 │ 제목 │ retry │ enqueued │ started │ finished │ duration │ doc_id`
+- duration 동작: in_progress → 라이브 경과(`now - started`), done/failed → `finished - started`, 그 외 → "—"
+- 60초 미만 `Ns`, 1시간 미만 `MmSSs`, 그 이상 `HhMMm`
+- 잡 탭 외 다른 Streamlit 영역은 동결 정책 그대로 (메모리 `feedback_streamlit_no_edit` 유지)
+
+### 위키 갱신
+- `wiki/troubleshooting/common.md` — "Qdrant collection drop 후 잡이 매 retry마다 404로 실패" 섹션 신규 (원인·해결·재발 방지 절차·관련 ADR 링크)
+- `wiki/troubleshooting/common.md` 헤더 마지막 업데이트 2026-04-22 → 2026-04-26
+
+---
+
 ## [2026-04-26] impl | TASK-019 Phase 1 — 백엔드 토대 (ADR-030, 0.23.0)
 
 ### 코드 변경

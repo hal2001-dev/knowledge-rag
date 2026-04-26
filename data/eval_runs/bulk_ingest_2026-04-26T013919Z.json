@@ -1,0 +1,41 @@
+{
+  "run_id": "2026-04-26T013919Z",
+  "dir": "/Volumes/shared/ingaged",
+  "recursive": true,
+  "include": [
+    ".pdf",
+    ".txt",
+    ".md",
+    ".docx"
+  ],
+  "exclude": [],
+  "title_from": "stem",
+  "source_prefix": "",
+  "workers": 1,
+  "api_base": "http://localhost:8000",
+  "total": 2,
+  "ok": 0,
+  "enqueued": 2,
+  "duplicate": 0,
+  "failed": 0,
+  "skipped_too_large": 0,
+  "started_at": "2026-04-26T01:39:19.633471+00:00",
+  "finished_at": "2026-04-26T01:39:26.363011+00:00",
+  "elapsed_sec": 6.73,
+  "results": [
+    {
+      "path": "가상_면접_사례로_배우는_대규모_시스템_설계_기초.pdf",
+      "size_mb": 47.21,
+      "status": "enqueued",
+      "doc_id": "4043b650-0e64-4505-a01a-5a531415012d",
+      "job_id": 1
+    },
+    {
+      "path": "읽기_좋은_코드가_좋은_코드다.pdf",
+      "size_mb": 40.76,
+      "status": "enqueued",
+      "doc_id": "010e2ac6-692a-49aa-9c9e-579bb9a1aa10",
+      "job_id": 2
+    }
+  ]
+}
