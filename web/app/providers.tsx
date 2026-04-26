@@ -1,10 +1,11 @@
 "use client";
 
 /**
- * App-wide providers: TanStack Query + shadcn TooltipProvider + Sonner Toaster.
- * Clerk Provider는 layout.tsx에서 직접 감싼다 (NextJS 16 + Clerk 6 권장 패턴).
+ * App-wide providers: TanStack Query + nuqs URL state + shadcn TooltipProvider + Sonner Toaster.
+ * Clerk Provider는 layout.tsx에서 직접 감싼다 (NextJS 16 + Clerk 7 권장 패턴).
  */
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { NuqsAdapter } from "nuqs/adapters/next/app";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
 import { useState } from "react";
@@ -26,7 +27,9 @@ export function Providers({ children }: { children: React.ReactNode }) {
 
   return (
     <QueryClientProvider client={client}>
-      <TooltipProvider>{children}</TooltipProvider>
+      <NuqsAdapter>
+        <TooltipProvider>{children}</TooltipProvider>
+      </NuqsAdapter>
       <Toaster richColors position="top-center" />
     </QueryClientProvider>
   );
