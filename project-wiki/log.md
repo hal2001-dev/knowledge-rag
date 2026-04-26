@@ -5,6 +5,117 @@
 
 ---
 
+## [2026-04-26] impl+ops | 잡 탭 상태 필터 + stale 잡 #26 reset (0.23.4)
+
+### 작업
+- **Streamlit 잡 탭 상태 필터 추가** ([ui/app.py](../ui/app.py) `TAB_JOBS`):
+  - `st.multiselect("상태 필터", …)` — pending/in_progress/done/failed/cancelled 다중 선택
+  - 라벨에 카운트 표시(`⚙️ 진행중 (2)`), 기본값은 큐에 1건이라도 있는 상태만(전부 0이면 전체 폴백)
+  - 표 캡션 `필터 매칭 N / 전체 M` 추가
+  - `STATUS_BADGE` dict를 표 루프 내부 → 잡 탭 상단으로 hoist해 필터·표가 공유
+  - **Streamlit 동결 정책의 1건 한정 해제** — 메모리 `feedback_streamlit_no_edit`의 "사용자 명시 지시" 조건 충족(이번 1건만, 정책 자체는 유지)
+- **stale 잡 #26 reset** (`도메인_주도_설계_구현과_핵심_개념_익히기`, 109MB PDF):
+  - 발견 경위: 사용자가 잡 목록에서 1시간 넘게 in_progress인 항목 지적
+  - 진단: started_at = 2026-04-26 17:36:04 KST = 현재 워커(18:39 시작)보다 1시간 전. 직전 워커가 claim 후 사망 → status만 in_progress로 잔존. 워커는 `SKIP LOCKED` + `status='pending'` 필터라 자동 회수 불가
+  - 사망 정황: ISSUE-003 freeze 시간대와 일치(EMBED_BATCH 미적용 코드로 109MB+이미지 PDF 시도 중 메모리 폭발 가능성)
+  - 처리: Qdrant 청크 0건·Postgres documents 행 0건 확인 → `UPDATE ingest_jobs SET status='pending', started_at=NULL, finished_at=NULL, error=NULL WHERE id=26`. 잔재 청소 불필요(부분 색인 전 사망)
+  - 후속 처리: 0.23.3 EMBED_BATCH=64 적용된 현 워커가 jobs 36 종료 후 enqueued_at ASC 최선두인 #26을 자동 claim 예정
+
+### 영향받은 페이지
+- changelog.md (0.23.4)
+- ui/app.py — Streamlit 잡 탭 (이번 1건 한정 동결 해제)
+
+### 큐 상태 (after reset)
+- pending 99 / in_progress 1 / done 19 / failed 15
+
+### 후속 (착수 안 함)
+- 워커 stale-recovery 자동화: `heartbeat_at` 컬럼 + 워커 진입 시 `started_at < NOW() - INTERVAL '30 min'` 자동 reset. 현재 수동 SQL 의존이라 같은 incident 시 또 손이 가야 함
+
+---
+
+## [2026-04-26] fix | ISSUE-003 — 인덱싱 메모리 폭발로 시스템 freeze (0.23.3)
+
+### 작업
+- 사용자 보고: bulk 인덱싱 중 시스템 멈춤. 원인 추적
+- 원인: [packages/vectorstore/qdrant_store.py](../packages/vectorstore/qdrant_store.py) `QdrantDocumentStore.add_documents` (hybrid 분기)가 모든 청크의 텍스트/dense/sparse/PointStruct를 **단일 호출에서 메모리에 동시 보유**. upsert만 256배치, embed/PointStruct는 미배치. 수천 청크 문서에서 GB 단위 RSS 폭증 → 스왑 폭주 → freeze
+- 수정: `EMBED_BATCH_SIZE = 64` 도입, `add_documents` hybrid 분기를 64청크 단위 `for` 루프로 재구성 — texts/dense_vecs/sparse_vecs/points 모두 루프 종료 시 GC. 한 시점 메모리 ≈ 64 × (벡터 + 텍스트)로 캡
+- 위키: ISSUE-003(resolved) 신규, [features/ingestion.md](features/ingestion.md) 트러블슈팅 행 + "메모리 안전성 노트" 섹션 추가, 출처에 qdrant_store.py / ISSUE-003 추가
+
+### 영향받은 페이지
+- wiki/issues/resolved/ISSUE-003-ingest-memory-spike-system-freeze.md (신규)
+- wiki/features/ingestion.md
+- index.md
+- changelog.md (0.23.3)
+
+### 후속 (착수 안 함)
+- `scripts/bulk_ingest.py` 의 `read_bytes()` 큰 파일 통째 로드, `apps/routers/ingest.py` 의 `await file.read()` — 같은 메모리 패턴이지만 이번 freeze의 원인은 아님. 추후 streaming hash/upload로 개선 후보
+
+---
+
+## [2026-04-26] doc | features/ingestion.md 신설 — bulk_ingest.py 사용법
+
+### 작업
+- `wiki/features/ingestion.md` 신규 작성 — `scripts/bulk_ingest.py` 옵션·모드(HTTP / `--via-queue`)·결과 카운터·트러블슈팅 정리
+- `index.md`: Features 섹션 ingestion.md 항목을 미작성 → active 로 갱신, 총 페이지 수 26 → 27
+- 부수: `packages/jobs/queue.py` 의 `error[:2000]` → `error[:4000]` (ingest_jobs.error 상한 확장) — ingestion.md 트러블슈팅에서 참조
+
+### 영향받은 페이지
+- wiki/features/ingestion.md (신규)
+- index.md
+
+---
+
+## [2026-04-26] impl | TASK-019 Phase A — NextJS 사용자 UI 셋업 + Phase 1 라이브 검증 (0.23.2)
+
+### 작업
+- **Phase 1 라이브 검증** (0.23.0 + 0.23.1 + 마이그레이션 후속):
+  - 워커 재기동(PID 65094, 새 코드) → init에서 hybrid collection 자동 재생성 (이전 fresh start 후속)
+  - 7권 도서 nested 분류 적용 (3890 청크) — `category_filter` 5개(ai/ml, web/frontend, software/architecture, programming/systems, other) 모두 라이브 매칭 확인
+  - 추가 2권(`더_이상한_수학책` 219s, `상대적이며_절대적인_지식의_백과사전` 168s) bulk_ingest → 신규 코드(0.23.1+)로 자동 nested 저장 검증
+
+- **Phase A — NextJS web/ 셋업**:
+  - `pnpm create next-app web` (Next 16.2.4, React 19.2, TypeScript 5.9 strict, Tailwind 4 + Turbopack, App Router, no-src-dir, import-alias `@/*`)
+  - Note: stack.md 합의(Next 15 + Tailwind 3.4)와 다름 — latest로 진행. Next 16은 `middleware.ts` deprecated → `proxy.ts` 컨벤션
+  - `pnpm dlx shadcn@latest init -d --force` 후 14개 컴포넌트 일괄 추가
+  - 패키지 추가:
+    - 런타임: `@clerk/nextjs@7.2`, `@tanstack/react-query@5.100`, `nuqs@2`, `react-markdown@10` + `remark-gfm@4` + `rehype-highlight@7`, `date-fns@4`
+    - dev: `openapi-typescript@7`, `openapi-fetch`
+  - 파일:
+    - `app/layout.tsx` — `<ClerkProvider>` + `<Providers>`(QueryClient + TooltipProvider + Toaster) 래핑, lang="ko"
+    - `app/providers.tsx` — TanStack Query (`staleTime=30s`, `refetchOnFocus=false`, `retry=1`) + shadcn TooltipProvider + sonner Toaster
+    - `app/page.tsx` — Phase A placeholder (UserButton만)
+    - `app/sign-in/[[...rest]]/page.tsx`, `app/sign-up/[[...rest]]/page.tsx` — Clerk catch-all
+    - `proxy.ts` — Clerk `clerkMiddleware` + `createRouteMatcher`, `/sign-in(.*)`/`/sign-up(.*)`만 공개
+    - `lib/api/client.ts` — `useApiClient()` hook이 Clerk `getToken()` → `Authorization: Bearer ...` 자동 첨부 (FastAPI `AuthMiddleware`와 짝). openapi-fetch 위에 interceptor
+    - `.env.local.example` (commit) — Clerk 키 3종 + `NEXT_PUBLIC_API_BASE_URL` 안내
+    - `.env.local` (gitignored) — 사용자가 직접 키 입력
+    - `.gitignore` — `!.env*.example` 예외 추가
+
+### 검증
+- `pnpm tsc --noEmit` clean
+- `pnpm dev` → 195~249ms ready (Next 16 Turbopack)
+- `/sign-in` HTTP 200 (24KB SignIn 컴포넌트 렌더)
+- `/` HTTP 307 → `/sign-in?redirect_url=...` (Clerk 보호 자동 리다이렉트)
+- `Environments: .env.local` 로드 확인
+- 사용자가 Clerk publishable+secret key 입력 → dev 서버 재기동 후 Clerk SignIn UI 정상 노출
+
+### Phase B 작업 (대기)
+- AppShell — 상단 카테고리 칩 + 좌측 사이드바(＋새 대화·자기 user_id 대화 목록·하단 📚 도서관) + 메인(활성 스코프 배지 + 본문)
+- `/chat` — 메시지 히스토리 + 소스 expander + 후속 질문 배지 + empty state(요약·카테고리 분포·주제 칩·예시·최근 문서) + doc/category filter
+- `/library` — 검색·형식·카테고리 필터 + 카드 그리드 + 그룹핑(기타 마지막) + 카드 상세 토글
+- 사이드바 대화 목록 — `GET /conversations` (자기 user_id만), 세션 클릭 라우팅, hover 삭제
+- 활성 스코프 배지 — 우선순위 series > category > doc, 한 번에 하나
+- URL state 라우팅 (nuqs) — 도서관 ↔ 채팅 자동 이동
+- Playwright 회귀 검증 + 모바일 viewport
+- `AUTH_ENABLED=true` 백엔드 전환 + `CLERK_JWKS_URL` 채움
+- changelog 0.24.0 + 위키 8개 페이지 갱신 + ADR-030 보강 + 메모리 stack.md 동기화
+
+### 위키
+- `changelog.md` 0.23.2 항목
+- `wiki/architecture/stack.md` 갱신 — 실제 설치 버전 반영 (Next 16, Tailwind 4, Clerk 7, middleware → proxy)
+
+---
+
 ## [2026-04-26] ops+fix | 0.23.1 마이그레이션 후속 — flat cleanup 비활성 (Qdrant API 한계) + 7건 nested 적용 검증
 
 ### 작업

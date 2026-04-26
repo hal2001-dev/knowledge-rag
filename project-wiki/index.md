@@ -1,7 +1,7 @@
 # Wiki Index
 
-**마지막 업데이트**: 2026-04-25 (TASK-019 착수 — NextJS 사용자 UI 분리 + Clerk 인증, ADR-030 예약 · stack.md 신설 · TASK-020 Series 큐잉. 이전: 0.22.1 32MiB 핫픽스, TASK-019/020 큐잉)
-**총 페이지 수**: 26 (루트 9 + wiki/ 15 + issues/open/ 2)
+**마지막 업데이트**: 2026-04-26 (Streamlit 잡 탭 상태 필터 + stale 잡 #26 reset 0.23.4 ✅. 이전: ISSUE-003 메모리 폭발 fix 0.23.3, TASK-019 Phase A NextJS 셋업 0.23.2)
+**총 페이지 수**: 28 (루트 9 + wiki/ 16 + issues/open/ 2 + issues/resolved/ 1)
 
 ---
 
@@ -42,7 +42,7 @@
 
 | 페이지 | 설명 | 상태 |
 |--------|------|------|
-| `ingestion.md` _(미작성)_ | 문서 수집 및 전처리 | - |
+| [ingestion.md](wiki/features/ingestion.md) | 문서 수집 및 전처리 (bulk_ingest.py 사용법) | active |
 | `embedding.md` _(미작성)_ | 임베딩 모델 및 벡터 저장 | - |
 | `retrieval.md` _(미작성)_ | 검색 로직 (FAISS, 유사도) | - |
 | `generation.md` _(미작성)_ | LLM 연동 및 답변 생성 | - |
@@ -135,6 +135,7 @@
 |----|------|------|------|
 | [ISSUE-001](wiki/issues/open/ISSUE-001-mobile-file-uploader-no-preview.md) | 모바일 파일 업로더 선택 후 파일명 미표시 | open · 보류 | 2026-04-22 |
 | [ISSUE-002](wiki/issues/open/ISSUE-002-suggestion-badge-click-unresponsive.md) | 후속 질문 배지 두 번째 이후 클릭 무반응 (모바일 특정 의심) | open · 보류 | 2026-04-22 |
+| [ISSUE-003](wiki/issues/resolved/ISSUE-003-ingest-memory-spike-system-freeze.md) | 인덱싱 중 메모리 폭발로 시스템 freeze (qdrant_store.add_documents 미배치 임베딩) | resolved · 2026-04-26 | 2026-04-26 |
 
 ---
 

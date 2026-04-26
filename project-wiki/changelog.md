@@ -22,6 +22,57 @@
 
 ---
 
+## [0.23.4] - 2026-04-26
+
+### Added
+- **Streamlit 잡 탭 상태 필터** ([ui/app.py](../ui/app.py) `TAB_JOBS`): `st.multiselect`로 pending / in_progress / done / failed / cancelled 다중 선택. 옵션 라벨에 카운트 노출(`⚙️ 진행중 (2)`), 기본값은 큐에 1건이라도 존재하는 상태만 선택, 비우면 전체 폴백. 표 캡션에 `필터 매칭 / 전체` 함께 표기. `STATUS_BADGE` dict는 표 루프 내부 → 잡 탭 상단으로 hoist해 필터 라벨과 표 셀이 공유. **Streamlit 동결 정책의 1건 한정 해제** (메모리 `feedback_streamlit_no_edit` 명시 지시 충족, 동결 정책 자체는 유지)
+
+### Ops
+- **stale 잡 #26 reset** (`도메인_주도_설계_구현과_핵심_개념_익히기`, 109MB PDF): 워커가 17:36:04 KST에 claim 후 `in_progress` 잔존, 1시간 19분 경과 시점 발견. 직전 워커 프로세스 사망(ISSUE-003 freeze 정황과 일치)이 원인. 워커는 `SELECT … FOR UPDATE SKIP LOCKED` + `status='pending'` 필터라 stale `in_progress`는 자동 회수 불가(heartbeat·timeout 미구현). Qdrant 청크 0건·Postgres documents 행 0건 확인 후 `UPDATE ingest_jobs SET status='pending', started_at=NULL, finished_at=NULL, error=NULL WHERE id=26` 단순 reset. 0.23.3 `EMBED_BATCH_SIZE=64` 적용된 워커가 다음 차례에 재처리 (`enqueued_at ASC` 정렬 상 큐 최선두)
+
+### Notes
+- 후속 후보(미착수): 워커 stale-recovery 자동화 — heartbeat 컬럼(`heartbeat_at`) + 워커 진입 시 `started_at < NOW() - INTERVAL '30 min' AND heartbeat 없음` 잡 자동 reset. 현재는 수동 SQL 의존
+
+---
+
+## [0.23.3] - 2026-04-26
+
+### Fixed
+- **ISSUE-003 — 인덱싱 중 메모리 폭발로 시스템 freeze**: `QdrantDocumentStore.add_documents` (hybrid 분기)가 한 호출의 **모든 청크 텍스트·dense·sparse·PointStruct를 동시에 메모리 보유**해, 수천 청크 PDF 1건만으로도 RSS가 GB 단위로 폭증 → 스왑 폭주 → 시스템 응답 불가. upsert는 256 배치였지만 embed/PointStruct 단계는 미배치였던 게 회귀 원인. `EMBED_BATCH_SIZE = 64` 도입 + `add_documents` hybrid 분기를 64청크 단위 루프로 재구성(`texts/dense_vecs/sparse_vecs/points` 모두 배치 종료 시 GC). 한 시점 메모리 ≈ 64청크 × (1536d 벡터 + 텍스트). vector 단일 모드는 langchain QdrantVectorStore에 위임되어 손대지 않음. 상세 — [ISSUE-003](../wiki/issues/resolved/ISSUE-003-ingest-memory-spike-system-freeze.md)
+
+### Notes
+- 후속 메모리 핫스팟 후보(미착수): `scripts/bulk_ingest.py` `read_bytes()` 큰 파일 통째 로드, `apps/routers/ingest.py` `await file.read()` 업로드 본문 통째 수신. 이번 freeze의 직접 원인 아니므로 별건으로 다룰 예정
+
+---
+
+## [0.23.2] - 2026-04-26
+
+### Added
+- **TASK-019 Phase A — NextJS 사용자 UI 셋업 (web/ 디렉터리 신설, ADR-030)**:
+  - `web/` Next.js 16.2.4 + React 19.2 + TypeScript 5.9 strict + Tailwind 4 + Turbopack
+  - shadcn/ui 14개 컴포넌트 (button/card/input/select/dialog/sheet/badge/scroll-area/sonner/tooltip/separator/skeleton/dropdown-menu/avatar)
+  - `@clerk/nextjs` 7.2 — 이메일 OTP 보호 라우트(`proxy.ts`, Next 16 컨벤션 — `middleware.ts` deprecated), `<ClerkProvider>` + `<SignIn/>`/`<SignUp/>` catch-all 라우트
+  - `@tanstack/react-query` 5 — `<Providers>`로 `QueryClient` + `<TooltipProvider>` + `<Toaster>` 합본
+  - `nuqs` 2 (URL state, Phase B에서 활성), `react-markdown` 10 + `remark-gfm` 4 + `rehype-highlight` 7 (마크다운 렌더), `date-fns` 4
+  - `openapi-typescript` + `openapi-fetch` (devDeps) — FastAPI 스키마에서 타입 자동 생성 + 타입 안전 fetch
+  - `lib/api/client.ts` — `useApiClient()` hook이 Clerk `getToken()`으로 JWT를 Bearer 헤더에 자동 첨부 (FastAPI `AuthMiddleware`와 짝)
+  - `app/page.tsx` Phase A placeholder (UserButton만), AppShell + 페이지 본격 구현은 Phase B
+- **`.env.local.example` + `.env.local` 템플릿** — Clerk 키 3종(`publishable`/`secret`/[선택] `webhook secret`), `NEXT_PUBLIC_API_BASE_URL`, sign-in/up 라우트 안내. `.gitignore`는 `.env*` 차단 + `!.env*.example` 예외로 example만 commit
+
+### Fixed
+- **마이그레이션 스크립트 `--cleanup-flat` 비활성** — Qdrant `delete_payload(keys=["metadata.category"])` 가 dot-notation을 nested 경로로 해석해 방금 set_payload로 추가한 nested key를 삭제하는 역효과 발견. flat top-level literal key는 안 지워짐. 스크립트의 `--cleanup-flat` 옵션은 호출되어도 경고 로그만 출력하고 no-op으로 변경. nested 추가만 수행, flat은 cruft로 잔존하나 Filter는 nested 기준이라 검색 동작 정상. 안전한 flat 정리는 collection drop + 재인덱싱 또는 청크별 overwrite_payload만 가능 (Qdrant API 한계)
+
+### Changed
+- **stack.md 갱신** (실제 설치 버전 반영): Next.js 15 → 16, Tailwind CSS 3.4 → 4, `middleware.ts` → `proxy.ts` (Next 16 컨벤션), Clerk 5+ → 7.2
+
+### Notes
+- Phase A 검증 결과: `pnpm dev` → 195~249ms ready, `/sign-in` HTTP 200 (24KB SignIn 컴포넌트), `/` HTTP 307 → `/sign-in?redirect_url=...` (Clerk 보호 자동 리다이렉트)
+- Phase B 작업: AppShell(상단 카테고리 칩 + 사이드바 + 메인 + 활성 스코프 배지) + `/chat` + `/library` + 사이드바 대화 목록 + Playwright 검증
+- `AUTH_ENABLED=false` 백엔드 기본 유지 — Phase B 마무리 시점에 `true`로 전환 + `CLERK_JWKS_URL` 채움
+- bulk 인덱싱: TASK-019 Phase 1 라이브 검증 후 7권 도서 nested 분류 적용 완료 (3890 청크 / ai-ml · web-frontend · software-architecture · programming-systems · other 5개 카테고리), 추가 2권(`더_이상한_수학책`, `상대적이며_절대적인_지식의_백과사전`) enqueue → 신규 코드(0.23.1+)로 자동 nested 저장
+
+---
+
 ## [0.23.1] - 2026-04-26
 
 ### Fixed

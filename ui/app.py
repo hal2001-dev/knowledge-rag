@@ -571,25 +571,38 @@ with TAB_JOBS:
 
         st.divider()
 
-        # 2) 최근 잡 표
-        recent = sorted(all_jobs, key=lambda j: j.get("enqueued_at", ""), reverse=True)[:30]
+        STATUS_BADGE = {
+            "pending":     "⏳ pending",
+            "in_progress": "⚙️ 진행중",
+            "done":        "✅ 완료",
+            "failed":      "❌ 실패",
+            "cancelled":   "⏹ 취소",
+        }
+
+        # 2) 상태별 필터
+        STATUS_OPTIONS = ["pending", "in_progress", "done", "failed", "cancelled"]
+        present_statuses = [s for s in STATUS_OPTIONS if counters.get(s, 0) > 0]
+        selected_statuses = st.multiselect(
+            "상태 필터",
+            options=STATUS_OPTIONS,
+            default=present_statuses or STATUS_OPTIONS,
+            format_func=lambda s: f"{STATUS_BADGE.get(s, s)} ({counters.get(s, 0)})",
+            key="jobs_status_filter",
+            help="비우면 전체. 기본은 큐에 존재하는 상태만 선택.",
+        )
+
+        # 3) 최근 잡 표 (필터 적용 후 enqueued_at DESC 30개)
+        filtered = [j for j in all_jobs if j["status"] in selected_statuses] if selected_statuses else all_jobs
+        recent = sorted(filtered, key=lambda j: j.get("enqueued_at", ""), reverse=True)[:30]
         if not recent:
-            st.caption("잡 기록이 없습니다.")
+            st.caption("필터 조건에 해당하는 잡이 없습니다.")
         else:
-            st.caption(f"최근 {len(recent)}개 (전체 {len(all_jobs)})")
+            st.caption(f"최근 {len(recent)}개 (필터 매칭 {len(filtered)} / 전체 {len(all_jobs)})")
             # 컬럼: ID·상태·제목·retry·enqueued·started·finished·duration·doc_id (TASK-019 한정 동결 해제)
             COL_WIDTHS = [0.5, 0.9, 3.0, 0.6, 1.4, 1.2, 1.2, 0.9, 0.9]
             h = st.columns(COL_WIDTHS)
             for col, label in zip(h, ["**ID**", "**상태**", "**제목**", "**retry**", "**enqueued**", "**started**", "**finished**", "**duration**", "**doc_id**"]):
                 col.markdown(label)
-
-            STATUS_BADGE = {
-                "pending":     "⏳ pending",
-                "in_progress": "⚙️ 진행중",
-                "done":        "✅ 완료",
-                "failed":      "❌ 실패",
-                "cancelled":   "⏹ 취소",
-            }
 
             from datetime import datetime, timezone
 

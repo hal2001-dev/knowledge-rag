@@ -1,7 +1,7 @@
 # 기술 스택
 
 **상태**: active
-**마지막 업데이트**: 2026-04-25
+**마지막 업데이트**: 2026-04-26
 **관련 페이지**: [decisions.md](decisions.md), [structure.md](structure.md), [overview.md](../../overview.md), [roadmap.md](../../roadmap.md)
 
 ## 요약
@@ -38,20 +38,20 @@ Knowledge RAG는 두 개의 사용자 채널로 분리되어 운영됩니다(202
 
 **역할**: 사용자(채팅·도서관·대화) thin client. LLM·RAG 처리 0, FastAPI 호출만.
 
-### 2.1 프레임워크 & 언어
-| 항목 | 선택 | 결정 |
+### 2.1 프레임워크 & 언어 (Phase A 실제 설치)
+| 항목 | 선택 | 결정 / 비고 |
 |---|---|---|
-| 프레임워크 | **Next.js 15.x (App Router)** | 2026-04 안정. 호환 이슈 발견 시 14.2 다운그레이드 |
-| 런타임 React | **React 19** | Next 15와 함께. Clerk/shadcn 19 호환 OK |
-| 언어 | **TypeScript 5.x (strict)** | `"strict": true`, `"noUncheckedIndexedAccess": true` |
-| Node | **20 LTS 이상** (가능 시 22 LTS) | |
-| 패키지 매니저 | **pnpm 9.x** | 디스크 효율, 엄격한 peer-dep |
+| 프레임워크 | **Next.js 16.2.4 (App Router)** | 2026-04-26 latest. 합의 시점(15)보다 한 단계 위. Turbopack 기본 활성, `middleware.ts` deprecated → `proxy.ts` 컨벤션 |
+| 런타임 React | **React 19.2.4** | Next 16과 함께 |
+| 언어 | **TypeScript 5.9 (strict)** | `"strict": true` |
+| Node | **20.9+ (Next 16 최소)** — 사용자 환경 25.x | Homebrew node, LTS는 아님 |
+| 패키지 매니저 | **pnpm 10.33** | 합의는 9였으나 사용자 환경 10이 호환 OK |
 
-### 2.2 UI / 스타일
+### 2.2 UI / 스타일 (Phase A 실제 설치)
 | 항목 | 선택 | 비고 |
 |---|---|---|
-| 디자인 시스템 | **shadcn/ui** (Radix + Tailwind) | copy-paste, NPM 의존 최소, 접근성 기본 |
-| CSS | **Tailwind CSS 3.4+** | 유틸 우선, shadcn 호환 |
+| 디자인 시스템 | **shadcn/ui 4.5** (Radix + Tailwind 4) | copy-paste, NPM 의존 최소, 접근성 기본 |
+| CSS | **Tailwind CSS 4.2** (CSS-first 설정) | 합의 3.4보다 한 단계 위. shadcn 4가 v4 호환 |
 | 다크모드 | **light only (Phase 1)** + CSS 변수 인프라 | 후속 토글 가능하게 변수만 |
 | 아이콘 | **lucide-react** | shadcn 기본, tree-shake |
 | 토스트 | **sonner** | shadcn 권장 |
@@ -67,14 +67,14 @@ shadcn 우선 설치: `button, card, input, select, dialog, sheet, badge, scroll
 | 서버 상태 | **TanStack Query v5** | 캐싱, refetchOnFocus, mutation |
 | 클라이언트 전역 상태 | **Zustand v4** (필요 시만) | 사이드바 토글 등. 작은 규모면 useState 충분 |
 
-### 2.4 API & 인증
+### 2.4 API & 인증 (Phase A 실제 설치)
 | 항목 | 선택 | 비고 |
 |---|---|---|
-| OpenAPI 타입 생성 | **openapi-typescript** | FastAPI 스키마 → TS 자동 생성 (CI 포함) |
+| OpenAPI 타입 생성 | **openapi-typescript 7** | FastAPI 스키마 → TS 자동 생성. Phase B에서 활성 |
 | Fetch 래퍼 | **openapi-fetch** | 타입 안전 fetch + TanStack Query 조합 |
-| 인증 | **@clerk/nextjs v5+** | 이메일 OTP 전용 (비번 X, 소셜 X) |
-| 보호 라우트 | **middleware.ts** (Clerk) | 비로그인 → `/sign-in` 리다이렉트 |
-| JWT 첨부 | TanStack Query default fetcher interceptor | Clerk `auth().getToken()` → `Authorization: Bearer ...` |
+| 인증 | **@clerk/nextjs 7.2** | 이메일 OTP 전용 (비번 X, 소셜 X). 합의 5+ 보다 한 단계 위 |
+| 보호 라우트 | **proxy.ts** (Clerk) — Next 16 컨벤션 | 비로그인 → `/sign-in` 리다이렉트. 합의 시점 `middleware.ts`는 Next 16에서 deprecated |
+| JWT 첨부 | `useApiClient()` hook의 onRequest interceptor | Clerk `getToken()` → `Authorization: Bearer ...`. FastAPI `AuthMiddleware`와 짝 |
 
 ### 2.5 콘텐츠 / 폼 / 유틸
 | 항목 | 선택 | 비고 |
@@ -197,7 +197,7 @@ NextJS Clerk 도입(2026-04-25, TASK-019)으로 부분 해제됐고, 그 외 인
 
 **Python (백엔드)**: `fastapi`, `uvicorn`, `sqlalchemy`, `psycopg2`, `qdrant-client`, `langchain`, `langchain-qdrant`, `openai`, `docling`, `fastembed`, `kiwipiepy`, `sentence-transformers`, `flashrank`, `streamlit`, `ragas`, `langsmith`
 
-**Node (NextJS, Phase 2 도입 예정)**: `next@15`, `react@19`, `typescript`, `@clerk/nextjs`, `@tanstack/react-query`, `tailwindcss`, `tailwindcss-animate`, `lucide-react`, `sonner`, `nuqs`, `openapi-typescript`, `openapi-fetch`, `react-markdown`, `remark-gfm`, `rehype-highlight`, `date-fns`, `clsx`, `tailwind-merge`, `react-hook-form`, `zod`
+**Node (NextJS Phase A 설치 완료, 2026-04-26)**: `next@16.2.4`, `react@19.2.4`, `typescript@5.9`, `@clerk/nextjs@7.2`, `@tanstack/react-query@5.100`, `tailwindcss@4.2`, `lucide-react`, `sonner@2`, `nuqs@2.8`, `openapi-typescript@7` (dev), `openapi-fetch` (dev), `react-markdown@10`, `remark-gfm@4`, `rehype-highlight@7`, `date-fns@4`, `clsx`, `tailwind-merge@3`, `tw-animate-css`, `class-variance-authority`. `react-hook-form`/`zod`은 Phase B 시점에 폼 도입 시 추가 검토
 
 **개발 도구**: `eslint`, `prettier`, `prettier-plugin-tailwindcss`, `playwright`, (선택) `vitest`
 

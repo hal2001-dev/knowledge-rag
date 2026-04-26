@@ -1,7 +1,7 @@
 # Project Overview
 
 **상태**: active
-**마지막 업데이트**: 2026-04-25
+**마지막 업데이트**: 2026-04-26
 **관련 페이지**: `pipeline.md` _(미작성)_, [stack.md](wiki/architecture/stack.md)
 
 ---
@@ -61,6 +61,7 @@
 
 > [decisions.md](wiki/architecture/decisions.md) 참고
 
+- **ADR-030 (2026-04-26)**: 사용자 UI NextJS 분리 + Clerk 인증 + FastAPI Origin 분기 — 사용자(채팅·도서관·대화) NextJS thin client, 관리자(문서·잡·시스템·평가) Streamlit 잔류·동결. Clerk 이메일 OTP 보호 라우트. FastAPI는 JWT 헤더 있으면 Clerk 검증, LAN/localhost 무헤더는 `user_id='admin'` 자동, 외부 origin 무헤더는 401. `conversations.user_id NOT NULL DEFAULT 'admin'` 마이그레이션 + 기존 행 admin 백필. `category_filter` 백엔드 통과 추가. Phase 1 백엔드 토대(0.23.0) + Phase 1 hotfix(0.23.1, set_classification_payload nested) + Phase A NextJS 셋업(0.23.2, Next 16/Tailwind 4/Clerk 7.2) 완료. Phase B(AppShell + 페이지) 진행 중
 - **ADR-028 (2026-04-25)**: 색인 워커 분리 — Postgres `ingest_jobs` 큐(SKIP LOCKED) + 독립 워커 프로세스(`python -m apps.indexer_worker`). FastAPI는 enqueue+202만, 워커가 인덱싱·요약·분류 인라인 처리. `INGEST_MODE=queue|sync` 토글로 회귀 가능. 마이그레이션은 `pg_advisory_xact_lock`으로 동시 기동 race 해소. bulk_ingest `--via-queue` 추가
 - **ADR-027 (2026-04-25)**: 랜딩 카드 v2 — `/index/overview` 응답에 `top_tags`/`categories`/`recent_docs` 추가. 빈 채팅에 카테고리 분포·주제 칩·최근 문서 카드 노출. 추가 LLM 호출 0 (모두 DB 데이터로 파생). 후방호환 default 빈배열
 - **ADR-026 (2026-04-25)**: 사용자 도서관 탭 — 채팅 옆 신규 탭에 카테고리 그룹 카드 그리드 + 검색/형식/카테고리 필터 + "이 책에 대해 묻기" doc_filter 라우팅. `/query` 경로에 `doc_filter` 인자 관통(vector·hybrid 양쪽). 카드 상세 토글에 abstract/sample_questions
@@ -102,7 +103,7 @@
 
 | # | 제목 | 범위·상태 |
 |---|------|---|
-| **TASK-019** | 사용자 UI NextJS 분리 + Clerk 인증 (관리자 UI는 Streamlit 잔류·동결) | 🆕 **최우선 큐잉 (2026-04-25)** — 사용자/관리자 UI 분리, Clerk 이메일 OTP, Origin 분기 인증(LAN→admin), `conversations.user_id` 추가, "앱 내 인증" 항목만 보류 묶음에서 부분 해제. ADR-030 예약 |
+| **TASK-019** | 사용자 UI NextJS 분리 + Clerk 인증 (관리자 UI는 Streamlit 잔류·동결) | ⚙️ **진행 중 (2026-04-26)** — Phase 1 백엔드 토대 ✅ (0.23.0) · Phase 1 hotfix ✅ (0.23.1 — set_classification_payload nested fix + 마이그레이션) · Phase A NextJS 셋업 ✅ (0.23.2 — Next 16 + Tailwind 4 + Clerk 7.2, `pnpm dev` ready) · **Phase B 대기**: AppShell + `/chat` + `/library` + 사이드바 대화 + Playwright 검증 + `AUTH_ENABLED=true` 전환 |
 | **TASK-012** | Cloudflare Tunnel + Access 외부 노출 게이트웨이 | 🕐 **후순위 큐잉 (2026-04-23)** — 사용자 도메인 Cloudflare 이전 후 "착수" 지시 대기. 앱 코드 0줄, 운영 문서 중심 |
 | **TASK-013** | MkDocs Material + GitHub Pages 문서 사이트 | 🕐 **후순위 큐잉 (2026-04-23)** — 현 위키 구조 유지, GitHub Actions로 자동 배포. "착수" 지시 대기 |
 | **TASK-020** | Series/묶음 문서 (Option D — 1급 시민 + 색인 시점 자동 묶기 + 관리자 사후 검수) | 🕐 **후순위 큐잉 (2026-04-25)** — 30챕터로 쪼개진 책을 한 시리즈로 묶어 검색·도서관·스코프 통합. ADR-029 예약. "착수" 지시 대기 |
