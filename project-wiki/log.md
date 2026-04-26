@@ -5,6 +5,36 @@
 
 ---
 
+## [2026-04-26] ops+fix | 0.23.1 마이그레이션 후속 — flat cleanup 비활성 (Qdrant API 한계) + 7건 nested 적용 검증
+
+### 작업
+- 0.23.0 코드(워커 PID 45535)가 5건 인덱싱 중인 상태 — flat key로 분류 저장 → 워커 재기동 후 마이그레이션 진행
+- 워커 재기동 (새 PID 65094) → init에서 새 코드 로드
+- `scripts/migrate_classification_payload_to_nested.py --dry-run` → 7 doc, 3890 청크 영향 확인
+- `--cleanup-flat` 실행 → set_payload(nested) + delete_payload(flat) 둘 다 success 보고, 그러나 결과 검증 시 nested 0건 ?!
+
+### 진단 — Qdrant API 한계 발견
+- `delete_payload(keys=["metadata.category"])` 가 dot-notation을 **nested 경로로 해석**해 `payload.metadata.category` 삭제. flat top-level literal key는 안 지워짐
+- 결과: 마이그레이션이 nested 추가 → 즉시 nested 삭제 → 0 nested, flat 잔존 (역효과)
+- 직접 set_payload(key='metadata') 호출만 하면 nested 정상 추가됨 (검증)
+- flat top-level literal key 'metadata.category' 안전 삭제는 collection drop + 재인덱싱 또는 청크별 overwrite_payload만 가능 (Qdrant API 자체 한계)
+
+### 수정 — `migrate_classification_payload_to_nested.py`
+- `--cleanup-flat` 옵션 동작 비활성: 호출되어도 경고 로그만 출력하고 no-op
+- nested 추가만 수행 (flat은 cruft로 잔존, 디스크 낭비 작음, Filter는 nested 기준이라 검색 동작 정상)
+- 함수 docstring에 한계 명시 + 안전한 flat 정리 방법 안내 (collection drop or overwrite_payload)
+
+### 적용 결과
+- nested 7/7 적용 완료 (3890 청크 모두 nested+flat 둘 다 가짐)
+- `category_filter` 라이브 검증: 5개 카테고리(ai/ml, web/frontend, software/architecture, programming/systems, other) 모두 정확히 매칭
+- TASK-019 Phase 2 NextJS 카테고리 칩 전제조건 충족
+
+### 후속
+- 정리가 정말 필요하면 collection drop + 재인덱싱 (~20분, 7권). 현재는 flat cruft 잔존 결정 (크기 작고 영향 없음)
+- Qdrant API에 dot-literal key 명시 삭제 기능 요청 별건
+
+---
+
 ## [2026-04-26] fix | 0.23.1 — `set_classification_payload` flat key → nested (ADR-025 잠재 버그)
 
 ### 진단

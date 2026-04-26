@@ -22,7 +22,6 @@ from collections import Counter
 from typing import Optional
 
 from qdrant_client import QdrantClient
-from qdrant_client.http.models import FieldCondition, Filter, MatchValue
 from sqlalchemy.orm import Session
 
 # 프로젝트 루트 import 경로 추가
@@ -112,24 +111,24 @@ def _delete_flat_keys(
     doc_ids: set[str],
     dry_run: bool,
 ) -> int:
-    """영향받은 doc_id들의 청크에서 flat key 삭제. 실행 카운트 반환."""
-    if not doc_ids:
+    """[비활성] flat key 정리는 Qdrant API 구조상 안전하지 않다.
+
+    Qdrant `delete_payload(keys=["metadata.category"])`는 dot-notation을 nested 경로로
+    해석해 `payload.metadata.category` (방금 set_payload로 추가한 nested key) 를 삭제.
+    flat top-level literal key 'metadata.category'는 그대로 남음. 결과적으로 nested가
+    사라지고 flat만 남는 역효과.
+
+    flat key를 안전하게 정리하려면 청크별 overwrite_payload(전체 metadata 덮어쓰기) 또는
+    collection drop + 재인덱싱 필요. 이 함수는 no-op로 두고, --cleanup-flat은 경고만 출력.
+    """
+    if not doc_ids or dry_run:
         return 0
-    n = 0
-    for doc_id in sorted(doc_ids):
-        if not dry_run:
-            try:
-                client.delete_payload(
-                    collection_name=collection,
-                    keys=FLAT_KEYS,
-                    points=Filter(
-                        must=[FieldCondition(key="metadata.doc_id", match=MatchValue(value=doc_id))]
-                    ),
-                )
-                n += 1
-            except Exception as e:
-                logger.warning(f"doc_id={doc_id[:8]} delete_payload 실패: {e}")
-    return n
+    logger.warning(
+        "--cleanup-flat 무시: Qdrant API 한계로 flat key 안전 삭제 불가 "
+        "(delete_payload가 dot-notation을 nested로 해석해 nested 삭제 위험). "
+        "flat key는 cruft로 잔존하나 Filter는 nested 기준이라 검색 동작은 정상."
+    )
+    return 0
 
 
 def main() -> int:
@@ -150,8 +149,8 @@ def main() -> int:
         from packages.rag.sparse import SparseEmbedder
         sparse = SparseEmbedder(settings.sparse_model_name)
 
-    from packages.llm.embeddings import get_embeddings
-    embeddings = get_embeddings(settings)
+    from packages.llm.embeddings import build_embeddings
+    embeddings = build_embeddings(settings)
 
     store = QdrantDocumentStore(
         url=settings.qdrant_url,
