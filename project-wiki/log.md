@@ -5,6 +5,130 @@
 
 ---
 
+## [2026-04-28] impl | TASK-021 — 정기 모니터링 + 워커 RSS 가드 도입 완료 (0.24.0)
+
+### 배포물
+- `scripts/krag_snapshot.py` — 5분 주기 launchd fork, knowledge-rag 프로세스 + 시스템 top10 + 포트 dump, 매 줄 fsync, 7일 gzip 회전
+- `scripts/krag_guard.py` — 30초 주기, `apps.indexer_worker` 한정 RSS ≥ 14GB SIGTERM + macOS 알림 + 사후 dump, `--observe-only`/`KRAG_GUARD_RSS_GB` 토글
+- LaunchAgents 2개: `~/Library/LaunchAgents/com.knowledge-rag.{snapshot,guard}.plist` (RunAtLoad=true)
+- ADR-031 본문 신설 ([decisions.md](wiki/architecture/decisions.md))
+- 위키 신설: [wiki/deployment/monitoring.md](wiki/deployment/monitoring.md)
+- 위키 갱신: [ISSUE-005](wiki/issues/open/ISSUE-005-memory-guard-worker-scapegoat.md) 후속 운영 인프라 섹션, [ISSUE-004](wiki/issues/open/ISSUE-004-docling-parse-longtail.md) 자동 차단 안전망 섹션, [index.md](index.md) Deployment 표 monitoring.md active 표기 + 페이지 수 30→31, [overview.md](overview.md) 다음 할 일 표
+
+### 검증 (2026-04-28 19:51 KST)
+- `launchctl list | grep knowledge-rag` → snapshot pid=74285 / guard pid=74287, 양쪽 exit=0
+- 첫 스냅샷 dump 정상: 시스템 used 9.3% / 프로젝트 프로세스 9건 / top10 / 포트 3000=0 8000=0 8501=0
+- 첫 가드 no-op: `worker not running (threshold=14.0GB)` 1줄 로그
+- 모의 SIGTERM: decoy(`exec -a "python -m apps.indexer_worker --decoy" sleep 300`)에 `KRAG_GUARD_RSS_GB=0` 강제 트리거 → `OBSERVE`(--observe-only) 후 `KILL pid=NNN SIGTERM sent, dump=guard_kill_*.log`(82KB) → decoy DEAD 확인
+- 자기 PID 제외 로직 정상
+
+### 후속 (별건)
+- ISSUE-005 본격 해결: 시스템 used% 가드를 RSS top + 화이트리스트 기반으로 재설계
+- ISSUE-004 5번 `INDEXER_MAX_JOBS` 자가 종료 — 본 가드와 보완 관계
+- 임계 14GB → 16GB 또는 "2회 연속 트리거" 컷 (운영 데이터 2~4주 축적 후)
+- TASK-019 Phase B 재개
+
+---
+
+## [2026-04-28] queue | TASK-021 — 프로젝트 프로세스 정기 모니터링 + 워커 RSS 가드 큐잉
+
+- 배경: ISSUE-005 누명 사건(2026-04-27) 후 강화 모니터(`/tmp/krag_monitor.py`)가 워커 lifecycle에 묶여 사라짐. 04-28 10:10 워커 SIGTERM 후 모니터 부재 — 다음 사건 사후 추적 도구 0. 또한 ISSUE-004 idle RSS 13.18GB 평탄(누수/fragmentation 가설 보강)에 대한 자동 차단 장치 없음.
+- 범위: `scripts/krag_snapshot.py`(5분 정기 관찰) + `scripts/krag_guard.py`(30초 워커 한정 RSS 가드) + LaunchAgents 2개 + `wiki/deployment/monitoring.md` 신설 + ADR-031.
+- 의도적 제외: 시스템 used% 가드(ISSUE-005 누명 결함 그대로), 워커 외 프로세스 가드(NextJS dev/Streamlit/Uvicorn 자동 kill 금지), 자동 재기동, `INDEXER_MAX_JOBS`(별건), 외부 알림(Slack/이메일 — 비용·키 합의 규칙), 메트릭 시각화.
+- 사용자 합의 사양 (2026-04-28): 대상 워커 한정(`apps.indexer_worker`) · RSS ≥ **14GB**(ISSUE-004 idle 13.18GB + 1GB 여유) · SIGTERM only · 자동 재기동 없음 · macOS 알림 켬 · 단일 페이즈.
+- 완료 기준: 두 스크립트 1회 실행 정상 → launchd 등록 후 첫 스냅샷·가드 발생 확인 → 모의 테스트(임계 일시 인하)로 SIGTERM + 알림 + 사후 dump 확인 → 일자 회전·7일 gzip 검증 → ADR-031 본문 + monitoring.md 신설 + ISSUE-005/004 cross-link.
+- 실행 큐: ✅ TASK-001~018 → ⏸️ TASK-019(Phase A 완료·Phase B 일시 중단) → **🎯 TASK-021 (현재)** → 🕐 TASK-012/013/020 (후순위) → 🛑 인증·공개배포 묶음 잔여 4개
+- 절차 예외: rag-task-start 0단계 "in-progress 있으면 중단" 원칙에 대한 사용자 승인 예외 — TASK-021은 NextJS 개발 환경 안정성 직결 운영 인프라이므로 끼워넣기. TASK-019은 ⏸️로 표기, Phase A 코드는 그대로 보존.
+- 반영: roadmap(실행 큐 라인 갱신 + TASK-021 상세 섹션 추가), overview(다음 할 일 표 TASK-019 ⏸️ + TASK-021 🎯 행 추가)
+
+---
+
+## [2026-04-28] ops | 워커 15h 가동 결과 + #189 reset + ISSUE-004/005 갱신
+
+### 가동 결과 (4/27 19:08 → 4/28 10:10, 15h 02m)
+- worker pid 79071 단일 가동, 강화 모니터(pid 79207, 5s fsync) + 알림 watcher(pid 81234) 동시 가동
+- 처리: 잡 45건 (#176~#220) — 정상 done **44** + 영구 failed **1**(#189 Game Coding Complete, retry=4 도달)
+- 큐 종료 상태: done **219** / failed 1 / pending·in_progress 0 — 4/28 00:48 watcher가 잡 완료 알림 발사 후 자가 종료
+- **임계 60% snapshot 발생 0건** — ISSUE-005 누명 시나리오 재발 없음. 이번 환경(NextJS dev 미가동)에서 가드는 안전 영역만 관찰
+- worker SIGTERM → 7초 graceful shutdown 정상, 사후 snapshot 자동 dump: `data/diag/snapshot_worker_dead_20260428T101037.log` (17KB)
+
+### 누수 추세 추가 데이터
+- 종료 시점 worker RSS **13167MB**, 종료 직전 9h 22m(00:48~10:10) idle 상태에서도 RSS 13.18GB 평탄 유지
+- 잡 처리 중 7~13GB 피크 후 회수 부분적, 다음 잡까지 13GB 보존 — 누수보다 fragmentation + ONNX/Docling 모델 잔여 텐서 가설이 더 정합
+- ISSUE-004 후속 안 5번 `INDEXER_MAX_JOBS` 자가 종료가 본 패턴 직접 차단함을 측정으로 뒷받침
+
+### 운영 조치
+- failed #189 reset: `status='pending', retry_count=0, started_at=NULL, finished_at=NULL, error=NULL` (다음 워커 재기동 시 자동 claim)
+- 다른 잡 변경 없음
+
+### 문서화
+- 갱신: [wiki/issues/open/ISSUE-004-docling-parse-longtail.md](wiki/issues/open/ISSUE-004-docling-parse-longtail.md) — "추가 측정 (2026-04-27 → 04-28)" 섹션 + 보강 가설 + 해결 방향 5번 우선순위 강화
+- 갱신: [wiki/issues/open/ISSUE-005-memory-guard-worker-scapegoat.md](wiki/issues/open/ISSUE-005-memory-guard-worker-scapegoat.md) — "가동 15시간 결과" 섹션, 이번 가동 내 누명 재발 없음 명시
+
+---
+
+## [2026-04-27] diagnose+ops | 메모리 가드 worker 누명 사건 + ISSUE-005 신설
+
+### 트리거
+사용자 보고 — "또 worker 실행 중 CPU·메모리 풀 났다, 메모리 올라와서 worker 죽었다고 보고받음". 색인 작업 중이었다고 알고 있음.
+
+### 진단
+- 현재 워커 프로세스 0건. `logs/indexer_worker.log` 4/26 19:13:49 이후 갱신 0 — 오늘 두 차례 떴던 워커 모두 **새 잡 처리 흔적 없이 idle 상태로 죽음**
+- `data/diag/auto_kill_mem_guard_20260427T103519.log` + `auto_kill_guard_20260426T194024.log` — 시스템 used% > 50% 임계로 가드가 SIGTERM 발사 (10:21 PID 2755 / 10:35 PID 65063)
+- `worker_rss_20260426T194024.log` 마지막 30초 결정적: 워커 RSS 7055MB → 평탄 또는 감소. **시스템 free%만 92→41%로 50pt 추락**. 폭주 주체는 다른 프로세스
+- DB: `ingest_jobs` done 175 / pending·failed 0, `documents` done 63 — 인덱싱 폭주 가설 기각
+- 진짜 범인 후보(미확인): 좀비 docling 자식, NextJS dev(TASK-019 Phase B), Streamlit/Uvicorn — 사후 점검 시 모두 종료 상태라 단서 부족
+
+### 운영 조치
+- worker 재기동: pid 79071, RSS 667MB로 폴링 시작 (19:08:32)
+- 강화 모니터 가동: `/tmp/krag_monitor.py` (pid 79207)
+  - 5초 간격, **매 줄 `flush + os.fsync`** — freeze 직전 마지막 상태 보존
+  - used% ≥ 60% 임계 시 `ps aux`(RSS top 30) + `vm_stat` 전체 → `data/diag/snapshot_warn_used<NN>_<ts>.log` 즉시 fsync
+  - **자동 SIGTERM 미적용** — 누명 방지, 관찰 전용
+- 19:46 시점 38분 안정: RSS 667MB 평탄, used 9%, 임계 snapshot 미발생
+
+### 문서화
+- 신설: [wiki/issues/open/ISSUE-005-memory-guard-worker-scapegoat.md](wiki/issues/open/ISSUE-005-memory-guard-worker-scapegoat.md)
+- 갱신: [index.md](index.md) Issues 표
+
+### 후속 (코드, 미합의)
+- 가드 로직 개선: 시스템 used% 임계 시 worker 고정 SIGTERM이 아니라 RSS top 식별
+- pid 트리(자식 포함) SIGTERM
+- 다음 발생 시 모니터 snapshot으로 범인 식별 후 본격 대응
+
+---
+
+## [2026-04-26] diagnose+docs | bulk 175잡 freeze 진단 + ISSUE-004 신설
+
+### 트리거
+사용자 보고 — 0.23.3 fix(EMBED_BATCH=64) 이후에도 bulk 색인 중 시스템 freeze 재발. 처음 몇 건은 정상이다 갑자기 멈춤.
+
+### 진단 (라이브 측정)
+워커 PID·RSS·CPU·threads + DB 잡 카운트를 5~15초 폴러로 추적하면서 실제 freeze 트리거를 식별.
+
+- **freeze 진짜 원인**: 워커 동시 기동. 단일 잡이 RSS 5~12GB 사용하므로 워커 2개면 합산 14~16GB → swap 폭주
+- **단일 워커 검증**: 2755 PID로 175잡 100% 처리 (실제 47잡 파싱 + hash 중복 87 + 이전 누적 24, sys_free 90~97% 유지)
+- **Docling 파싱이 단일 잡 비용의 90~96%** 차지 — 청크 수 무관, 페이지·테이블 그래프 비용
+- **stale `in_progress` 누수**: SIGKILL로 끊긴 잡(39, 40)이 영원히 잠김 — `FOR UPDATE SKIP LOCKED`로 다른 워커도 안 잡음
+- **`_save_markdown` 이중 파싱 결함** 식별 — `markdown_dir` 켜져 있으면 같은 PDF Docling 두 번 호출
+
+### 문서화
+- 신설: [wiki/issues/open/ISSUE-004-docling-parse-longtail.md](wiki/issues/open/ISSUE-004-docling-parse-longtail.md) — Docling 파싱 long-tail 후순위
+- 갱신: [wiki/issues/resolved/ISSUE-003](wiki/issues/resolved/ISSUE-003-ingest-memory-spike-system-freeze.md) "후속 발견" 섹션 — 워커 동시 기동, 이중 파싱, stale 누수 4건 식별
+- 갱신: [wiki/features/ingestion.md](wiki/features/ingestion.md) — "워커 1개 권장" 섹션 + 단일 잡 메모리 측정값 표 + 트러블슈팅 표 갱신
+- 갱신: [wiki/troubleshooting/common.md](wiki/troubleshooting/common.md) — "bulk 인덱싱 중 macOS freeze (워커 동시 기동)" + "stale `in_progress` 잡 수동 reset" 레시피 2개
+
+### 후속 (코드, 미합의)
+- P0: 워커 동시 기동 가드(pidfile/Postgres advisory lock) + stale in_progress 자동 reset
+- P1: `_save_markdown` 이중 파싱 제거
+- P2: `INDEXER_MAX_JOBS` env 도입 (누적형 안전망)
+- P3: ISSUE-004 (별도 검토)
+
+### 운영 조치
+- failed 15 + stale 2 = 17건 모두 `pending`으로 reset → 워커 자동 재처리 (대부분 hash 중복으로 즉시 done 예상)
+
+---
+
 ## [2026-04-26] impl+ops | 잡 탭 상태 필터 + stale 잡 #26 reset (0.23.4)
 
 ### 작업

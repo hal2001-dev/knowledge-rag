@@ -78,3 +78,36 @@ for start in range(0, total, EMBED_BATCH_SIZE):
 
 - 코드: `packages/vectorstore/qdrant_store.py` `add_documents`
 - 트리거: 사용자 보고 — bulk 인덱싱 중 시스템 freeze (2026-04-26 세션)
+
+---
+
+## 후속 발견 (2026-04-26 추가 진단)
+
+0.23.3 fix 이후에도 동일 증상(시스템 freeze) 재발 보고를 받고 진단한 결과, **본 fix는 임베딩 단계만 캡**하고 다음은 미해결로 남아 있음을 확인했습니다.
+
+### 1. 실제 freeze 트리거 — 워커 동시 기동
+- 사용자가 `apps.indexer_worker`를 실수로 2개 띄운 상태에서 큰 PDF 처리 시 합산 RSS 14~16GB → swap 폭주 → freeze
+- 단일 워커는 같은 PDF에서 RSS 5~12GB 사용해도 sys_free 90~97%로 안정 운행 (175잡 100% 처리 검증)
+- `apps.indexer_worker`에 동시 기동 가드(pidfile 또는 Postgres advisory lock) 부재가 운영 함정
+
+### 2. Docling 파싱 단계 무캡 — [ISSUE-004](../open/ISSUE-004-docling-parse-longtail.md)로 분리
+- 파싱 단계가 단일 잡 처리 시간의 90~96%, RSS의 거의 전체를 차지
+- 청크 수와 RSS 무관 — PDF 페이지·테이블 그래프 자체 비용
+- 라이브러리 외부 의존이라 우회 비용 큼, 후순위 별도 이슈로 트래킹
+
+### 3. `_save_markdown` 이중 파싱 (코드 결함)
+- [packages/loaders/docling_loader.py:54-55, 146-149](../../../../packages/loaders/docling_loader.py#L146-L149)에서 `markdown_save_dir` 켜져 있으면 같은 PDF를 `_DoclingLoader.load()`로 두 번 호출
+- [apps/config.py:36](../../../../apps/config.py#L36)의 `markdown_dir` 기본값이 `./data/markdown`이라 `.env` 미설정 시 자동 활성 — 단일 잡당 메모리·시간 사실상 2배
+- 본 fix는 이 결함과 별개 — 후속 P1 작업으로 정리 필요
+
+### 4. stale `in_progress` 잡 누수
+- 워커 SIGKILL로 끊긴 잡(이번엔 #39, #40)이 `status='in_progress'`로 영원히 잠김 — 다른 워커도 `FOR UPDATE SKIP LOCKED`로 안 잡음
+- 워커 시작 시 N분 이상 in_progress 잡을 자동 reset하는 housekeeping 부재
+
+### 결론
+
+본 ISSUE-003 자체(임베딩 미배치)는 해결 상태 그대로 유지(resolved). 단 freeze 종합 대응은 미완:
+- **P0**: 워커 동시 기동 가드 + stale in_progress 자동 reset
+- **P1**: `_save_markdown` 이중 파싱 제거
+- **P2**: `INDEXER_MAX_JOBS` 도입 (누적형 안전망)
+- **P3**: [ISSUE-004](../open/ISSUE-004-docling-parse-longtail.md) — Docling 파싱 단계 메모리·시간 long-tail

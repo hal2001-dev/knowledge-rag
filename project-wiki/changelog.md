@@ -22,6 +22,36 @@
 
 ---
 
+## [0.24.0] - 2026-04-28
+
+### Added
+- **운영 모니터링 인프라 (TASK-021, ADR-031)** — macOS launchd 기반 정기 스냅샷 + 워커 RSS 가드:
+  - `scripts/krag_snapshot.py` — 5분 주기 단발 실행, knowledge-rag 관련 프로세스(cwd/cmdline 매칭) + 시스템 전체 RSS top 10 + 인기 포트(3000/8000/8501) LISTEN 카운트 + 시스템 used%/free%/load1/load5. 매 줄 fsync, `data/diag/snapshot/YYYYMMDD.log` 일자별 단일 파일, 7일 후 .log.gz 자동 압축
+  - `scripts/krag_guard.py` — 30초 주기 단발 실행, **`apps.indexer_worker` 한정** RSS ≥ 14GB 시 그 PID에만 SIGTERM + macOS 알림(osascript) + 사후 dump(`guard_kill_pid<N>_<ts>.log` ps auxm + vm_stat). 자기 PID 제외 명시 로직. `--observe-only` 토글, `KRAG_GUARD_RSS_GB` 환경변수 임계 조정
+  - LaunchAgents 2개: `~/Library/LaunchAgents/com.knowledge-rag.snapshot.plist` (StartInterval=300) + `com.knowledge-rag.guard.plist` (StartInterval=30, KRAG_GUARD_RSS_GB=14). RunAtLoad=true
+  - [wiki/deployment/monitoring.md](wiki/deployment/monitoring.md) (신설) — 등록·해제·로그 위치·임계 조정·모의 테스트 절차
+
+### Changed
+- **ISSUE-005 후속 운영 조치** ([wiki/issues/open/ISSUE-005-memory-guard-worker-scapegoat.md](wiki/issues/open/ISSUE-005-memory-guard-worker-scapegoat.md)) — 강화 모니터(`/tmp/krag_monitor.py`)가 워커 lifecycle에 묶여 사라진 한계 보완. **launchd fork 모델로 PID 의존 0**, Claude Code/셸 lifecycle 무관. 워커 한정 SIGTERM으로 누명 결함 정반대로 뒤집음
+- **ISSUE-004 자동 차단 안전망** ([wiki/issues/open/ISSUE-004-docling-parse-longtail.md](wiki/issues/open/ISSUE-004-docling-parse-longtail.md)) — idle RSS 13.18GB 평탄 패턴이 14GB 넘기 전 자동 컷. 해결 방향 5번(`INDEXER_MAX_JOBS` 자가 종료)을 일부만 충족, 자가 종료는 별건
+
+### Verification (2026-04-28 19:51 KST)
+- launchd 등록 직후 `RunAtLoad=true`로 즉시 1회 실행 확인 (`launchctl list | grep knowledge-rag` → snapshot/guard 양쪽 0 exit)
+- 첫 스냅샷 dump 정상 (시스템 used 9.3% / 프로젝트 프로세스 9건 / top10 / 포트 3개)
+- 첫 가드 no-op 정상 (`worker not running (threshold=14.0GB)`)
+- 모의 SIGTERM 검증 통과 — decoy 프로세스(`exec -a "python -m apps.indexer_worker --decoy" sleep 300`) 띄운 뒤:
+  - `KRAG_GUARD_RSS_GB=0 ... --observe-only`: decoy 감지하지만 kill 안 함 (`OBSERVE pid=NNN rss=NNNMB >= 0MB`)
+  - `KRAG_GUARD_RSS_GB=0 ... `(real): SIGTERM 발사, decoy DEAD, 사후 dump 82KB 생성
+- 자기 PID 제외 로직 정상 (가드 자체는 kill되지 않음)
+
+### Notes
+- 임계 14GB는 ISSUE-004 idle 13.18GB + 1GB 여유. 운영 데이터 2~4주 축적 후 16GB 또는 "2회 연속 트리거" 컷 보강 검토 (별건)
+- 워커 외 프로세스 가드 없음 — NextJS dev / Streamlit / Uvicorn은 관찰만(TASK-019 진행 중 false positive kill 회피)
+- 외부 알림(Slack/이메일) 미적용 — 비용·키 사전 합의 규칙(`feedback_cost_keys`)
+- TASK-019(NextJS UI 분리) 일시 중단 후 끼워넣은 운영 인프라 — Phase A 완료 코드 보존, 본 TASK 완료 후 Phase B 재개
+
+---
+
 ## [0.23.4] - 2026-04-26
 
 ### Added

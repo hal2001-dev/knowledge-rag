@@ -186,6 +186,45 @@ timeout=600
 ```
 **참고**: Docling 모델은 최초 1회 다운로드 후 캐시됨. 이후 실행은 빠름.
 
+### bulk 인덱싱 중 macOS freeze (워커 동시 기동)
+**발생 상황**: `bulk_ingest --via-queue`로 큰 PDF 다수 enqueue 후, `apps.indexer_worker`를 두 개 이상 띄운 상태에서 시스템 응답 불가
+**증상**: 처음 작은 PDF 몇 건은 정상, 80MB+ PDF 만나는 시점에 합산 RSS 14~16GB → swap 폭주 → 강제 종료 외 회복 불가
+**원인**: 워커 동시 기동 가드 부재. 단일 잡당 RSS 5~12GB 사용하므로 워커 2개면 합산이 OS 임계 초과 (ISSUE-003 후속 진단)
+**해결**:
+```bash
+# 띄우기 전 확인 — 비어 있어야 함
+pgrep -fl "apps.indexer_worker"
+# 살아있는 워커 발견 시 graceful 종료
+pkill -TERM -f "apps.indexer_worker"
+# 새 워커 1개만 띄움
+.venv/bin/python -m apps.indexer_worker
+```
+**재발 방지**: 운영자 직접 1개 보장. 가드(pidfile/Postgres advisory lock) 도입은 후속 P0 작업
+**관련**: [ISSUE-003 후속 노트](../issues/resolved/ISSUE-003-ingest-memory-spike-system-freeze.md), [ISSUE-004](../issues/open/ISSUE-004-docling-parse-longtail.md)
+
+### stale `in_progress` 잡 수동 reset
+**발생 상황**: 워커를 SIGKILL로 강제 종료한 직후 잡이 `status='in_progress'`로 영원히 잠김. 다른 워커도 안 잡음(`FOR UPDATE SKIP LOCKED`)
+**원인**: `apps.indexer_worker._process_job` 도중 프로세스 죽으면 `mark_done`/`mark_failed`가 실행되지 않아 status·started_at만 남음
+**해결**: SQL로 `pending`으로 reset (워커 폴링 주기에서 자동 재claim)
+```bash
+.venv/bin/python -c "
+from dotenv import load_dotenv; load_dotenv()
+from sqlalchemy import create_engine, text
+import os
+e = create_engine(os.environ['POSTGRES_URL'])
+with e.begin() as c:
+    rows = c.execute(text('''
+        UPDATE ingest_jobs
+        SET status='pending', retry_count=0, error=NULL, started_at=NULL, finished_at=NULL
+        WHERE status='in_progress' AND started_at < now() - interval '10 minutes'
+        RETURNING id, title
+    ''')).fetchall()
+    for r in rows: print('reset:', r)
+"
+```
+**참고**: 이미 hash 중복인 잡은 워커가 즉시 done 처리. retry_count=4(영구 실패)도 같은 패턴으로 일괄 reset 가능 (`status IN ('failed','in_progress')`)
+**관련**: ADR-028 후속, [ISSUE-003 후속 노트](../issues/resolved/ISSUE-003-ingest-memory-spike-system-freeze.md)
+
 ---
 
 > 새 에러 해결 시 여기에 추가: "troubleshooting에 추가해줘"

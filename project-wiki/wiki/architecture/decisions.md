@@ -1,6 +1,6 @@
 # Architecture Decision Records (ADR)
 
-**마지막 업데이트**: 2026-04-26
+**마지막 업데이트**: 2026-04-28
 
 설계에서 중요한 결정을 내릴 때마다 여기에 기록합니다.
 "왜 이렇게 했지?" 를 나중에 찾아보기 위한 파일입니다.
@@ -1309,3 +1309,79 @@ LAN 신뢰 가정에 의존 — 외부 노출 시점에 reverse proxy로 Origin 
 - 답변 스트리밍 SSE 도입 — 별건
 - 외부 공개 시 Cloudflare Tunnel + Access (TASK-012)와 통합 가능 (Clerk 사용자 식별이 살아있는 채로 엣지 보호 추가)
 - 관리자 UI NextJS 이전 — 보류 묶음 추가 해제 시 재검토
+
+---
+
+## ADR-031: 프로젝트 프로세스 정기 모니터링 + 워커 RSS 가드 — 관찰/가드 분리, 워커 한정 SIGTERM
+**날짜**: 2026-04-28
+**상태**: accepted
+**관련**: TASK-021, [ISSUE-005](../issues/open/ISSUE-005-memory-guard-worker-scapegoat.md)(누명 사건), [ISSUE-004](../issues/open/ISSUE-004-docling-parse-longtail.md)(idle RSS 13.18GB 가설), [ISSUE-003](../issues/resolved/ISSUE-003-ingest-memory-spike-system-freeze.md)(임베딩 단계 freeze 해결), ADR-028(워커 분리)
+
+### 배경
+- ISSUE-005(2026-04-27): 시스템 used% 50% 임계 도달 시 가드가 워커만 고정 SIGTERM. 진짜 폭주 주체는 다른 프로세스인데 워커가 누명. 가드 결함 3가지 — 시스템 used% 단일 트리거, 죽일 대상 워커 고정, RSS top 식별 없음
+- ISSUE-005 이후 강화 모니터(`/tmp/krag_monitor.py`, 5초 간격 fsync, 관찰 전용)를 가동했으나 **워커 lifecycle에 묶여** 워커 SIGTERM(2026-04-28 10:10)과 함께 종료 — 다음 사건 사후 추적 도구 0
+- ISSUE-004 추가 측정: 워커 가동 15시간 결과, 잡 종료 후에도 idle 상태에서 **RSS 13.18GB 평탄 9시간 22분** 유지. 누수보다 fragmentation + ONNX/Docling 모델 잔여 텐서 가설이 더 정합. 자동 차단 안전망 부재
+- 사용자 요구(2026-04-28): "프로젝트에서 실행한 프로세스를 정기적으로 모니터링" + "특정 프로세스가 임계점을 넘어가면 kill"
+
+### 선택지
+1. **관찰 데몬 상시 가동(launchd KeepAlive) + 자체 임계 가드 일체화** — 데몬 1개로 끝, 단순. 단점: 데몬 자체가 죽으면 KeepAlive 재기동 사이 사각, ISSUE-005 강화 모니터처럼 PID lifecycle 의존성 발생
+2. **launchd 정기 fork (5분 스냅샷 + 30초 가드 분리)** — 채택. fork-exec 모델이라 PID 의존 0, 매 주기 새 프로세스. 관찰과 가드 책임 분리
+3. **시스템 wide RSS top 식별 + 진짜 범인 종료** (ISSUE-005 후속 안 1·2) — 본격 해결이지만 "어떤 프로세스를 죽일지" 결정 알고리즘이 어렵고 TASK-019(NextJS dev 등) 진행 중인 사용자 환경에서 false positive kill 위험
+4. **`INDEXER_MAX_JOBS` 자가 종료**(ISSUE-004 후속 안 5) — fragmentation 누적 직접 차단이지만 본 ADR과 결이 다름(워커 자가 정책 vs 외부 가드). 별건
+5. **현 상태 유지** — ISSUE-005 누명 재발 위험 + ISSUE-004 자동 차단 부재
+
+### 결정
+**옵션 2** 채택. 이유:
+- launchd fork 모델로 데몬 부재 사각 0 — 매 주기 새 프로세스로 상시성 보장
+- 관찰(스냅샷)과 가드(SIGTERM)의 책임 분리 — 가드 정책 변경이 관찰 로그에 영향 없음
+- **워커 한정 SIGTERM** — ISSUE-005 누명 결함(고정 워커 + 시스템 트리거)을 정반대로 뒤집어, **그 워커 자체의 RSS**가 임계를 넘었을 때만 그 워커를 종료. 다른 프로세스는 관찰만. 누명 재발 구조적 차단
+- 옵션 3·4는 별건 후속으로 분리 — 본 ADR은 워커 자가 누수 패턴(ISSUE-004) 한정 안전망에 집중
+
+### 구현
+
+**관찰 (`scripts/krag_snapshot.py`)** — 5분 주기 단발 실행:
+- 식별 조건: `cwd` 또는 cmdline에 `knowledge-rag` 포함된 프로세스
+- 덤프: 시각, 시스템 used%/free%/load1/load5, 프로젝트 프로세스 목록(PID/RSS/%CPU/etime/cmd), 시스템 전체 RSS top 10, 인기 포트(3000/8000/8501) LISTEN 카운트
+- 저장: `data/diag/snapshot/YYYYMMDD.log` 일자별 단일 파일, **매 줄 fsync** + append 모드
+- 자가 처리: 7일 전 파일 gzip 압축
+
+**가드 (`scripts/krag_guard.py`)** — 30초 주기 단발 실행:
+- 대상: `apps.indexer_worker` 한정. PID 식별 후 자기 자신 PID 제외
+- 트리거: RSS ≥ **14GB** (ISSUE-004 측정 idle 13.18GB + 1GB 여유)
+- 동작: SIGTERM only(SIGKILL 미사용, ISSUE-005에서 7초 graceful 검증) → osascript 알림(macOS 알림센터) → 사후 dump(`data/diag/snapshot/`에 RSS top 30 + vm_stat 즉시)
+- 토글: `--observe-only` 플래그(관찰 전용 회귀), `KRAG_GUARD_RSS_GB` 환경변수 임계 조정
+- 워커 미가동 시: 정상 종료(0 exit, 1줄 로그)
+- 자동 재기동: **없음** — 사용자가 상태 보고 재기동 결정
+
+**launchd**:
+- `~/Library/LaunchAgents/com.knowledge-rag.snapshot.plist` — `StartInterval=300`
+- `~/Library/LaunchAgents/com.knowledge-rag.guard.plist` — `StartInterval=30`
+- 사용자 영역 plist (시스템 전역 미사용)
+
+### 결과 (착수 시 측정 예정)
+- launchd 등록 후 5분 내 첫 스냅샷 발생 + 30초 내 첫 가드 실행
+- 워커 미가동 상태에서 가드 1회 실행 시 no-op 정상 종료
+- 모의 테스트: `KRAG_GUARD_RSS_GB=1` 임시 인하로 강제 트리거 → SIGTERM + macOS 알림 + 사후 snapshot dump 확인
+- 일자 회전: 자정 경계에서 새 파일 생성, 7일 전 파일 gzip 검증
+
+### 관찰·한계
+- **임계 14GB 빠듯함**: ISSUE-004 idle 13.18GB가 상시 패턴이면 잡 처리 중 14GB 잠깐 터치 false positive 가능. 운영 데이터로 16GB 등 조정 검토. 또는 "2회 연속 14GB 도달" 컷 보강(별건)
+- **launchd 사용자 영역 한정**: 로그아웃 시 가드 정지. 시스템 전역(LaunchDaemons)은 권한 부담 큼, 1인 macOS 환경엔 사용자 영역 충분
+- **Claude Code/셸 lifecycle 무관**: 모니터링은 launchd fork 모델이라 Claude Code 재시작·터미널 종료·셸 세션 재로그인에 영향 없음. 사용자 로그아웃 시만 정지(재로그인 시 RunAtLoad로 자동 재개), macOS 재부팅도 자동 복귀. 등록은 `launchctl load` 1회, 회귀는 `launchctl unload` 1회
+- **macOS 알림 권한**: 첫 실행 시 권한 다이얼로그. 거부되면 무음 kill 발생(로그엔 남음, 사후 추적 가능)
+- **외부 알림 없음**: Slack/이메일 미적용 — 비용·키 합의 규칙(`feedback_cost_keys`)
+- **워커 외 프로세스 가드 없음**: NextJS dev/Streamlit/Uvicorn은 관찰만. 추후 합의 시 화이트리스트 확장
+- **자기 PID 제외**: 가드 스크립트가 우연히 cmdline에 `apps.indexer_worker` 포함 시 자살 방지 — 명시 제외 로직
+
+### 기본값
+- 스냅샷 주기 5분, 가드 주기 30초
+- 가드 임계 RSS=**14GB**, 대상=`apps.indexer_worker`, 시그널=SIGTERM
+- 알림 켬, 자동 재기동 없음
+- 회귀: `--observe-only` 플래그 또는 `launchctl unload`로 즉시 무력화
+
+### 후속
+- 관찰 데이터 축적(2~4주) 후 임계 조정(14→16GB 또는 2회 연속 트리거)
+- ISSUE-005 본격 해결: 시스템 used% 가드를 RSS top 식별 + 사용자 화이트리스트 기반으로 재설계 — 별건
+- ISSUE-004 후속 5번 `INDEXER_MAX_JOBS` 자가 종료 — 별건, 본 ADR과 보완 관계
+- 가드 알림 엔드포인트 추가(Slack/이메일) — 외부 키 사전 합의 시
+- launchd KeepAlive로 가드 자체를 데몬화 검토 — 현재 fork 모델로 충분, 부하 데이터 보고 결정

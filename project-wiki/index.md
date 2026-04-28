@@ -1,7 +1,7 @@
 # Wiki Index
 
-**마지막 업데이트**: 2026-04-26 (Streamlit 잡 탭 상태 필터 + stale 잡 #26 reset 0.23.4 ✅. 이전: ISSUE-003 메모리 폭발 fix 0.23.3, TASK-019 Phase A NextJS 셋업 0.23.2)
-**총 페이지 수**: 28 (루트 9 + wiki/ 16 + issues/open/ 2 + issues/resolved/ 1)
+**마지막 업데이트**: 2026-04-28 (TASK-021 운영 인프라 도입 — launchd 5분 스냅샷 + 30초 워커 RSS 가드, ADR-031, monitoring.md 신설. 이전: 워커 15h 가동·#189 reset·ISSUE-005 갱신)
+**총 페이지 수**: 31 (루트 9 + wiki/ 17 + issues/open/ 4 + issues/resolved/ 1)
 
 ---
 
@@ -93,7 +93,7 @@
 | 페이지 | 설명 | 상태 |
 |--------|------|------|
 | [runbook.md](wiki/deployment/runbook.md) | 배포 절차, 롤백 방법 | draft |
-| `monitoring.md` _(미작성)_ | 모니터링 지표, 알림 기준 | - |
+| [monitoring.md](wiki/deployment/monitoring.md) | 운영 모니터링 — 정기 스냅샷(launchd 5분) + 워커 RSS 가드(30초, 14GB 임계) | active |
 
 ---
 
@@ -135,7 +135,9 @@
 |----|------|------|------|
 | [ISSUE-001](wiki/issues/open/ISSUE-001-mobile-file-uploader-no-preview.md) | 모바일 파일 업로더 선택 후 파일명 미표시 | open · 보류 | 2026-04-22 |
 | [ISSUE-002](wiki/issues/open/ISSUE-002-suggestion-badge-click-unresponsive.md) | 후속 질문 배지 두 번째 이후 클릭 무반응 (모바일 특정 의심) | open · 보류 | 2026-04-22 |
-| [ISSUE-003](wiki/issues/resolved/ISSUE-003-ingest-memory-spike-system-freeze.md) | 인덱싱 중 메모리 폭발로 시스템 freeze (qdrant_store.add_documents 미배치 임베딩) | resolved · 2026-04-26 | 2026-04-26 |
+| [ISSUE-003](wiki/issues/resolved/ISSUE-003-ingest-memory-spike-system-freeze.md) | 인덱싱 중 메모리 폭발로 시스템 freeze (qdrant_store.add_documents 미배치 임베딩) | resolved · 2026-04-26 (후속 노트 추가) | 2026-04-26 |
+| [ISSUE-004](wiki/issues/open/ISSUE-004-docling-parse-longtail.md) | Docling 파싱 단계 메모리·시간 long-tail (큰 PDF에서 RSS 12GB·8분) | open · 후순위 | 2026-04-26 |
+| [ISSUE-005](wiki/issues/open/ISSUE-005-memory-guard-worker-scapegoat.md) | 메모리 가드가 idle worker를 누명으로 SIGTERM (시스템 used% 폭주의 진짜 범인 미식별) | open · 관찰 중 | 2026-04-27 |
 
 ---
 

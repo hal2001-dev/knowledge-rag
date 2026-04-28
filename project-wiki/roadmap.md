@@ -1,7 +1,7 @@
 # 로드맵
 
 **상태**: active
-**마지막 업데이트**: 2026-04-25
+**마지막 업데이트**: 2026-04-28
 **관련 페이지**: [overview.md](overview.md), [features.md](wiki/requirements/features.md)
 
 ---
@@ -32,7 +32,8 @@
 → ✅ TASK-016 (2026-04-25 완료, ADR-026) — 도서관 탭 + doc_filter 라우팅 (카테고리 그룹 카드 그리드, "이 책에 대해 묻기")
 → ✅ TASK-017 (2026-04-25 완료, ADR-027) — 랜딩 카드 v2 (카테고리 분포·주제 칩·최근 문서 카드)
 → ✅ TASK-018 (2026-04-25 완료, ADR-028) — 색인 워커 분리 (Postgres `ingest_jobs` 큐 + indexer 프로세스, SKIP LOCKED claim, advisory lock 마이그레이션 race 해소)
-→ 🆕 TASK-019 (**최우선**, 2026-04-25 큐잉) — 사용자 UI NextJS 분리 + Clerk 인증 (관리자 UI는 Streamlit 잔류, 동결). ADR-030 예약
+→ ✅ TASK-021 (2026-04-28 완료, ADR-031) — 프로젝트 프로세스 정기 모니터링 + 워커 RSS 가드 (launchd 5분 스냅샷 + 30초 가드, ISSUE-005 누명 사건 후속, 모의 SIGTERM 테스트 통과)
+→ ⚙️ TASK-019 (Phase A 완료·Phase B 재개 차례, 2026-04-28) — 사용자 UI NextJS 분리 + Clerk 인증. ADR-030
 → 🕐 TASK-012 (후순위, 2026-04-23 큐잉) — Cloudflare Tunnel + Access 외부 노출 게이트웨이 (코드 0줄, 운영 문서 중심)
 → 🕐 TASK-013 (후순위, 2026-04-23 큐잉) — MkDocs Material + GitHub Pages 문서 사이트 (현재 project-wiki/ 구조 유지, CI 자동 배포)
 → 🕐 TASK-020 (후순위, 2026-04-25 큐잉) — Series/묶음 문서 (Option D: 1급 시민 + 색인 시점 자동 묶기 + 관리자 사후 검수)
@@ -935,7 +936,109 @@ indexer_worker BackgroundTasks 체인을 확장: `summary → classify → serie
 
 ---
 
-## TASK-014~017 묶음 — "지식 도서관(Knowledge Library)" 사용자 가시성
+## TASK-021: 프로젝트 프로세스 정기 모니터링 + 워커 RSS 가드 — ✅ 완료 (2026-04-28)
+→ ADR-031, changelog [0.24.0], [wiki/deployment/monitoring.md](wiki/deployment/monitoring.md)
+
+**결과**: 스크립트 2개 + LaunchAgents 2개 도입, launchd 등록 시 즉시 1회 실행 + 정기 fork 정상. 모의 SIGTERM 테스트 통과(decoy 프로세스 KILL + 사후 dump 82KB + 자기 PID 제외 검증). ISSUE-005/004 위키 cross-link 완료. TASK-019 Phase B 재개 차례.
+
+---
+
+### 원본 정의 (참고용 보존)
+
+**상태**: queued (2026-04-28 큐잉) — TASK-019 일시 중단 후 끼워넣기. 시스템 freeze 재발 차단이 NextJS 개발 환경 안정성에 직결되는 운영 인프라
+**우선순위**: 현재 — 사용자 명시 지시 (2026-04-28)
+**관련**: 신규 ADR (착수 시 작성·번호 부여 예정, 다음 가용 ADR-031). [ISSUE-005](wiki/issues/open/ISSUE-005-memory-guard-worker-scapegoat.md) 후속
+
+### 배경
+ISSUE-005(메모리 가드 워커 누명 사건, 2026-04-27) 이후 강화 모니터(`/tmp/krag_monitor.py`)는 워커 lifecycle에 묶여 워커 종료와 함께 사라졌다. 2026-04-28 10:10 워커 SIGTERM 시점부터 모니터 부재 — 다음 사건 발생 시 사후 추적 도구 0. 또한 ISSUE-004(Docling 메모리 long-tail) 누수/fragmentation 가설이 idle RSS 13.18GB 평탄 유지로 보강됐으나, 자동 차단 장치는 없음. **워커와 무관하게 상시 가동되는 정기 모니터 + 프로세스별 임계 기반 가드**가 필요.
+
+### 목표
+프로젝트(knowledge-rag) 관련 프로세스를 **정기 스냅샷**으로 관찰하고, 워커 RSS가 임계를 넘으면 **그 워커만** 자동 SIGTERM하는 운영 인프라를 도입한다. ISSUE-005 누명(다른 범인을 잡는 사고)을 구조적으로 차단한다.
+
+### 아키텍처 결정 (초안, 착수 시 ADR-031로 확정)
+
+**관찰과 가드의 분리**:
+| 컴포넌트 | 주기 | 역할 | 대상 | 동작 |
+|---|---|---|---|---|
+| `scripts/krag_snapshot.py` | **5분** | 정기 관찰(전용) | 모든 knowledge-rag 관련 프로세스 + 시스템 전체 | 스냅샷 1회 dump → 종료 |
+| `scripts/krag_guard.py` | **30초** | 프로세스별 임계 가드 | `apps.indexer_worker` 한정 | RSS ≥ 임계 시 그 PID에만 SIGTERM + 알림 |
+
+두 컴포넌트 모두 launchd가 fork — 데몬 상시 가동 없음, 워커 lifecycle과 독립.
+
+**스냅샷 1회 내용**:
+- 시각, 시스템 used%/free%/load1/load5
+- knowledge-rag 프로세스 (PID/RSS/%CPU/etime/cmd) — `cwd` 또는 cmdline에 knowledge-rag 포함
+- 시스템 전체 RSS top 10
+- 인기 포트 LISTEN 카운트(3000/8000/8501)
+- 한 줄당 fsync, append 모드
+
+**가드 정책 (사용자 합의 2026-04-28)**:
+- **대상**: `apps.indexer_worker` 한정 (NextJS dev / Streamlit / Uvicorn은 제외)
+- **임계**: RSS ≥ **14GB** (ISSUE-004 idle 13.18GB 평탄 + 1GB 여유)
+- **시그널**: SIGTERM only (graceful 7초 검증됨, SIGKILL 미사용)
+- **자동 재기동**: 없음 — 사용자가 상태 보고 결정
+- **알림**: macOS 알림 켬 (osascript display notification, 외부 키 0)
+
+**저장**:
+- 스냅샷: `data/diag/snapshot/YYYYMMDD.log` — 일자별 단일 파일 (5분 × 288회/일 × ~20줄 ≈ ~1MB/일)
+- 가드: `data/diag/guard/YYYYMMDD.log` — 가드 실행 로그(임계 미도달은 1줄, kill 발생 시 사후 snapshot dump 포함)
+- 7일 후 gzip 자동 압축 (스크립트 내 자가 처리)
+
+**launchd plist**:
+- `~/Library/LaunchAgents/com.knowledge-rag.snapshot.plist` — 5분 주기 (`StartInterval=300`)
+- `~/Library/LaunchAgents/com.knowledge-rag.guard.plist` — 30초 주기 (`StartInterval=30`)
+
+### 범위 — 에이전트가 할 일 (착수 시)
+
+**스크립트:**
+- [ ] `scripts/krag_snapshot.py` — 단발 실행, knowledge-rag 프로세스 식별(`pwdx`/cmdline grep), top 10 RSS dump, 포트 LISTEN, fsync append
+- [ ] `scripts/krag_guard.py` — `apps.indexer_worker` PID 식별, RSS ≥ 14GB 시 SIGTERM + osascript 알림 + `data/diag/snapshot/` 사후 dump
+- [ ] 7일 gzip 회전 로직 (양 스크립트 공통 헬퍼)
+
+**launchd:**
+- [ ] `~/Library/LaunchAgents/com.knowledge-rag.snapshot.plist` (StartInterval=300)
+- [ ] `~/Library/LaunchAgents/com.knowledge-rag.guard.plist` (StartInterval=30)
+- [ ] `launchctl load` 절차 + `launchctl list | grep knowledge-rag` 확인
+
+**문서:**
+- [ ] ADR-031 — 관찰/가드 분리 결정, 임계값 14GB 근거(ISSUE-004 측정), 대상 워커 한정 사유(ISSUE-005 누명 회피)
+- [ ] `wiki/deployment/monitoring.md` (신설) — 모니터링/가드 운영 가이드, plist 등록 절차, 로그 위치, 임계 조정 방법
+- [ ] `wiki/issues/open/ISSUE-005-*.md` — 운영 조치 섹션에 본 TASK 도입 cross-link, "관찰 모니터 부재" 단서 보완 명시
+- [ ] `wiki/issues/open/ISSUE-004-*.md` — 자동 차단 안전망 도입 명시 (해결 방향 5번 일부 충족)
+- [ ] `wiki/index.md` — Deployment 표 monitoring.md 상태 `draft` → `active`
+- [ ] `project-wiki/changelog.md` — 신규 버전 (운영 인프라)
+- [ ] `wiki/overview.md` — 진행표·최근 결정·완료 태스크
+- [ ] `log.md` impl 항목
+
+### 의도적 제외
+- **시스템 used% 임계 가드** — ISSUE-005 누명 사건의 결함 그대로. RSS 기반 프로세스별 가드만
+- **워커 외 프로세스 가드** (NextJS dev / Streamlit / Uvicorn) — 개발 중인 프로세스를 자동 kill하면 사용자 혼란. 추후 합의 시 화이트리스트 확장
+- **자동 재기동** — kill 후 사람이 상태 보고 결정. launchd KeepAlive 미사용
+- **`INDEXER_MAX_JOBS` 자가 종료** — ISSUE-004 후속 안 5번. 본 TASK 범위 밖, 별건 후속
+- **외부 알림** (Slack / 이메일) — 비용·키 사전 합의 규칙. macOS 로컬 알림만
+- **메트릭 시각화** (Grafana / 시계열 DB) — 텍스트 로그 + grep 기반 운영, 위 단계 진입 시 별건
+- **가드 로직 ISSUE-005 본격 개선** (RSS top 식별 → 진짜 범인 종료) — 본 TASK는 워커 한정 안전판. 시스템 전체 가드 재설계는 별건
+
+### 완료 기준
+- `scripts/krag_snapshot.py` 1회 실행 시 정상 dump (시스템 used%/프로세스 목록/포트/top RSS)
+- `scripts/krag_guard.py` 1회 실행 시 워커 미가동 상태에서 정상 종료(0 exit, 로그 1줄), 워커 RSS < 14GB일 때 정상 종료(no-op)
+- launchd 등록 후 5분 내 첫 스냅샷 발생 + 30초 내 첫 가드 실행 확인
+- 모의 테스트: 워커 RSS를 14GB 초과로 강제(또는 임계를 임시로 낮춰) → 30초 내 SIGTERM + macOS 알림 + 사후 snapshot dump
+- 일자 회전: 자정 경계에서 새 파일 생성, 7일 전 파일 gzip 검증 (date stub로 시뮬레이션)
+- ADR-031 본문 작성 완료, monitoring.md 신설, ISSUE-005/004 cross-link
+
+### 회귀 전략
+- launchd plist `unload` 한 줄로 즉시 무력화: `launchctl unload ~/Library/LaunchAgents/com.knowledge-rag.guard.plist`
+- 가드 임계는 plist 환경변수(`KRAG_GUARD_RSS_GB=14`) 또는 스크립트 상수, 1줄 변경으로 조정
+- kill 정책 비활성: 가드 스크립트 `--observe-only` 플래그 (관찰 전용 회귀)
+- 데이터 정합성에 영향 없음 (관찰·SIGTERM only, DB 변경 0, Qdrant 변경 0)
+
+### 리스크 체크
+- **임계 14GB가 너무 공격적** — 정상 잡 처리 중 13GB 피크 후 14GB 잠깐 터치 시 false positive. 합의 시 30초 단발이 아닌 2회 연속 14GB 도달 시 컷으로 보강 검토 가능 (ADR-031 설계 단계에서 결정)
+- **macOS 알림 권한** — 첫 실행 시 시스템 권한 다이얼로그. 거부되면 무음 kill됨 (로그엔 남음, 즉 사후 추적 가능)
+- **launchd plist 사용자 영역 한정** — 로그아웃 시 가드 정지. 시스템 전역 가드는 별건(권한 부담 큼)
+- **자기 자신을 죽일 가능성** — 가드 스크립트 자체 PID 제외 로직 명시 필요
+- **idle 13.18GB 평탄(ISSUE-004 가설)이 실제 상시 패턴** — 임계 14GB는 매우 빠듯. 운영 데이터로 16GB 등 조정 검토
 
 **상태**: queued (2026-04-25 큐잉)
 **우선순위**: 중간~높음 — 사용자 명시 요구. 검색 품질이 아닌 **"이 RAG에 어떤 정보가 있는지" 탐색 가능성** 개선

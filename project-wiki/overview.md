@@ -1,7 +1,7 @@
 # Project Overview
 
 **상태**: active
-**마지막 업데이트**: 2026-04-26
+**마지막 업데이트**: 2026-04-28
 **관련 페이지**: `pipeline.md` _(미작성)_, [stack.md](wiki/architecture/stack.md)
 
 ---
@@ -26,6 +26,7 @@
 | 관측 (LangSmith) | `done` | `rag.ingest`/`rag.query` 트레이스, 세션 태그, 단계별 타이머 |
 | 모바일 접근 | `done` | XSRF/CORS off (개발), 업로드 상한 200MB |
 | 평가 | `done` | Phase 1 Retrieval 벤치 + Phase 2 Ragas. 기반선 확보 (ADR-015, 2026-04-22) |
+| 운영 모니터링 | `done` | launchd 5분 스냅샷 + 30초 워커 RSS 가드(14GB 임계, SIGTERM only). ADR-031, [monitoring.md](wiki/deployment/monitoring.md), TASK-021 (2026-04-28) |
 | 배포 | `todo` | |
 
 ---
@@ -61,6 +62,7 @@
 
 > [decisions.md](wiki/architecture/decisions.md) 참고
 
+- **ADR-031 (2026-04-28)**: 프로젝트 프로세스 정기 모니터링 + 워커 RSS 가드 — macOS launchd fork 모델로 PID 의존 0의 정기 관찰(스냅샷 5분) + 워커 한정 가드(`apps.indexer_worker` RSS ≥ 14GB SIGTERM, 30초 주기). ISSUE-005 누명 결함(시스템 used% + 워커 고정)을 정반대로 뒤집어, 그 워커 RSS 임계 시 그 워커만 종료. macOS 알림 + 사후 dump. `--observe-only`/`KRAG_GUARD_RSS_GB` 토글, `launchctl unload` 1회로 즉시 회귀. Claude Code/셸 lifecycle 무관. ISSUE-004 idle 13.18GB 평탄 패턴에 대한 자동 차단 안전망. TASK-021 완료
 - **ADR-030 (2026-04-26)**: 사용자 UI NextJS 분리 + Clerk 인증 + FastAPI Origin 분기 — 사용자(채팅·도서관·대화) NextJS thin client, 관리자(문서·잡·시스템·평가) Streamlit 잔류·동결. Clerk 이메일 OTP 보호 라우트. FastAPI는 JWT 헤더 있으면 Clerk 검증, LAN/localhost 무헤더는 `user_id='admin'` 자동, 외부 origin 무헤더는 401. `conversations.user_id NOT NULL DEFAULT 'admin'` 마이그레이션 + 기존 행 admin 백필. `category_filter` 백엔드 통과 추가. Phase 1 백엔드 토대(0.23.0) + Phase 1 hotfix(0.23.1, set_classification_payload nested) + Phase A NextJS 셋업(0.23.2, Next 16/Tailwind 4/Clerk 7.2) 완료. Phase B(AppShell + 페이지) 진행 중
 - **ADR-028 (2026-04-25)**: 색인 워커 분리 — Postgres `ingest_jobs` 큐(SKIP LOCKED) + 독립 워커 프로세스(`python -m apps.indexer_worker`). FastAPI는 enqueue+202만, 워커가 인덱싱·요약·분류 인라인 처리. `INGEST_MODE=queue|sync` 토글로 회귀 가능. 마이그레이션은 `pg_advisory_xact_lock`으로 동시 기동 race 해소. bulk_ingest `--via-queue` 추가
 - **ADR-027 (2026-04-25)**: 랜딩 카드 v2 — `/index/overview` 응답에 `top_tags`/`categories`/`recent_docs` 추가. 빈 채팅에 카테고리 분포·주제 칩·최근 문서 카드 노출. 추가 LLM 호출 0 (모두 DB 데이터로 파생). 후방호환 default 빈배열
@@ -98,12 +100,13 @@
 | TASK-009 | DELETE 고아 파일 정리 + HybridChunker 토큰 상한 480 (경고 0건) | ADR-021 |
 | TASK-010 | 폴더 단위 일괄 색인 CLI (`scripts/bulk_ingest.py`, 재귀·중복 스킵·리포트) | ADR-022 |
 | TASK-011 | 하이브리드 검색 (Qdrant sparse BM25 + dense + RRF, Kiwi 한국어 전처리) | ADR-023 |
+| TASK-021 | 프로젝트 프로세스 정기 모니터링 + 워커 RSS 가드 (launchd 5분 스냅샷 + 30초 가드) | ADR-031 |
 
 ### 🎯 다음 (예정, 순서대로)
 
 | # | 제목 | 범위·상태 |
 |---|------|---|
-| **TASK-019** | 사용자 UI NextJS 분리 + Clerk 인증 (관리자 UI는 Streamlit 잔류·동결) | ⚙️ **진행 중 (2026-04-26)** — Phase 1 백엔드 토대 ✅ (0.23.0) · Phase 1 hotfix ✅ (0.23.1 — set_classification_payload nested fix + 마이그레이션) · Phase A NextJS 셋업 ✅ (0.23.2 — Next 16 + Tailwind 4 + Clerk 7.2, `pnpm dev` ready) · **Phase B 대기**: AppShell + `/chat` + `/library` + 사이드바 대화 + Playwright 검증 + `AUTH_ENABLED=true` 전환 |
+| **TASK-019** | 사용자 UI NextJS 분리 + Clerk 인증 (관리자 UI는 Streamlit 잔류·동결) | ⚙️ **재개 대기 (2026-04-28)** — TASK-021 운영 인프라 완료, Phase B 재개 차례. Phase 1 백엔드 토대 ✅ (0.23.0) · Phase 1 hotfix ✅ (0.23.1) · Phase A NextJS 셋업 ✅ (0.23.2) · **Phase B 대기**: AppShell + `/chat` + `/library` + 사이드바 대화 + Playwright 검증 + `AUTH_ENABLED=true` 전환 |
 | **TASK-012** | Cloudflare Tunnel + Access 외부 노출 게이트웨이 | 🕐 **후순위 큐잉 (2026-04-23)** — 사용자 도메인 Cloudflare 이전 후 "착수" 지시 대기. 앱 코드 0줄, 운영 문서 중심 |
 | **TASK-013** | MkDocs Material + GitHub Pages 문서 사이트 | 🕐 **후순위 큐잉 (2026-04-23)** — 현 위키 구조 유지, GitHub Actions로 자동 배포. "착수" 지시 대기 |
 | **TASK-020** | Series/묶음 문서 (Option D — 1급 시민 + 색인 시점 자동 묶기 + 관리자 사후 검수) | 🕐 **후순위 큐잉 (2026-04-25)** — 30챕터로 쪼개진 책을 한 시리즈로 묶어 검색·도서관·스코프 통합. ADR-029 예약. "착수" 지시 대기 |

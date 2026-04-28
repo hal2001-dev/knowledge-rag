@@ -1,0 +1,534 @@
+{
+  "run_id": "2026-04-27T110613Z",
+  "dir": "/Users/hal2001/workspace/temp/ingest",
+  "recursive": true,
+  "include": [
+    ".pdf",
+    ".txt",
+    ".md",
+    ".docx"
+  ],
+  "exclude": [],
+  "title_from": "stem",
+  "source_prefix": "",
+  "workers": 1,
+  "api_base": "http://localhost:8000",
+  "total": 77,
+  "ok": 0,
+  "enqueued": 45,
+  "duplicate": 32,
+  "failed": 0,
+  "skipped_too_large": 0,
+  "started_at": "2026-04-27T11:06:13.822075+00:00",
+  "finished_at": "2026-04-27T11:06:16.042347+00:00",
+  "elapsed_sec": 2.22,
+  "results": [
+    {
+      "path": "2001_스페이스_오디세이.pdf",
+      "size_mb": 55.3,
+      "status": "duplicate",
+      "doc_id": "00181548-7eee-441f-8bc0-716ed1e2f91e"
+    },
+    {
+      "path": "2010_스페이스_오디세이.pdf",
+      "size_mb": 70.08,
+      "status": "duplicate",
+      "doc_id": "79efb04b-84b8-4119-88fe-b55d83663a5d"
+    },
+    {
+      "path": "2061_스페이스_오디세이.pdf",
+      "size_mb": 46.01,
+      "status": "duplicate",
+      "doc_id": "17cbb435-0f04-43f8-8928-65a7b375c18a"
+    },
+    {
+      "path": "3001_최후의_오디세이.pdf",
+      "size_mb": 44.67,
+      "status": "duplicate",
+      "doc_id": "d4871fcd-3845-40b5-bbdf-1041fca1b5e4"
+    },
+    {
+      "path": "3D Game Engine Architecture.pdf",
+      "size_mb": 6.24,
+      "status": "enqueued",
+      "doc_id": "f208d8ca-27f9-4100-a7eb-6fe8382d396a",
+      "job_id": 176
+    },
+    {
+      "path": "Addison.Wesley.C.Plus.Plus.Primer.Plus.6th.Edition.2011.eBook-repackb00k.pdf",
+      "size_mb": 7.7,
+      "status": "enqueued",
+      "doc_id": "f3ef3ee4-74fa-48a5-82f2-a71c62e5d8c7",
+      "job_id": 177
+    },
+    {
+      "path": "Addison.Wesley.The.Go.Programming.Language.Phrasebook.2012.RETAIL.eBook-repackb00k.pdf",
+      "size_mb": 1.24,
+      "status": "enqueued",
+      "doc_id": "480a1407-1526-4c23-9acd-e87760390e6d",
+      "job_id": 178
+    },
+    {
+      "path": "Amateur to IM - Proven Ideas & Training Methods.pdf",
+      "size_mb": 29.64,
+      "status": "enqueued",
+      "doc_id": "963608c6-6981-4892-8c05-de7309db0266",
+      "job_id": 179
+    },
+    {
+      "path": "Apress.Practical.Ext.JS.Projects.With.Gears.Jul.2009.eBook-ELOHiM.pdf",
+      "size_mb": 24.77,
+      "status": "enqueued",
+      "doc_id": "fce0ee5e-84f8-4794-9178-63300cb17615",
+      "job_id": 180
+    },
+    {
+      "path": "Apress.Practical.Liferay.Java.Based.Portal.Applications.Development.Apr.2009.eBook-ELOHiM.pdf",
+      "size_mb": 22.57,
+      "status": "enqueued",
+      "doc_id": "eca107fe-c942-4f33-92cf-f166c1856080",
+      "job_id": 181
+    },
+    {
+      "path": "Art of the Slow Cooker.pdf",
+      "size_mb": 106.6,
+      "status": "enqueued",
+      "doc_id": "3a36da72-6060-4ff6-b068-36595335e50f",
+      "job_id": 182
+    },
+    {
+      "path": "Back to Basics.pdf",
+      "size_mb": 2.81,
+      "status": "enqueued",
+      "doc_id": "5d2d6a2c-cc99-4798-9cc4-98d457cb4680",
+      "job_id": 183
+    },
+    {
+      "path": "Bobby Fischer (gnv64).pdf",
+      "size_mb": 6.82,
+      "status": "enqueued",
+      "doc_id": "91df40b3-b155-4746-8c51-24e5708e98e7",
+      "job_id": 184
+    },
+    {
+      "path": "C++ Programming Program Design Including Data Structures, 5th edition.pdf",
+      "size_mb": 20.12,
+      "status": "enqueued",
+      "doc_id": "680182f6-1938-4053-915a-068b06319cc4",
+      "job_id": 185
+    },
+    {
+      "path": "Deep_Learning_for_Coders_width_fastai_PyTorch.pdf",
+      "size_mb": 144.82,
+      "status": "enqueued",
+      "doc_id": "4531c37c-56f4-4141-9e0d-d3eb7d7fcc76",
+      "job_id": 186
+    },
+    {
+      "path": "Digital Landscape and Nature Photography For Dummies-Slicer.pdf",
+      "size_mb": 41.36,
+      "status": "enqueued",
+      "doc_id": "0bf8f5e7-5734-4a49-bf75-4ee03ff2dfe7",
+      "job_id": 187
+    },
+    {
+      "path": "Encyclopedia of Gay and Lesbian Popular Culture.pdf",
+      "size_mb": 6.52,
+      "status": "enqueued",
+      "doc_id": "f3ed8290-a9ed-41e4-a72a-2a4f40ddedeb",
+      "job_id": 188
+    },
+    {
+      "path": "Game Coding Complete.pdf",
+      "size_mb": 4.0,
+      "status": "enqueued",
+      "doc_id": "56eeac68-3df2-4266-8b56-2161d6ebd064",
+      "job_id": 189
+    },
+    {
+      "path": "Game Programming - All in One.pdf",
+      "size_mb": 8.67,
+      "status": "enqueued",
+      "doc_id": "ff24a6fd-1664-478d-bd57-5a824c1932e1",
+      "job_id": 190
+    },
+    {
+      "path": "Game Programming All in One, Third Edition.pdf",
+      "size_mb": 11.28,
+      "status": "enqueued",
+      "doc_id": "0f98d926-575b-4617-bbbc-03d62bc0615c",
+      "job_id": 191
+    },
+    {
+      "path": "History Without the Boring Bits.pdf",
+      "size_mb": 4.48,
+      "status": "enqueued",
+      "doc_id": "859471bc-d3b5-45a9-b970-9cb0a0a462a8",
+      "job_id": 192
+    },
+    {
+      "path": "Imagined Worlds.pdf",
+      "size_mb": 7.29,
+      "status": "enqueued",
+      "doc_id": "680e66b9-7df7-462a-b679-02147e9a799f",
+      "job_id": 193
+    },
+    {
+      "path": "Mastering Chess - A Course in 21 Lessons.pdf",
+      "size_mb": 17.33,
+      "status": "enqueued",
+      "doc_id": "b870aa18-81f9-4329-b835-9622348b4235",
+      "job_id": 194
+    },
+    {
+      "path": "Mathematics for 3D Game_Programming and Computer Graphics.pdf",
+      "size_mb": 16.38,
+      "status": "enqueued",
+      "doc_id": "128acec4-730b-4784-887e-1baeb82a2202",
+      "job_id": 195
+    },
+    {
+      "path": "Move First, Think Later - Sense and Nonsense in Improving Your Chess.pdf",
+      "size_mb": 6.26,
+      "status": "enqueued",
+      "doc_id": "7eb222bd-60da-4bcc-a0c7-c28d5fff9653",
+      "job_id": 196
+    },
+    {
+      "path": "OpenCV_제대로베우기.pdf",
+      "size_mb": 177.29,
+      "status": "enqueued",
+      "doc_id": "3df46e0b-d48b-4ff5-a36a-8b205845301c",
+      "job_id": 197
+    },
+    {
+      "path": "Practical Chess Openings (gnv64).pdf",
+      "size_mb": 10.3,
+      "status": "enqueued",
+      "doc_id": "651adac9-db69-4c9c-a50f-2cca13da59b4",
+      "job_id": 198
+    },
+    {
+      "path": "Premier Press - AI Techniques For Game Programming.pdf",
+      "size_mb": 6.71,
+      "status": "enqueued",
+      "doc_id": "9d3618b7-1eb5-44ea-9c7b-0419510505fc",
+      "job_id": 199
+    },
+    {
+      "path": "Premier Press - Focus on SDL.pdf",
+      "size_mb": 7.99,
+      "status": "enqueued",
+      "doc_id": "24069996-37fc-465f-8424-bad7e2348106",
+      "job_id": 200
+    },
+    {
+      "path": "Sams - Tricks of the 3D Game Programming Gurus - Advanced 3D Graphics and Rasterization.pdf",
+      "size_mb": 47.51,
+      "status": "enqueued",
+      "doc_id": "86fbef01-8aaf-4c61-872a-0ba9c6c2be8a",
+      "job_id": 201
+    },
+    {
+      "path": "Sixty Million Frenchmen Can't Be Wrong.pdf",
+      "size_mb": 3.65,
+      "status": "enqueued",
+      "doc_id": "5117eeaf-abd6-4dd9-ad83-dc3f31b6b9be",
+      "job_id": 202
+    },
+    {
+      "path": "Teaching with iPad How-To.pdf",
+      "size_mb": 5.0,
+      "status": "enqueued",
+      "doc_id": "bd8ba94d-832c-4a32-8860-8645c9b98490",
+      "job_id": 203
+    },
+    {
+      "path": "The Archaeologist’s Field Handbook.pdf",
+      "size_mb": 4.52,
+      "status": "enqueued",
+      "doc_id": "cbafbcdf-4904-4706-8f11-727afd384899",
+      "job_id": 204
+    },
+    {
+      "path": "The Complete Idiot's Guide to Back Pain.pdf",
+      "size_mb": 3.91,
+      "status": "enqueued",
+      "doc_id": "d47ca613-bb6d-4530-8b48-b0287e3f5010",
+      "job_id": 205
+    },
+    {
+      "path": "The Mammoth Book of Nebula Awards SF.pdf",
+      "size_mb": 2.76,
+      "status": "enqueued",
+      "doc_id": "faabbea9-6246-4178-915e-b9f5442b4975",
+      "job_id": 206
+    },
+    {
+      "path": "The Year’s Best Science Fiction #29.pdf",
+      "size_mb": 7.69,
+      "status": "enqueued",
+      "doc_id": "fc8968a9-87f8-436a-b821-b0f5b2e354cd",
+      "job_id": 207
+    },
+    {
+      "path": "Thomson - Mathematics and Physics for Programmers.pdf",
+      "size_mb": 6.82,
+      "status": "enqueued",
+      "doc_id": "59bfb718-fbae-40cd-9a81-7dc3f47fc493",
+      "job_id": 208
+    },
+    {
+      "path": "UNIX_POWER_TOOLS_01.pdf",
+      "size_mb": 145.18,
+      "status": "enqueued",
+      "doc_id": "e35711a4-ff52-4685-a618-d959379e0dab",
+      "job_id": 209
+    },
+    {
+      "path": "UNIX_POWER_TOOLS_02.pdf",
+      "size_mb": 151.68,
+      "status": "enqueued",
+      "doc_id": "f235c1f5-5387-4202-a11e-47bbf7b6e8a2",
+      "job_id": 210
+    },
+    {
+      "path": "Ultimate Top Secret Guide to Taking Over the World.pdf",
+      "size_mb": 6.32,
+      "status": "enqueued",
+      "doc_id": "3bd67aef-8cc6-44ee-8e45-b40361884e5b",
+      "job_id": 211
+    },
+    {
+      "path": "Why Geology Matters.pdf",
+      "size_mb": 4.45,
+      "status": "enqueued",
+      "doc_id": "f7843e93-0265-40ae-99d1-1a43db8513c5",
+      "job_id": 212
+    },
+    {
+      "path": "World’s 200 Hardest Brain Teasers.pdf",
+      "size_mb": 3.63,
+      "status": "enqueued",
+      "doc_id": "d0bb3cc1-baa3-401e-9a7f-5240c0170379",
+      "job_id": 213
+    },
+    {
+      "path": "광기의_산맥에서.pdf",
+      "size_mb": 81.79,
+      "status": "duplicate",
+      "doc_id": "60090e1f-99a1-48c4-97c9-94d316c5f14c"
+    },
+    {
+      "path": "데드_아일랜드.pdf",
+      "size_mb": 76.97,
+      "status": "duplicate",
+      "doc_id": "d6d64e39-5ab8-453b-bd3b-18f3d48e8afd"
+    },
+    {
+      "path": "데이터중심_애플리케이션_설계.pdf",
+      "size_mb": 159.58,
+      "status": "enqueued",
+      "doc_id": "42e49d87-e791-409e-aeb8-5c22374b0c77",
+      "job_id": 214
+    },
+    {
+      "path": "디지털_포트리스_01.pdf",
+      "size_mb": 55.29,
+      "status": "duplicate",
+      "doc_id": "2882ffcb-00da-4402-b2fa-a059a3869ec2"
+    },
+    {
+      "path": "디지털_포트리스_02.pdf",
+      "size_mb": 55.12,
+      "status": "duplicate",
+      "doc_id": "9c747df9-2949-4a50-acdc-be5e28e1b3b0"
+    },
+    {
+      "path": "리보이츠를_위한_찬송1.pdf",
+      "size_mb": 75.36,
+      "status": "duplicate",
+      "doc_id": "914d2953-cf65-43dd-bba7-538ee1d6b235"
+    },
+    {
+      "path": "리보이츠를_위한_찬송2.pdf",
+      "size_mb": 70.51,
+      "status": "duplicate",
+      "doc_id": "eda67f8d-353c-4f87-905f-2c552ec5947b"
+    },
+    {
+      "path": "별의_계승자.pdf",
+      "size_mb": 56.23,
+      "status": "duplicate",
+      "doc_id": "b54bfaab-f4c3-4af6-b0f2-66e4eda0caa2"
+    },
+    {
+      "path": "성채_1.pdf",
+      "size_mb": 68.53,
+      "status": "duplicate",
+      "doc_id": "a4b90578-d1dd-4e1e-b6db-e1caeee73b3c"
+    },
+    {
+      "path": "성채_2.pdf",
+      "size_mb": 69.04,
+      "status": "duplicate",
+      "doc_id": "8fad80d8-d420-410a-a0ff-a2c4faec5dcd"
+    },
+    {
+      "path": "셀_스티븐_킹_2.pdf",
+      "size_mb": 56.46,
+      "status": "duplicate",
+      "doc_id": "b5e33635-8c9e-4845-a3e2-9ec6d48cbb61"
+    },
+    {
+      "path": "스노우_크래쉬1.pdf",
+      "size_mb": 82.74,
+      "status": "duplicate",
+      "doc_id": "964898f8-0c0b-4ae0-82cf-d8763f8c85ea"
+    },
+    {
+      "path": "스노우_크래쉬2.pdf",
+      "size_mb": 84.17,
+      "status": "duplicate",
+      "doc_id": "c14e9372-6d6a-4347-905a-285a62a9119e"
+    },
+    {
+      "path": "심연_위의_불길1.pdf",
+      "size_mb": 92.72,
+      "status": "duplicate",
+      "doc_id": "0f2d90e7-f5e2-4891-bc13-8d89bfcc5509"
+    },
+    {
+      "path": "심연_위의_불길2.pdf",
+      "size_mb": 95.44,
+      "status": "duplicate",
+      "doc_id": "241397c6-2e1e-4d43-913c-5d101544549a"
+    },
+    {
+      "path": "아버지들의_아버지_#1.pdf",
+      "size_mb": 46.81,
+      "status": "duplicate",
+      "doc_id": "c4d690fd-08d7-46b5-8c14-7c4d486f2e7e"
+    },
+    {
+      "path": "아트멜_스튜디오와_아두이노로_베우는_ATmega328_프로그래밍.pdf",
+      "size_mb": 145.86,
+      "status": "enqueued",
+      "doc_id": "c0775fd9-e54b-42ae-a635-d33bb181970a",
+      "job_id": 215
+    },
+    {
+      "path": "양심의_문제.pdf",
+      "size_mb": 76.45,
+      "status": "duplicate",
+      "doc_id": "f7c9799b-8397-43c5-9ae3-3c14864472e1"
+    },
+    {
+      "path": "영원한_전쟁.pdf",
+      "size_mb": 74.57,
+      "status": "duplicate",
+      "doc_id": "8317380b-e810-431a-bf74-1b08f088d580"
+    },
+    {
+      "path": "우주바이러스_The_Andromeda_Strain.pdf",
+      "size_mb": 75.13,
+      "status": "duplicate",
+      "doc_id": "5d58358f-2c0d-4db7-8f99-08dd9bee8e61"
+    },
+    {
+      "path": "울1.pdf",
+      "size_mb": 60.16,
+      "status": "duplicate",
+      "doc_id": "07f0ce47-8327-4636-92b3-0f9b9724644f"
+    },
+    {
+      "path": "울2.pdf",
+      "size_mb": 80.88,
+      "status": "duplicate",
+      "doc_id": "b7515d1f-ff0b-4be5-933b-6d334a8dd68b"
+    },
+    {
+      "path": "이상한_수학책.pdf",
+      "size_mb": 77.61,
+      "status": "duplicate",
+      "doc_id": "4826565c-99fb-4fe8-b88c-820e583b7fc7"
+    },
+    {
+      "path": "인공생명.pdf",
+      "size_mb": 117.81,
+      "status": "enqueued",
+      "doc_id": "6331de26-5ef3-45cb-9f89-9e0126857696",
+      "job_id": 216
+    },
+    {
+      "path": "좀비_서바이벌_가이드.pdf",
+      "size_mb": 83.81,
+      "status": "duplicate",
+      "doc_id": "c37b262f-1a73-4f23-99fc-5e23cdd0a177"
+    },
+    {
+      "path": "종말일기_Z.pdf",
+      "size_mb": 103.02,
+      "status": "duplicate",
+      "doc_id": "96cc8042-2a1b-40b9-bd78-8e282c17d82e"
+    },
+    {
+      "path": "종말일기_Z_암흑의날.pdf",
+      "size_mb": 77.45,
+      "status": "duplicate",
+      "doc_id": "8b3358da-0a77-463e-be7f-a905b7cb1489"
+    },
+    {
+      "path": "천사들의_제국_상.pdf",
+      "size_mb": 62.45,
+      "status": "duplicate",
+      "doc_id": "ae5fe88c-9d3c-4b3d-96ff-e6b8fcc12007"
+    },
+    {
+      "path": "천사들의_제국_하.pdf",
+      "size_mb": 64.84,
+      "status": "duplicate",
+      "doc_id": "0c74df2c-f8fc-4edd-871b-10e5f9812ac8"
+    },
+    {
+      "path": "카오스_현대과학의_혁명.pdf",
+      "size_mb": 93.06,
+      "status": "enqueued",
+      "doc_id": "362add5b-26d2-43e6-819c-50e6b88b5caa",
+      "job_id": 217
+    },
+    {
+      "path": "클라우드_네이티브_자바.pdf",
+      "size_mb": 175.08,
+      "status": "enqueued",
+      "doc_id": "d73f7daa-08af-401b-991a-334331421a43",
+      "job_id": 218
+    },
+    {
+      "path": "파이썬_데이터_싸이언스_핸드북.pdf",
+      "size_mb": 161.15,
+      "status": "enqueued",
+      "doc_id": "e4663229-c2f5-47a7-9db4-af1984a26055",
+      "job_id": 219
+    },
+    {
+      "path": "하루하루가_세상의_종말_1.pdf",
+      "size_mb": 77.45,
+      "status": "duplicate",
+      "doc_id": "a015b6dd-97e1-423c-8dbc-7c8949d720ec"
+    },
+    {
+      "path": "하루하루가_세상의_종말_2.pdf",
+      "size_mb": 79.24,
+      "status": "duplicate",
+      "doc_id": "365a35c9-6123-4ec0-8eee-dd55cfd72573"
+    },
+    {
+      "path": "혼자공부하는_머신러닝_딥러닝.pdf",
+      "size_mb": 143.1,
+      "status": "enqueued",
+      "doc_id": "70aea9ff-7f06-4c05-97ac-cadea34b65f0",
+      "job_id": 220
+    }
+  ]
+}
