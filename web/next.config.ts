@@ -10,6 +10,11 @@ import type { NextConfig } from "next";
 const INTERNAL_API_URL = process.env.INTERNAL_API_URL || "http://localhost:8000";
 
 const nextConfig: NextConfig = {
+  // Turbopack workspace root을 web/으로 명시 — 프로젝트 루트의 pnpm-lock.yaml(Playwright용)이
+  // 자동 추론을 흐리는 것을 방지. import.meta.dirname은 Node 20.11+ ESM에서 안전
+  turbopack: {
+    root: import.meta.dirname,
+  },
   // Next 16: dev 서버 외부 origin 차단 — Tailscale·LAN IP에서 접속 시 허용
   // (localhost·127.0.0.1은 기본 허용)
   allowedDevOrigins: [

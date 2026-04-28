@@ -5,6 +5,33 @@
 
 ---
 
+## [2026-04-28] impl | TASK-019 Phase B 진전 — proxy.ts AUTH 토글 + Playwright Phase 1/2 분리 (0.24.1)
+
+### 발견 (Next 16 정정)
+- Next 16에서 `middleware.ts` → `proxy.ts` 이름 변경 (함수명 `proxy`). 기존 `web/proxy.ts`는 Phase A에서 이미 작성돼 있었으나 AUTH_ENABLED 토글 미반영 상태. ADR-030 Phase 1(false 기본)에 정합하지 않음
+
+### 변경
+- `web/proxy.ts` — `AUTH_ENABLED` env 토글 추가. Phase 1(false): clerkMiddleware 통과만, 모든 라우트 무방호. Phase 2(true): `/`, `/chat`, `/library` 비로그인 시 `/sign-in` 리다이렉트(307). 공개 라우트 `/sign-in`, `/sign-up`, `/api/health` 추가
+- `web/.env.local.example` — `AUTH_ENABLED=false` 기본값 + Phase 1/2 주석
+- `web/tests/auth.spec.ts` → `auth-protected.spec.ts` rename + `test.skip(AUTH_ENABLED!=='true')` 가드 추가 (Phase 2 모드 회귀)
+- `web/tests/api-proxy.spec.ts` — Phase 2 가드 추가 + 의도 명확화
+- `web/tests/ui-flow.spec.ts` (신규) — Phase 1 사용자 흐름 5케이스: `/chat` 로드(헤더·입력창·보내기), `/library` 로드(검색 placeholder), URL state(`?q=test`), `/` → `/chat` 리다이렉트, 모바일 drawer(Pixel 5)
+- `web/playwright.config.ts` — 두 모드 실행 가이드 코멘트
+
+### 검증 (코드 차원)
+- DB: `conversations.user_id text NOT NULL DEFAULT 'admin'` + `ix_conversations_user_id` 적용 확인 (information_schema 조회)
+- `category_filter` Qdrant 필터 절 — `pipeline.py:101-143` → `retriever.py:17-31` → `qdrant_store.py:239-244 must.append(FieldCondition(key="metadata.category"))` 추적. vector(L246-251 `filter=`) + hybrid(L262-277 `query_filter=`) 양 경로 적용. 0.23.1 hotfix(nested key) 정합 보존됨
+
+### 의도적 제외
+- 실제 `pnpm exec playwright test` 실행 — 본 커밋 후 사용자 환경에서 별건
+- Clerk JWT 실 검증(`apps/middleware/auth.py:_verify_token` stub) — Phase 2 진입 시
+- `components/chat/scope-banner.tsx`, `suggestions.tsx` Stub 채우기 — 별건 후속
+
+### Phase B 남은 항목
+- JWT 실 검증, scope-banner/suggestions 채우기, Playwright 실 실행, AUTH_ENABLED=true 전환
+
+---
+
 ## [2026-04-28] impl | TASK-021 — 정기 모니터링 + 워커 RSS 가드 도입 완료 (0.24.0)
 
 ### 배포물

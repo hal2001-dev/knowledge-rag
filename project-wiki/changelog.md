@@ -22,6 +22,31 @@
 
 ---
 
+## [0.24.1] - 2026-04-28
+
+### Added
+- **TASK-019 Phase B 진전 — `proxy.ts` AUTH_ENABLED 토글** ([web/proxy.ts](../web/proxy.ts)):
+  - Next 16에서 `middleware.ts` → `proxy.ts` 이름 변경 사실 반영 (Phase A에서 이미 작성돼 있던 파일). AGENTS.md 권고대로 `node_modules/next/dist/docs/` 확인
+  - Phase 1 (`AUTH_ENABLED=false`, 기본): `clerkMiddleware` 통과만, 모든 라우트 무방호 — FastAPI 미들웨어가 LAN/localhost는 `'admin'` 자동 부여 (ADR-030)
+  - Phase 2 (`AUTH_ENABLED=true`): `/`, `/chat`, `/library` 비로그인 시 `/sign-in` 리다이렉트(307). 공개 라우트 `/sign-in`, `/sign-up`, `/api/health`
+  - [web/.env.local.example](../web/.env.local.example) — `AUTH_ENABLED=false` 기본값 + Phase 1/2 주석
+- **Playwright 두 모드 분리** ([web/tests/](../web/tests/)):
+  - `auth.spec.ts` → `auth-protected.spec.ts` rename + `test.skip(AUTH_ENABLED!=='true')` 가드 — Phase 2 모드 회귀 4 케이스
+  - `api-proxy.spec.ts` — Phase 2 가드 추가
+  - `ui-flow.spec.ts` (신규) — Phase 1 사용자 흐름 5 케이스: `/chat` 로드(헤더·입력창·보내기 버튼), `/library` 로드(검색 placeholder), URL state 동기화(`?q=test`), 루트 `/` → `/chat` 리다이렉트, 모바일 drawer(Pixel 5 viewport)
+  - `playwright.config.ts` — 두 모드 실행 가이드 코멘트 (`pnpm exec playwright test ui-flow` vs `AUTH_ENABLED=true ... auth-protected`)
+
+### Verified
+- **`category_filter` Qdrant 필터 절 적용** (코드 추적, 별도 코드 변경 없음): `pipeline.py:101-143` → `retriever.py:17-31` → `qdrant_store.py:239-244` `must.append(FieldCondition(key="metadata.category"))`. vector 경로(L246-251 `filter=`) + hybrid 경로(L262-277 `query_filter=`) 양쪽 적용. 0.23.1 hotfix(nested key `metadata.category`) 정합 보존
+- **DB 마이그레이션 적용**: `information_schema` 조회로 `conversations.user_id text NOT NULL DEFAULT 'admin'` + `ix_conversations_user_id` 인덱스 확인
+
+### Notes
+- 실제 `pnpm exec playwright test` 실행은 본 커밋 후 사용자 환경에서 별건
+- Phase B 남은 항목: Clerk JWT 실 검증(`apps/middleware/auth.py:_verify_token` stub → PyJWT+JWKS), `components/chat/scope-banner.tsx`/`suggestions.tsx` Stub 채우기, AUTH_ENABLED=true 전환
+- 본 변경물은 ADR-030(Phase 1/2 분리)의 구현 진전이라 신규 ADR 없음
+
+---
+
 ## [0.24.0] - 2026-04-28
 
 ### Added

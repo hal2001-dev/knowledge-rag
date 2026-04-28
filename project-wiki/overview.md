@@ -106,7 +106,7 @@
 
 | # | 제목 | 범위·상태 |
 |---|------|---|
-| **TASK-019** | 사용자 UI NextJS 분리 + Clerk 인증 (관리자 UI는 Streamlit 잔류·동결) | ⚙️ **재개 대기 (2026-04-28)** — TASK-021 운영 인프라 완료, Phase B 재개 차례. Phase 1 백엔드 토대 ✅ (0.23.0) · Phase 1 hotfix ✅ (0.23.1) · Phase A NextJS 셋업 ✅ (0.23.2) · **Phase B 대기**: AppShell + `/chat` + `/library` + 사이드바 대화 + Playwright 검증 + `AUTH_ENABLED=true` 전환 |
+| **TASK-019** | 사용자 UI NextJS 분리 + Clerk 인증 (관리자 UI는 Streamlit 잔류·동결) | ⚙️ **Phase B 진행 중 (2026-04-28)** — Phase 1 백엔드 토대 ✅ (0.23.0) · Phase 1 hotfix ✅ (0.23.1) · Phase A NextJS 셋업 ✅ (0.23.2) · Phase B WIP ✅ (3bdfca9 — chat/library/AppShell + Playwright 셋업) · Phase B 진전 ✅ (0.24.1 — proxy.ts AUTH 토글 + Playwright Phase 1/2 분리 + category_filter Qdrant 검증) · **남은 것**: JWT 실 검증, scope-banner/suggestions Stub 채우기, 실제 `pnpm exec playwright test` 실행, `AUTH_ENABLED=true` 전환 |
 | **TASK-012** | Cloudflare Tunnel + Access 외부 노출 게이트웨이 | 🕐 **후순위 큐잉 (2026-04-23)** — 사용자 도메인 Cloudflare 이전 후 "착수" 지시 대기. 앱 코드 0줄, 운영 문서 중심 |
 | **TASK-013** | MkDocs Material + GitHub Pages 문서 사이트 | 🕐 **후순위 큐잉 (2026-04-23)** — 현 위키 구조 유지, GitHub Actions로 자동 배포. "착수" 지시 대기 |
 | **TASK-020** | Series/묶음 문서 (Option D — 1급 시민 + 색인 시점 자동 묶기 + 관리자 사후 검수) | 🕐 **후순위 큐잉 (2026-04-25)** — 30챕터로 쪼개진 책을 한 시리즈로 묶어 검색·도서관·스코프 통합. ADR-029 예약. "착수" 지시 대기 |
