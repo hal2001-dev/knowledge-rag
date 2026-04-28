@@ -25,6 +25,7 @@ _MIGRATION_SENTINELS: dict[str, tuple] = {
     "0002_add_classification_columns.sql":    ("column", "documents", "doc_type"),
     "0003_add_ingest_jobs.sql":               ("table", "ingest_jobs"),
     "0004_add_conversations_user_id.sql":     ("column", "conversations", "user_id"),
+    "0005_add_series_tables.sql":             ("table", "series"),
 }
 
 

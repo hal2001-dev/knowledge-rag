@@ -49,12 +49,20 @@ SQLAlchemy 모델은 [packages/db/models.py](../../../packages/db/models.py). `B
 | `category` | `VARCHAR(64)` | nullable | 카테고리 ID (예: `software/architecture`). 라벨은 `config/categories.yaml` |
 | `category_confidence` | `FLOAT` | nullable | 자동 분류 신뢰도 0~1. < 0.4면 검수 후보 |
 | `tags` | `JSONB` | NOT NULL, default `[]` | 자동/수동 태그 배열. 보통 `summary.topics[]`에서 채택 |
+| `series_id` | `VARCHAR` | nullable, **FK → series(series_id) ON DELETE SET NULL** | TASK-020 (ADR-029). 시리즈 멤버십. NULL이면 단일 문서 |
+| `volume_number` | `INTEGER` | nullable | 권 번호 (1, 2, …). 휴리스틱·수동 입력 |
+| `volume_title` | `TEXT` | nullable | "Chapter 1: Intro" 같은 권 제목 |
+| `series_match_status` | `VARCHAR(16)` | NOT NULL, default `"none"`, **CHECK** | TASK-020. `none`/`auto_attached`/`suggested`/`confirmed`/`rejected` |
 
 **인덱스**
 - `documents_pkey` — PK(`doc_id`) btree
 - `ix_documents_content_hash` — UNIQUE(`content_hash`) btree. NULL 중복 허용
+- `ix_documents_series_id` — series_filter·도서관 그룹화용 (TASK-020)
+- `ix_documents_match_status` — 검수 큐 조회용 (TASK-020)
 
-**CHECK 제약**: `documents_doc_type_check` — 위 7종 외 거부
+**CHECK 제약**:
+- `documents_doc_type_check` — 위 7종 외 거부
+- `documents_series_match_status_check` — 위 5상태 외 거부
 
 ### 테이블 `conversations`
 
@@ -86,6 +94,32 @@ RAG 대화 세션 1건당 레코드 1개. `/query`가 `session_id` 없이 호출
 - `ix_messages_session_created` — 복합 (`session_id`, `created_at`) btree. 최근 20개 메시지 조회 최적화(ADR-006)
 
 **CASCADE**: 대화 삭제 시 메시지 자동 정리.
+
+### 테이블 `series` (TASK-020, ADR-029)
+
+저작 1건이 여러 파일로 쪼개진 묶음 단위. 멤버는 `documents.series_id == series.series_id`인 문서들.
+
+| 컬럼 | 타입 | 제약 | 설명 |
+|------|------|------|------|
+| `series_id` | `VARCHAR` | **PK** | `ser_<12hex>` 형식 (서버 발급 또는 사용자 지정) |
+| `title` | `TEXT` | NOT NULL | 시리즈 제목. 휴리스틱 자동 생성 시 공통 prefix 사용 |
+| `description` | `TEXT` | nullable | 시리즈 설명 (선택) |
+| `cover_doc_id` | `VARCHAR` | nullable | 대표 문서 ID. 자동 생성 시 매처 호출 시점의 target doc_id |
+| `series_type` | `VARCHAR(16)` | NOT NULL, default `"book"`, **CHECK** | `book`/`series`/`volume` |
+| `created_at` | `TIMESTAMPTZ` | NOT NULL, default `now()` | 생성 시각 |
+
+**인덱스**: `series_pkey` — PK(`series_id`)
+
+**CHECK 제약**: `series_type_check`
+
+**FK 정책**: `documents.series_id → series(series_id) ON DELETE SET NULL` — 시리즈 삭제 시 멤버 documents.series_id만 NULL로 분리되어 문서 데이터는 보존.
+
+**관련 코드**:
+- ORM: [packages/db/models.py:SeriesRecord](../../../packages/db/models.py)
+- repository: [packages/db/repository.py](../../../packages/db/repository.py) `create_series` / `get_series` / `list_series` / `update_series` / `delete_series` / `list_series_members` / `attach_to_series` / `detach_from_series` / `update_match_status` / `list_pending_review`
+- 매처: [packages/series/matcher.py](../../../packages/series/matcher.py), [packages/series/match_runner.py](../../../packages/series/match_runner.py)
+- 라우터: [apps/routers/series.py](../../../apps/routers/series.py)
+- 백필 CLI: [scripts/suggest_series.py](../../../scripts/suggest_series.py)
 
 ### 테이블 `ingest_jobs` (TASK-018, ADR-028)
 
@@ -155,7 +189,7 @@ pending ──claim──▶ in_progress ──ok──▶ done
 | 검색 | `query_points` + `FusionQuery(Fusion.RRF)` 병합 | dense top-2k ∪ sparse top-2k → RRF |
 | 업로드 경로 | raw `client.upsert` | **`UPSERT_BATCH_SIZE=256` 단위 분할** ([qdrant_store.py](../../../packages/vectorstore/qdrant_store.py)). Qdrant HTTP payload 32MiB 한도 회피용 |
 
-### Payload 인덱스 (TASK-015, 두 모드 공통)
+### Payload 인덱스 (TASK-015 + TASK-020, 두 모드 공통)
 
 `_ensure_payload_indexes()`가 컬렉션 생성·기동 시 idempotent 적용(KEYWORD):
 
@@ -165,6 +199,7 @@ pending ──claim──▶ in_progress ──ok──▶ done
 | `metadata.doc_type` | enum 필터 (book/article/...) |
 | `metadata.category` | 카테고리 단일 문자열 필터 |
 | `metadata.tags` | 태그 배열 (Qdrant keyword 인덱스가 array 자동 지원) |
+| `metadata.series_id` | TASK-020 series_filter + 도서관 그룹화 |
 
 ### Payload 스키마 (각 포인트)
 
@@ -280,6 +315,8 @@ pending ──claim──▶ in_progress ──ok──▶ done
 | `0001_add_summary_columns.sql` | 2026-04-25 | `documents.summary/summary_model/summary_generated_at` (TASK-014, ADR-024) | `("column", "documents", "summary")` |
 | `0002_add_classification_columns.sql` | 2026-04-25 | `documents.doc_type/category/category_confidence/tags` + CHECK (TASK-015, ADR-025) | `("column", "documents", "doc_type")` |
 | `0003_add_ingest_jobs.sql` | 2026-04-25 | `ingest_jobs` 테이블 + 인덱스 + CHECK (TASK-018, ADR-028) | `("table", "ingest_jobs")` |
+| `0004_add_conversations_user_id.sql` | 2026-04-26 | `conversations.user_id` (TASK-019, ADR-030) | `("column", "conversations", "user_id")` |
+| `0005_add_series_tables.sql` | 2026-04-28 | `series` 테이블 + `documents` 4컬럼(series_id/volume_number/volume_title/series_match_status) + FK ON DELETE SET NULL + CHECK 2개 + 인덱스 2개 (TASK-020, ADR-029) | `("table", "series")` |
 
 신규 환경(빈 DB)에서는 [init.sql](../../../init.sql)이 모든 컬럼/CHECK/인덱스를 한 번에 생성하므로 마이그레이션을 건너뛴다. 기존 환경(컬럼 일부만 있는 상태)에서는 sentinel이 부재하면 ALTER 적용.
 

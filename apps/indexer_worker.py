@@ -112,7 +112,22 @@ def _process_job(job, settings, pipeline) -> None:
             if doc_rec is not None:
                 _classify_doc(db, pipeline, settings, doc_rec)
 
-        # 6) /index/overview 캐시 무효화
+        # 6) 시리즈 자동 묶기 (TASK-020) — 휴리스틱 high면 auto_attached, medium은 suggested.
+        # 실패는 격리(인덱싱 자체는 성공). pipeline._store.set_series_payload를 setter로 주입.
+        try:
+            from packages.series import series_match_for_doc
+            db.expire_all()
+            result = series_match_for_doc(
+                db,
+                job.doc_id,
+                qdrant_payload_setter=pipeline._store.set_series_payload,
+            )
+            if result.get("status") in ("auto_attached", "suggested"):
+                logger.info(f"job {job.id} series_match: {result}")
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(f"job {job.id} series_match 실패(격리됨): {exc}")
+
+        # 7) /index/overview 캐시 무효화
         from apps.routers.documents import invalidate_index_overview_cache
         invalidate_index_overview_cache()
 

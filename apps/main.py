@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from apps.config import get_settings
 from apps.middleware.auth import AuthMiddleware
-from apps.routers import conversations, documents, ingest, jobs, query
+from apps.routers import conversations, documents, ingest, jobs, query, series
 from packages.code.logger import get_logger
 from packages.db.connection import init_db
 from packages.db.models import Base
@@ -79,6 +79,7 @@ app.include_router(query.router, tags=["query"])
 app.include_router(documents.router, tags=["documents"])
 app.include_router(conversations.router, tags=["conversations"])
 app.include_router(jobs.router, tags=["jobs"])
+app.include_router(series.router, tags=["series"])
 
 
 @app.get("/health")

@@ -19,6 +19,58 @@ class DocumentItem(BaseModel):
     category: Optional[str] = None
     category_confidence: Optional[float] = None
     tags: list[str] = []
+    # TASK-020 (ADR-029): 시리즈 멤버십. 단일 문서면 모두 None/"none".
+    series_id: Optional[str] = None
+    series_title: Optional[str] = None
+    volume_number: Optional[int] = None
+    volume_title: Optional[str] = None
+    series_match_status: str = "none"
+
+
+class SeriesItem(BaseModel):
+    """TASK-020 (ADR-029): 시리즈/묶음 1급 시민 응답 모델."""
+    series_id: str
+    title: str
+    description: Optional[str] = None
+    cover_doc_id: Optional[str] = None
+    series_type: str = "book"
+    member_count: int = 0
+    created_at: str
+
+
+class SeriesCreateRequest(BaseModel):
+    series_id: Optional[str] = None  # 미지정 시 서버 발급
+    title: str
+    description: Optional[str] = None
+    cover_doc_id: Optional[str] = None
+    series_type: str = "book"
+
+
+class SeriesPatchRequest(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    cover_doc_id: Optional[str] = None
+    series_type: Optional[str] = None
+
+
+class SeriesListResponse(BaseModel):
+    series: list[SeriesItem]
+    total: int
+
+
+class SeriesMembersResponse(BaseModel):
+    series_id: str
+    members: list[DocumentItem]
+
+
+class SeriesReviewItem(BaseModel):
+    """auto_attached + suggested 검수 큐 항목."""
+    doc_id: str
+    title: str
+    series_id: Optional[str] = None
+    series_title: Optional[str] = None
+    volume_number: Optional[int] = None
+    series_match_status: str
 
 
 class DocumentPatchRequest(BaseModel):

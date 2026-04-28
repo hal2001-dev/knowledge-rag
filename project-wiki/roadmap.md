@@ -36,7 +36,7 @@
 → ⚙️ TASK-019 (Phase A 완료·Phase B 재개 차례, 2026-04-28) — 사용자 UI NextJS 분리 + Clerk 인증. ADR-030
 → 🕐 TASK-012 (후순위, 2026-04-23 큐잉) — Cloudflare Tunnel + Access 외부 노출 게이트웨이 (코드 0줄, 운영 문서 중심)
 → 🕐 TASK-013 (후순위, 2026-04-23 큐잉) — MkDocs Material + GitHub Pages 문서 사이트 (현재 project-wiki/ 구조 유지, CI 자동 배포)
-→ 🕐 TASK-020 (후순위, 2026-04-25 큐잉) — Series/묶음 문서 (Option D: 1급 시민 + 색인 시점 자동 묶기 + 관리자 사후 검수)
+→ ✅ TASK-020 (2026-04-28 완료) — Series/묶음 문서 1급 시민 (ADR-029, changelog 0.26.0)
 → 🛑 인증·공개배포 전체 묶음 (사용자 지시까지 전부 보류, 2026-04-22)
      · ISSUE-001 (모바일 업로드) · 관리자 UI 2단계 · HTTPS 배포 · 앱 내 API 키/OAuth · 관리자 전용 UI 버튼
 → 🔄 장기 검토: Graph RAG, MCP 재개, 대화 요약, 스트리밍, L2 중복 감지
@@ -802,7 +802,16 @@ Cloudflare 계정·도메인 소유자 인증·대시보드 GUI가 필요한 작
 
 ---
 
-## TASK-020: Series/묶음 문서 — 1급 시민 모델 + 색인 시점 자동 묶기 + 관리자 검수
+## TASK-020: Series/묶음 문서 — ✅ 완료 (2026-04-28)
+→ ADR-029, changelog [0.26.0], `apps/routers/series.py`, `packages/series/`, `scripts/suggest_series.py`
+
+**결과**:
+- `series` 1급 시민 + `documents` 4컬럼 + 색인 시점 휴리스틱(LLM 호출 0)
+- API 10개, 매처 단위 26/26 회귀, 통합 smoke 정상
+- 백필 dry-run 107건 → suggested 6 / low 18 / no_candidate 83
+- Streamlit 동결 정책 정합 — 검수는 FastAPI + CLI 두 경로 (NextJS admin 검수 페이지는 별건)
+
+**아래는 큐잉 시점 원본 정의 (참고용 보존)**:
 
 **상태**: queued (후순위, 2026-04-25 큐잉)
 **우선순위**: 낮음 — 사용자 "착수" 지시 시 진행

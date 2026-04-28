@@ -154,6 +154,8 @@ class QdrantDocumentStore:
             "metadata.doc_type",
             "metadata.category",
             "metadata.tags",
+            # TASK-020 (ADR-029): series_filter 검색 + 도서관 그룹화
+            "metadata.series_id",
         ]
         for field_name in targets:
             try:
@@ -233,14 +235,17 @@ class QdrantDocumentStore:
         score_threshold: float = 0.0,
         doc_id: Optional[str] = None,
         category: Optional[str] = None,
+        series_id: Optional[str] = None,
     ) -> list[ScoredChunk]:
-        # TASK-019: doc_id, category 동시 지정 시 둘 다 must로. 우선순위 분기는
+        # TASK-019/020: doc_id/category/series_id 동시 지정 시 모두 must로 AND. 우선순위 분기는
         # pipeline 레이어에서 결정하므로 여기서는 받은 인자 그대로 AND 적용.
         must: list = []
         if doc_id:
             must.append(FieldCondition(key="metadata.doc_id", match=MatchValue(value=doc_id)))
         if category:
             must.append(FieldCondition(key="metadata.category", match=MatchValue(value=category)))
+        if series_id:
+            must.append(FieldCondition(key="metadata.series_id", match=MatchValue(value=series_id)))
         filter_condition: Optional[Filter] = Filter(must=must) if must else None
 
         if self._search_mode == "vector":
@@ -370,6 +375,42 @@ class QdrantDocumentStore:
             return True
         except Exception as e:
             logger.warning(f"set_payload 실패 doc_id={doc_id}: {e}")
+            return False
+
+    def set_series_payload(
+        self,
+        doc_ids: list[str],
+        series_id: Optional[str],
+        series_title: Optional[str] = None,
+    ) -> bool:
+        """TASK-020 (ADR-029): doc_ids에 속한 모든 청크의 metadata에 series 정보 부분 갱신.
+
+        nested 업데이트 — `payload["metadata"]["series_id"]`/`series_title` 으로 저장되어
+        `Filter(key="metadata.series_id")`와 매칭됨. 분리 시 `series_id=None`을 넘기면
+        해당 키를 비운다(빈 문자열로 마킹) — Qdrant set_payload는 None 키를 자동 삭제하지 않으므로
+        검색 필터에서 빈 문자열을 fallback로 거른다는 가정.
+        """
+        if not doc_ids:
+            return False
+        payload: dict = {
+            "series_id": series_id or "",
+            "series_title": series_title or "",
+        }
+        try:
+            self._client.set_payload(
+                collection_name=self._collection,
+                payload=payload,
+                key="metadata",
+                points=Filter(
+                    should=[
+                        FieldCondition(key="metadata.doc_id", match=MatchValue(value=did))
+                        for did in doc_ids
+                    ]
+                ),
+            )
+            return True
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"set_series_payload 실패 docs={doc_ids}: {e}")
             return False
 
     def scroll_by_doc_id(self, doc_id: str, limit: int = 10) -> list[ScoredChunk]:

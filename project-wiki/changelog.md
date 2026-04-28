@@ -22,6 +22,40 @@
 
 ---
 
+## [0.26.0] - 2026-04-28
+
+### Added — TASK-020 Series/묶음 1급 시민 (ADR-029)
+- **`series` 테이블 + `documents` 4컬럼**:
+  - `series_id`(FK ON DELETE SET NULL), `volume_number`, `volume_title`, `series_match_status`(enum: none/auto_attached/suggested/confirmed/rejected)
+  - 마이그레이션 `0005_add_series_tables.sql` — sentinel `("table","series")` + advisory lock 직렬화
+- **`packages/series/matcher.py`** — 휴리스틱 매처 (LLM 호출 0):
+  - 동일 source 폴더 + 공통 prefix ≥ 8자(권 번호 정규화 후) + 동일 doc_type + 숫자 시퀀스(Chapter/Vol/N권/N장/끝숫자/_NN/Nst-th)
+  - 신뢰도 high(4신호) → auto_attached / medium(3) → suggested / low(그 외) → 처리 없음
+  - 4자리 연도(2024) 차단, 제목 중간 버전 번호("ROS 2.0.3") 차단
+- **`packages/series/match_runner.py:series_match_for_doc`** — DB·Qdrant payload 갱신 진입점. 신규 시리즈 자동 발급(`ser_<12hex>`) + cover_doc_id 자동 + 멤버 attach. 기존 시리즈 매칭 시 합류
+- **`apps/indexer_worker.py`** — BackgroundTasks 체인 6단계로 `series_match` 추가 (실패 격리, summary 패턴 동일)
+- **`packages/vectorstore/qdrant_store.py:set_series_payload`** — 청크 metadata에 series_id/series_title 부분 갱신. payload index `metadata.series_id` keyword 추가
+- **검색 통합** — `QueryRequest.series_filter` + retriever/pipeline/qdrant_store 통과. 활성 스코프 우선순위 **doc > category > series** (단순화). LangSmith 트레이스 메타에 `series_filter` 추가
+- **`apps/routers/series.py` 신규** — 10 엔드포인트:
+  - GET `/series` (목록), GET `/series/{id}`, GET `/series/{id}/members`
+  - POST `/series` (생성), PATCH `/series/{id}`, DELETE `/series/{id}`
+  - GET `/series/_review/queue` (auto_attached + suggested 검수 큐)
+  - POST `/documents/{id}/series_match/confirm|reject|attach`
+- **`scripts/suggest_series.py`** — 백필 dry-run / `--apply`. 결과 JSON 리포트(`data/eval_runs/suggest_series_<ISO>.json`)
+- **`tests/unit/test_series_matcher.py`** — 26 케이스 (volume 추출 14 + prefix 2 + 후보 산출 9 + skip 정책 1). 26/26 passed
+- **`apps/schemas/documents.py`** — `DocumentItem`에 series 5필드 + `SeriesItem/SeriesCreateRequest/SeriesPatchRequest/SeriesListResponse/SeriesMembersResponse/SeriesReviewItem` 신설
+- **`packages/code/models.py:DocRecord`** — series 4필드 추가 (response 매핑 일관성)
+
+### Verified
+- 실 인덱스 107문서 dry-run: suggested 6건(UNIX Power Tools / 하루하루가 세상의 종말 / 디지털 포트리스), low 18건, no_candidate 83건
+- 통합 smoke (실 DB+Qdrant): high 자동 묶기 정상, 신규 시리즈 ID 발급, 멤버 attach, volume_number 추출, skip 정책(rejected/auto_attached/confirmed 재바인딩 차단) 모두 정상
+- 단위 회귀 영향 0건 (사전 부채 4건 동일)
+
+### Notes (Streamlit 동결 정책 정합)
+- 시리즈 검수는 FastAPI 엔드포인트 + CLI 백필 두 경로로 제공. Streamlit 검수 페이지는 동결 정책에 따라 미수행. NextJS admin 이전 시 별건으로 검수 페이지 도입
+
+---
+
 ## [0.25.0] - 2026-04-28
 
 ### Added

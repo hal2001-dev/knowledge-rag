@@ -30,6 +30,11 @@ class DocRecord:
     category: Optional[str] = None
     category_confidence: Optional[float] = None
     tags: list = field(default_factory=list)
+    # TASK-020 (ADR-029)
+    series_id: Optional[str] = None
+    volume_number: Optional[int] = None
+    volume_title: Optional[str] = None
+    series_match_status: str = "none"
 
 
 @dataclass

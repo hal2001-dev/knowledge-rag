@@ -40,6 +40,7 @@ def query(
             history=history,
             doc_filter=request.doc_filter,
             category_filter=request.category_filter,
+            series_filter=request.series_filter,
         )
 
     # 사용자 질문 + 어시스턴트 답변 저장

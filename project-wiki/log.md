@@ -5,6 +5,60 @@
 
 ---
 
+## [2026-04-28] impl | TASK-020 — Series/묶음 문서 1급 시민 도입 완료 (ADR-029, 0.26.0)
+
+### 데이터 모델
+- 마이그레이션 `0005_add_series_tables.sql` 적용 — `series` 테이블 신설, `documents` 4컬럼 추가, FK ON DELETE SET NULL, CHECK constraint 2개 (series_type / series_match_status), 인덱스 2개
+- ORM: `SeriesRecord` 신설, `DocumentRecord`에 series 4필드 + `documents_series_match_status_check`
+- `DocRecord` 데이터클래스에도 series 4필드 — response 매핑 일관성
+
+### 휴리스틱 (LLM 호출 0)
+- 동일 source 폴더 + 공통 prefix ≥ 8자(권 번호 정규화 후) + 동일 doc_type + 숫자 시퀀스
+- 신뢰도 high(4신호) → auto_attached / medium(3) → suggested / low → 처리 없음
+- 권 번호 패턴 — Chapter N / Ch.N / Vol N / Volume N / N권 / 제 N권 / N편 / N장 / 끝 숫자 / `_NN.pdf` / Nst-th
+- 4자리 연도(2024) 차단, 제목 중간 버전 번호("ROS 2.0.3") 차단
+
+### 통합
+- `apps/indexer_worker.py` — BackgroundTasks 체인 6단계로 `series_match` 추가, 실패 격리(예외 흡수, 인덱싱은 성공)
+- `packages/vectorstore/qdrant_store.py:set_series_payload` — 청크 metadata 부분 갱신, payload index `metadata.series_id` keyword
+- 검색 통합 — `QueryRequest.series_filter` + retriever/pipeline/qdrant_store 통과. 활성 스코프 우선순위 **doc > category > series** (한 번에 하나)
+- LangSmith 트레이스 메타에 `series_filter` 추가
+
+### API (10 엔드포인트, `apps/routers/series.py`)
+- 사용자 read: `/series` 목록, `/series/{id}`, `/series/{id}/members`
+- 관리자 write: POST `/series`, PATCH `/series/{id}`, DELETE `/series/{id}`
+- 검수: GET `/series/_review/queue` (auto_attached + suggested 큐), POST `/documents/{id}/series_match/confirm|reject|attach`
+- `app.include_router(series.router, ...)` 등록 검증 — 10 routes 노출 확인
+
+### CLI 백필 (`scripts/suggest_series.py`)
+- dry-run / `--apply` 분기. 결과 JSON 리포트 `data/eval_runs/suggest_series_<ISO>.json`
+- 실 인덱스 107문서 dry-run 결과:
+  - **suggested 6건** — UNIX Power Tools / 하루하루가 세상의 종말 / 디지털 포트리스 (각 2권씩, 폴더 분산이라 high 미달)
+  - **low_confidence 18건** — Premier Press 출판사 prefix 같은 잘못된 매칭 가능성 후보, 검수 필요
+  - **no_candidate 83건** — 단일 문서
+
+### 검증
+- `pytest tests/unit/test_series_matcher.py -v` → **26/26 passed (0.13s)**
+- 통합 smoke (실 DB+Qdrant) — high 자동 묶기, 기존 시리즈 합류, skip 정책(rejected/auto_attached/confirmed 재바인딩 차단), volume_number 추출, cover_doc_id 자동 모두 정상
+- 단위 회귀 영향 0건 (사전 부채 4건 동일)
+
+### 검수 인터페이스 — Streamlit 동결 정책 정합
+- 메모리 `feedback_streamlit_no_edit` 준수 — Streamlit 검수 페이지 미수행
+- FastAPI 엔드포인트 + CLI 백필 두 경로로 1인 운영 cover. NextJS admin 이전(별건) 시 검수 페이지 도입
+
+### 영향 페이지
+- ADR-029 본문 신설 ([decisions.md](wiki/architecture/decisions.md))
+- changelog 0.26.0
+- overview 진행 표 — TASK-020 완료 행으로 이동
+- roadmap.md 큐 — TASK-020 완료 표기
+
+### 후속 (별건)
+- TASK-019 NextJS UI에 시리즈 카드·시리즈 스코프 배지 추가
+- LLM 보조 (medium 신뢰도가 too noisy 판명 시, 사용자 합의 후)
+- 시리즈 단위 요약·태그 집계 표면화
+
+---
+
 ## [2026-04-28] query | "검색 후 상위 섹션 펼쳐보기"는 미구현 — 도구는 갖춰짐, 별건 후속 후보
 
 ### 사용자 질의

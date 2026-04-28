@@ -31,10 +31,43 @@ class DocumentRecord(Base):
     category_confidence = Column(Float, nullable=True)
     tags = Column(JSONB, nullable=False, default=list)
 
+    # TASK-020 (ADR-029): 시리즈/묶음 1급 시민. NULL이면 단일 문서, 값이면 series 테이블 멤버.
+    series_id = Column(String, ForeignKey("series.series_id", ondelete="SET NULL"), nullable=True, index=True)
+    volume_number = Column(Integer, nullable=True)
+    volume_title = Column(Text, nullable=True)
+    series_match_status = Column(String(16), nullable=False, default="none")
+
     __table_args__ = (
         CheckConstraint(
             "doc_type IN ('book','article','paper','note','report','web','other')",
             name="documents_doc_type_check",
+        ),
+        CheckConstraint(
+            "series_match_status IN ('none','auto_attached','suggested','confirmed','rejected')",
+            name="documents_series_match_status_check",
+        ),
+    )
+
+
+class SeriesRecord(Base):
+    """TASK-020 (ADR-029): 한 저작이 여러 파일로 쪼개진 경우의 묶음 단위.
+
+    멤버 = `documents.series_id == series.series_id`인 행들. 시리즈 자체는 별도 카테고리·태그·요약을
+    갖지 않고(의도적 제외), 멤버 메타를 표면에서 집계해 사용한다.
+    """
+    __tablename__ = "series"
+
+    series_id = Column(String, primary_key=True)
+    title = Column(Text, nullable=False)
+    description = Column(Text, nullable=True)
+    cover_doc_id = Column(String, nullable=True)
+    series_type = Column(String(16), nullable=False, default="book")
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
+
+    __table_args__ = (
+        CheckConstraint(
+            "series_type IN ('book','series','volume')",
+            name="series_type_check",
         ),
     )
 

@@ -93,14 +93,16 @@ class RAGPipeline:
         history: list[dict] | None = None,
         doc_filter: str | None = None,
         category_filter: str | None = None,
+        series_filter: str | None = None,
     ) -> dict:
         top_k = top_k or self._settings.default_top_k
         initial_k = initial_k or self._settings.default_initial_k
         score_threshold = score_threshold if score_threshold is not None else self._settings.default_score_threshold
 
-        # TASK-019: 활성 스코프 우선순위 doc_filter > category_filter (한 번에 하나).
-        # 두 인자가 동시에 들어오면 doc 우선, category는 무시 (파이프라인 단순화).
+        # 활성 스코프 우선순위 doc > category > series (한 번에 하나, ADR-029).
+        # 상위 우선순위가 들어오면 하위 인자는 무시.
         effective_category = None if doc_filter else category_filter
+        effective_series = None if (doc_filter or effective_category) else series_filter
 
         llm_model = getattr(self._llm, "model_name", None) or getattr(self._llm, "model", "")
         llm_backend = self._settings.llm_backend or "openai"
@@ -115,6 +117,8 @@ class RAGPipeline:
             scope_tags.append(f"doc_filter:{doc_filter[:8]}")
         elif effective_category:
             scope_tags.append(f"category_filter:{effective_category}")
+        elif effective_series:
+            scope_tags.append(f"series_filter:{effective_series[:12]}")
 
         with tracing_context(
             tags=[
@@ -130,6 +134,7 @@ class RAGPipeline:
                 "llm_model": llm_model,
                 "doc_filter": doc_filter,
                 "category_filter": effective_category,
+                "series_filter": effective_series,
             },
         ):
             chunks = retrieve(
@@ -141,6 +146,7 @@ class RAGPipeline:
                 score_threshold=score_threshold,
                 doc_id=doc_filter,
                 category=effective_category,
+                series_id=effective_series,
             )
 
         if not chunks:

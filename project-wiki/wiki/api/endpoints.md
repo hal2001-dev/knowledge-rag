@@ -147,10 +147,15 @@
   "top_k": 3,
   "initial_k": 20,
   "score_threshold": 0.7,
-  "doc_filter": "uuid (optional, TASK-016)"
+  "doc_filter": "uuid (optional, TASK-016)",
+  "category_filter": "software/architecture (optional, TASK-019)",
+  "series_filter": "ser_xxx (optional, TASK-020/ADR-029)"
 }
 ```
 - `doc_filter`: 특정 문서 한정 검색 (Qdrant `metadata.doc_id` 필터). 도서관 탭의 "이 책에 대해 묻기"가 사용.
+- `category_filter`: 특정 카테고리 한정 검색 (`metadata.category`). 상단 카테고리 칩.
+- `series_filter`: 특정 시리즈 한정 검색 (`metadata.series_id`). 도서관 시리즈 카드 [이 시리즈에 묻기].
+- **활성 스코프 우선순위**: `doc_filter > category_filter > series_filter` (한 번에 하나, ADR-029). 상위 우선순위가 들어오면 하위는 무시.
 
 **Response**
 ```json
@@ -334,6 +339,116 @@
 
 ---
 
+### 시리즈 / 묶음 (Series, TASK-020 — ADR-029)
+
+`apps/routers/series.py`. 여러 파일로 쪼개진 한 저작을 묶는 1급 시민. 색인 시점 휴리스틱이 자동 묶기를 수행하고, 검수 큐에서 confirm/reject로 정정.
+
+#### GET /series
+
+전체 시리즈 목록 + 멤버 수.
+
+**Response 200**
+```json
+{
+  "series": [
+    {
+      "series_id": "ser_a1b2c3d4e5f6",
+      "title": "심연 위의 불길",
+      "description": null,
+      "cover_doc_id": "uuid",
+      "series_type": "book",
+      "member_count": 3,
+      "created_at": "2026-04-28T..."
+    }
+  ],
+  "total": 1
+}
+```
+
+#### GET /series/{series_id}
+
+단일 시리즈 정보 + 멤버 수. 404 시 `{"detail":"시리즈를 찾을 수 없음: ..."}`.
+
+#### GET /series/{series_id}/members
+
+시리즈 멤버 문서 목록. `volume_number ASC NULLS LAST`, 그 다음 `indexed_at ASC` 정렬.
+
+**Response 200**
+```json
+{"series_id": "ser_xxx", "members": [DocumentItem, ...]}
+```
+
+DocumentItem에는 series 필드(series_id/series_title/volume_number/volume_title/series_match_status)가 포함됨.
+
+#### POST /series
+
+수동 시리즈 생성 (관리자).
+
+**Request**
+```json
+{
+  "series_id": null,                  // null이면 서버 발급
+  "title": "심연 위의 불길",
+  "description": null,
+  "cover_doc_id": null,
+  "series_type": "book"               // book | series | volume
+}
+```
+
+**Response 201**: SeriesItem. **409** if `series_id` 중복.
+
+#### PATCH /series/{series_id}
+
+부분 갱신. 필드 4개(title/description/cover_doc_id/series_type) 모두 optional.
+
+#### DELETE /series/{series_id}
+
+시리즈 삭제. FK `ON DELETE SET NULL`로 멤버 documents.series_id는 NULL로 분리, 문서 데이터 보존.
+
+**Response 200**: `{"series_id": "ser_xxx", "deleted": true}`
+
+---
+
+#### GET /series/_review/queue
+
+검수 큐 — `series_match_status IN ('auto_attached','suggested')` 문서 목록.
+
+**Response 200**: `[SeriesReviewItem, ...]`
+```json
+[
+  {
+    "doc_id": "uuid",
+    "title": "심연 위의 불길 1",
+    "series_id": "ser_xxx",
+    "series_title": "심연 위의 불길",
+    "volume_number": 1,
+    "series_match_status": "auto_attached"
+  }
+]
+```
+
+#### POST /documents/{doc_id}/series_match/confirm
+
+`auto_attached → confirmed`. 관리자가 자동 묶기를 확정.
+
+**Response 200**: 갱신된 DocumentItem. **400** if `series_id`가 비어있음.
+
+#### POST /documents/{doc_id}/series_match/reject
+
+분리 + `series_match_status = rejected`. 동일 휴리스틱이 다시 자동 묶기 시도하지 않음 (관리자 의사 영구 존중).
+
+**Response 200**: 갱신된 DocumentItem.
+
+#### POST /documents/{doc_id}/series_match/attach
+
+수동 묶기 — 관리자가 시리즈를 직접 지정. status=confirmed.
+
+**Query**: `series_id` (필수), `volume_number` (선택).
+
+**Response 200**: 갱신된 DocumentItem. 404 if 문서 또는 시리즈 미존재.
+
+---
+
 ### 시스템 / 인덱스 메타
 
 #### GET /index/overview
@@ -372,6 +487,7 @@
 
 | 날짜 | 변경 내용 |
 |------|-----------|
+| 2026-04-28 | TASK-020: `/series` CRUD + `/series/{id}/members` + 검수 큐 + match confirm/reject/attach (10개), `/query.series_filter` 추가 + 활성 스코프 우선순위 doc>category>series |
 | 2026-04-25 | 큐 모드(`/ingest` 응답에 `job_id`, queue/sync 분기) + `/jobs` 2개 + `/documents/{id}/summary` GET·regenerate + `PATCH /documents/{id}` + `/documents/{id}/chunks` + `/index/overview` 확장 + `/query`에 `doc_filter` |
 | 2026-04-21 | `/ingest` 409 응답(중복 감지 L1), `/query`에 `session_id` 추가, `/conversations` CRUD 신설 |
 | 2026-04-17 | 초안 작성 |

@@ -1322,6 +1322,152 @@ stub 제거 + 실 검증 적용. `apps/middleware/auth.py:_verify_token`:
 
 ---
 
+## ADR-029: Series/묶음 문서 1급 시민 + 색인 시점 자동 묶기 + 검수
+**날짜**: 2026-04-28
+**상태**: accepted
+**관련**: TASK-020, ADR-025(카테고리), ADR-028(indexer 워커), ADR-030(사용자 UI 분리), 메모리 `feedback_streamlit_no_edit`
+
+### 배경
+- 한 저작이 30챕터처럼 여러 파일로 쪼개져 인덱싱되면 도서관 카드가 흩어지고 "이 책에 대해 묻기"가 1챕터에만 한정됨
+- 카테고리·태그·요약이 챕터별로 산정되어 일관성 ↓
+- 사용자가 "심연 위의 불길 시리즈" 같이 묶음 단위로 탐색·질의할 수 없음
+
+### 검토안 (Option A/B/C/D)
+
+| 옵션 | 요지 | 장점 | 단점 |
+|---|---|---|---|
+| **A** | series 1급 시민(스키마) + 사용자 수동 묶기 | 깔끔, 정정 자유 | 사용자 부담 — 매번 수동 |
+| **B** | `series:os3ep` 같은 태그 기반 느슨한 묶음 | 스키마 변경 0 | 1급 시민 아님, UI 그룹화 자연스럽지 않음 |
+| **C** | 제목 prefix 휴리스틱 자동 묶기만 | 사용자 입력 0 | 휴리스틱은 반드시 오작동 — 정정 경로 필요 |
+| **D (채택)** | A 스키마 + 색인 시점 자동 묶기 + 사후 검수 | 1급 시민 + 자동화 + 정정 가능 | 코드량 큼 |
+
+### 결정
+**옵션 D 채택**. 이유:
+- A의 1급 시민·정정성 + C의 자동화를 결합. 사용자 부담 낮고 잘못된 묶기는 검수에서 정정
+- B의 태그 방식은 스키마 변경을 회피하지만 도서관 카드 그룹화·payload index 효율이 모두 열등
+
+### 데이터 모델
+```sql
+CREATE TABLE series (
+  series_id    TEXT PRIMARY KEY,
+  title        TEXT NOT NULL,
+  description  TEXT,
+  cover_doc_id TEXT,
+  series_type  TEXT NOT NULL DEFAULT 'book',  -- book | series | volume
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT series_type_check CHECK (series_type IN ('book','series','volume'))
+);
+
+ALTER TABLE documents
+  ADD COLUMN series_id           TEXT REFERENCES series(series_id) ON DELETE SET NULL,
+  ADD COLUMN volume_number       INTEGER,
+  ADD COLUMN volume_title        TEXT,
+  ADD COLUMN series_match_status TEXT NOT NULL DEFAULT 'none';
+  -- enum: none | auto_attached | suggested | confirmed | rejected
+```
+
+`ON DELETE SET NULL` — 시리즈 삭제 시 멤버 documents.series_id만 NULL로 분리, 문서 데이터 보존.
+
+**Qdrant payload**: 청크 metadata에 `series_id`, `series_title` 추가. payload index 1개(`metadata.series_id` keyword) 추가. 재인덱싱 회피 — `set_series_payload(doc_ids, series_id, series_title)`로 부분 갱신.
+
+### 휴리스틱 (`packages/series/matcher.py`)
+
+LLM/임베딩 호출 0 — 규칙 기반.
+
+| 신호 | 검사 |
+|---|---|
+| 동일 source 폴더 | `os.path.dirname()` 정규화 후 일치 |
+| 공통 prefix ≥ 8자 | 권 번호 패턴 제거 후 정규화 — 한국어 8자 / 영문 8자 모두 동일 임계 |
+| 동일 doc_type | book/article/paper/note/report/web/other |
+| 숫자 시퀀스 | Chapter N / Vol N / N권 / N장 / 끝 숫자 / `_03.pdf` / `1st/2nd` 패턴 매칭 |
+
+**신뢰도 분류**:
+- **High** (4 신호 모두 만족) → `auto_attached`로 자동 묶기 + Qdrant payload 갱신
+- **Medium** (3 만족 — 폴더 또는 권 번호 1개 결여) → `suggested`로 검수 큐만, `series_id NULL` 유지
+- **Low** (그 외) → 처리 없음
+
+**4자리 연도 차단**: `extract_volume_number`는 1~999만 권 번호로 인정 → 2024 같은 연도가 권 번호로 오인되지 않음.
+
+**제목 중간 버전 번호 차단**: "ROS 2.0.3 Reference"의 "3"은 끝의 단어("Reference") 때문에 권 번호 패턴이 매칭 안 됨 (의도된 동작).
+
+### 색인 시점 통합
+
+`apps/indexer_worker.py:_process_job`의 BackgroundTasks 체인:
+
+```
+1) L1 중복 검사
+2) pipeline.ingest + create_document
+3) 사용자 분류값 우선 적용
+4) summary 생성 (TASK-014)
+5) 자동 분류 (TASK-015)
+6) ★ series_match_for_doc — 휴리스틱 + DB·payload 갱신 (실패 격리)
+7) /index/overview 캐시 무효화
+8) mark_done
+```
+
+실패는 격리: `series_match` 예외는 logger.warning으로 흡수, 인덱싱 자체는 성공. summary·classify 패턴과 동일.
+
+### 재바인딩 차단
+관리자가 `reject_match` 호출 → `series_match_status='rejected'`. `find_candidates` 입력 단계에서 rejected 풀 제외(자기 자신 + 동료 모두). 동일 휴리스틱이 다시 자동 묶기 시도 안 함 → 관리자 의사 영구 존중.
+
+### 검수 인터페이스 — Streamlit 동결 정책 회피
+메모리 `feedback_streamlit_no_edit`로 Streamlit 코드 수정 금지. ADR-030으로 사용자 UI(NextJS)와 관리자 UI(Streamlit 동결) 분리. 시리즈 검수는 관리자 영역인데 Streamlit 동결이라 어디에 둘지가 결정점:
+
+**채택**: FastAPI 엔드포인트 + 백필 CLI 두 경로. NextJS admin UI는 별건.
+
+| 경로 | 위치 | 용도 |
+|---|---|---|
+| API | `/series/_review/queue` (GET) | 검수 큐 조회 |
+| API | `POST /documents/{id}/series_match/confirm` | 자동 묶기 확정 |
+| API | `POST /documents/{id}/series_match/reject` | 분리 + rejected 마킹 |
+| API | `POST /documents/{id}/series_match/attach?series_id=...` | 수동 묶기 (confirmed) |
+| CLI | `scripts/suggest_series.py` | 백필 dry-run / `--apply` |
+| CLI | curl/httpie | 1인 운영자 단독 환경에선 충분 |
+
+NextJS admin 이전이 합의되면(별건) 그 위에 검수 페이지 추가. 사용자 측 NextJS는 read-only(시리즈 카드 + `series_filter` 스코프)만 노출.
+
+### 활성 스코프 우선순위
+**doc > category > series** (한 번에 하나, 단순화). pipeline.query에서 상위 우선순위가 있으면 하위 인자는 무시:
+```python
+effective_category = None if doc_filter else category_filter
+effective_series = None if (doc_filter or effective_category) else series_filter
+```
+
+### 실 인덱스 백필 결과 (107문서 dry-run, 2026-04-28)
+- **suggested 6건** — UNIX Power Tools / 하루하루가 세상의 종말 / 디지털 포트리스 (각 2권씩, 폴더 분산)
+- **low_confidence 18건** — Premier Press 출판사 prefix 매칭 등 (잘못된 매칭 가능성, 검수 필요)
+- **no_candidate 83건** — 단일 문서, 시리즈 아님
+
+high 0건은 정상 — 같은 폴더+권 번호 동시 만족 케이스가 인덱스 분포상 없음. medium 6건은 검수에서 confirm/reject 처리.
+
+### 의도적 제외
+- LLM 보조 자동 묶기 — 비용·키 사전 합의 규칙. 휴리스틱이 부족하면 별건
+- 시리즈 자체 카테고리·태그·요약 — 멤버 데이터 집계 표면화만 (의도적 단순화)
+- 시리즈 + 카테고리 + doc 동시 스코프 — 우선순위 한 번에 하나
+- Streamlit 검수 페이지 — 동결 정책 위반, 본 ADR에선 미수행
+- 무한 재바인딩 — rejected 마킹으로 차단
+- 사용자 측 시리즈 편집 권한 — 관리자 전용 (NextJS 사용자는 read-only)
+
+### 회귀 전략
+- `series_id IS NULL` 기존 동작 100% 보존 (단일 카드, doc_filter 그대로)
+- 향후 `SERIES_AUTO_MATCH=false` 토글 도입 가능 (현재는 indexer_worker 내부 try/except로 격리, 별도 토글 미필요)
+- down 마이그레이션: `DROP TABLE series`, `ALTER TABLE documents DROP COLUMN ...`
+- detach/reject는 `series_id NULL` 1줄 SQL로 즉시 회귀 가능
+
+### 검증
+- `pytest tests/unit/test_series_matcher.py` → **26/26 passed** (extract_volume_number 14 + common_prefix 2 + find_candidates 9 + skip 정책 검증)
+- match_runner 통합 smoke (실 DB) — high 자동 묶기 + 기존 시리즈 합류 + skip 정책 모두 정상
+- 백필 dry-run 107건 — 분포 합리적 (6 suggested, 18 low, 83 no)
+- 단위 회귀 영향 0건 (사전 부채 4건 동일)
+
+### 후속
+- TASK-019 NextJS UI에 시리즈 카드·시리즈 스코프 배지 추가 (별건)
+- LLM 보조 (휴리스틱이 medium에서 too noisy면 사용자 합의 후)
+- 시리즈 단위 요약·태그 집계 (별건, 표면화 정책 합의 시)
+- 검수 페이지 — NextJS admin 이전 또는 CLI 도구 충분성 평가 후
+
+---
+
 ## ADR-031: 프로젝트 프로세스 정기 모니터링 + 워커 RSS 가드 — 관찰/가드 분리, 워커 한정 SIGTERM
 **날짜**: 2026-04-28
 **상태**: accepted
