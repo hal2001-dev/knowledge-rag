@@ -22,6 +22,27 @@
 
 ---
 
+## [0.26.2] - 2026-04-28
+
+### Fixed
+- **`scripts/suggest_series.py`** — `QdrantDocumentStore`를 직접 인스턴스화하던 분기에서 잘못된 키워드 인자(`collection_name=`, `embedding_dim=`) 사용으로 `--apply`가 실패하던 결함. `apps.dependencies.get_pipeline()._store`를 재사용하도록 변경 — store 시그니처 변동에 견고
+
+### Operations — TASK-020 백필 1회 batch
+- 6 suggested → 3 시리즈 confirmed:
+  - `ser_1fcc33c3f57c` "디지털 포트리스" (2권)
+  - `ser_f091b1e5242e` "하루하루가 세상의 종말" (2권)
+  - `ser_63f37a2049b4` "unix power tools" (2권)
+- Qdrant `metadata.series_id` payload 갱신 + `series_match_status='confirmed'` 마킹
+- 검수 큐(pending_review) 0건으로 정리
+
+### Verified — end-to-end
+- `GET /series` 3 시리즈, member_count 정확
+- `GET /series/{id}/members` 멤버 정보 + series 5필드 모두 채워짐
+- `POST /query` with `series_filter` → 멤버 청크만 정확히 hit (`metadata.series_id` Filter 절 + payload index 정합 입증)
+- NextJS UI는 GET 호출만으로 자동 노출 — `/library` 시리즈 그룹 섹션 + `/chat` ScopeBanner "📚 시리즈 한정"
+
+---
+
 ## [0.26.1] - 2026-04-28
 
 ### Added — TASK-020 후속: NextJS 시리즈 UI

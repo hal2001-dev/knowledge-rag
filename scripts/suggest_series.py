@@ -33,15 +33,8 @@ from packages.db import repository as repo  # noqa: E402
 from packages.db.connection import init_db  # noqa: E402
 import packages.db.connection as dbc  # noqa: E402
 from packages.series import series_match_for_doc  # noqa: E402
-from packages.vectorstore.qdrant_store import QdrantDocumentStore  # noqa: E402
 
 logger = get_logger(__name__)
-
-
-def _build_setter(apply: bool, store: QdrantDocumentStore | None):
-    if not apply or store is None:
-        return None
-    return store.set_series_payload
 
 
 def main() -> int:
@@ -62,14 +55,13 @@ def main() -> int:
     settings = get_settings()
     init_db(settings.postgres_url)
 
-    store: QdrantDocumentStore | None = None
+    setter = None
     if args.apply:
-        store = QdrantDocumentStore(
-            url=settings.qdrant_url,
-            collection_name=settings.qdrant_collection,
-            embedding_dim=1536,  # 프로덕션 OpenAI dim — backend별 dim는 store가 자체 검증
-        )
-    setter = _build_setter(args.apply, store)
+        # apps.dependencies.get_pipeline()은 임베딩·sparse 인자 등 모든 의존성을 갖춘 store를 반환.
+        # 직접 QdrantDocumentStore를 인스턴스화하면 시그니처 변경에 취약하므로 파이프라인 헬퍼를 재사용.
+        from apps.dependencies import get_pipeline  # noqa: E402
+        pipeline = get_pipeline()
+        setter = pipeline._store.set_series_payload
 
     db = dbc._SessionLocal()
     try:

@@ -5,6 +5,42 @@
 
 ---
 
+## [2026-04-28] ops | TASK-020 백필 적용 — 6 suggested → 3 시리즈 confirmed + end-to-end 검증 (0.26.2)
+
+### 변경
+- `scripts/suggest_series.py:main` — 직접 `QdrantDocumentStore(collection_name=...)`로 인스턴스화하던 분기를 `apps.dependencies.get_pipeline()._store`로 교체. store 시그니처(`collection`/`embeddings` 등) 의존을 파이프라인 헬퍼로 흡수, 인자 변동에 견고
+- `--apply` 실행 — DB·Qdrant payload 갱신. 결과: suggested 6 / low_confidence 18 / no_candidate 83 (auto_attached 0건 — high 신뢰도 분포 부재는 인덱스 특성)
+
+### 검수 단계 자동화 (1회 batch — 운영자 본인 단독 환경)
+medium 신뢰도(suggested) 6건은 검수 대기로만 마킹되므로 시리즈 카드 노출 0. 동일 candidate_title끼리 그룹화 후 시리즈 3개 자동 생성 + 각 2권 attach + Qdrant payload 갱신 + status=confirmed 마킹:
+
+| series_id | title | 멤버 (Vol) |
+|---|---|---|
+| ser_1fcc33c3f57c | 디지털 포트리스 | 디지털_포트리스_01 (Vol 1), 디지털_포트리스_02 (Vol 2) |
+| ser_f091b1e5242e | 하루하루가 세상의 종말 | 하루하루가_세상의_종말_1 (Vol 1), 하루하루가_세상의_종말_2 (Vol 2) |
+| ser_63f37a2049b4 | unix power tools | UNIX_POWER_TOOLS_01 (Vol 1), UNIX_POWER_TOOLS_02 (Vol 2) |
+
+검수 큐(`pending_review`) 0건으로 정리됨.
+
+### end-to-end 검증 (백엔드 가동, 2026-04-28 21:42 KST)
+- `GET /series` → 3 시리즈, member_count 2 모두 정확
+- `GET /series/ser_63f37a2049b4/members` → 멤버 2개 응답, `series_id`/`volume_number`/`volume_title`/`series_match_status='confirmed'` 모두 채워짐
+- `POST /query` with `series_filter=ser_63f37a2049b4` (질의: "vi 편집기에서 매크로 정의") → **UNIX_POWER_TOOLS_02 청크 3개만 hit** (p116/p107/p75, score 0.716/0.654/0.578). 시리즈 외 문서 0건 → Qdrant payload `metadata.series_id` 인덱스 + 필터 절 정합 입증
+- latency 13.6초 — 백엔드 cold start + 첫 reranker 로드 영향 (정상 범위)
+
+### NextJS UI 자동 노출
+사용자 측 NextJS는 GET 호출만으로 즉시 반영 — `/library` 시리즈 그룹 섹션 3 카드, `/chat?series_filter=...` 시 ScopeBanner "📚 시리즈 한정" 모드 활성. 코드 변경 0, 데이터 갱신만으로 가시화.
+
+### 영향 페이지
+- changelog 0.26.2
+- log.md 본 항목
+
+### 후속
+- low_confidence 18건 — 잘못된 매칭 가능성(예: Premier Press 출판사 prefix). 운영 데이터로 임계 조정 또는 reject 마킹 검토 (별건)
+- 향후 신규 PDF 업로드 시 색인 단계 series_match가 자동 묶기 시도 — 본 백필은 1회성
+
+---
+
 ## [2026-04-28] impl | TASK-020 후속 — NextJS 시리즈 카드·시리즈 스코프 배지 (0.26.1)
 
 ### 변경
