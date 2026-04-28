@@ -22,6 +22,23 @@
 
 ---
 
+## [0.26.1] - 2026-04-28
+
+### Added — TASK-020 후속: NextJS 시리즈 UI
+- **`web/types/api.ts` 재생성** + `lib/api/types.ts`/`keys.ts`에 series 4 type/key 추가
+- **`web/lib/hooks/use-series.ts`**: `useSeriesList()` / `useSeriesMembers(seriesId)`
+- **`web/components/library/series-card.tsx`**: 시리즈 N권 응축 카드 (amber 배경+테두리). 펼치기 시 volume_number 순 멤버 목록 + 권별 [이 권 한정 묻기]. 카드 헤더에 [이 시리즈에 묻기] (`?series_filter=`)
+- **`web/components/library/doc-card.tsx`**: 시리즈 멤버 doc에 "📚 Vol N" 배지 (제목 옆). 비-시리즈는 변화 0
+- **`web/app/library/page.tsx`**: 시리즈 그룹 섹션 (카테고리 그룹 위). 시리즈 멤버는 카테고리 그룹에서 제외 (중복 표시 방지)
+- **`web/components/chat/scope-banner.tsx`**: `📚 시리즈 한정` 배지 모드 — amber 배경, 시리즈 제목 + 멤버 수. 우선순위 doc > category > series 분기 + clearAll에 setSeriesFilter(null) 포함
+- **`web/app/chat/page.tsx`**: `series_filter` URL state + 활성 스코프 우선순위 정렬 + ChatInput placeholder 4분기
+
+### Verified
+- `pnpm exec tsc --noEmit` 0 에러 / `pnpm exec eslint` 0 경고
+- Playwright Phase 1 `ui-flow` 9 passed / 1 skipped (의도된 mobile drawer skip 유지). 회귀 0
+
+---
+
 ## [0.26.0] - 2026-04-28
 
 ### Added — TASK-020 Series/묶음 1급 시민 (ADR-029)

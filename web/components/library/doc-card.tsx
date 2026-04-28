@@ -44,6 +44,15 @@ export function DocCard({ doc }: { doc: DocumentItem }) {
           <h3 className="text-sm font-semibold leading-tight line-clamp-2 flex-1">
             {doc.title}
           </h3>
+          {doc.series_id && (
+            <Badge
+              variant="secondary"
+              className="text-[10px]"
+              title={`시리즈 멤버 (${doc.series_match_status ?? "none"})`}
+            >
+              📚{doc.volume_number ? ` Vol ${doc.volume_number}` : ""}
+            </Badge>
+          )}
           {lowConfidence && (
             <Badge variant="outline" className="text-[10px]" title="자동 분류 신뢰도 낮음">
               ⚠️

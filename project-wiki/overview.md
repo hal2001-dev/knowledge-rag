@@ -101,7 +101,7 @@
 | TASK-009 | DELETE 고아 파일 정리 + HybridChunker 토큰 상한 480 (경고 0건) | ADR-021 |
 | TASK-010 | 폴더 단위 일괄 색인 CLI (`scripts/bulk_ingest.py`, 재귀·중복 스킵·리포트) | ADR-022 |
 | TASK-011 | 하이브리드 검색 (Qdrant sparse BM25 + dense + RRF, Kiwi 한국어 전처리) | ADR-023 |
-| TASK-020 | Series/묶음 문서 1급 시민 (휴리스틱 자동 묶기 + 사후 검수, 검색·도서관 통합) | ADR-029 |
+| TASK-020 | Series/묶음 문서 1급 시민 (휴리스틱 자동 묶기 + 사후 검수, 검색·도서관 통합, NextJS 시리즈 카드·스코프 배지) | ADR-029 |
 | TASK-021 | 프로젝트 프로세스 정기 모니터링 + 워커 RSS 가드 (launchd 5분 스냅샷 + 30초 가드) | ADR-031 |
 
 ### 🎯 다음 (예정, 순서대로)

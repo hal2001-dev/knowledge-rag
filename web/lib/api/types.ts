@@ -16,6 +16,11 @@ export type ChunkPreview = S["ChunkPreview"];
 export type SourceItem = S["SourceItem"];
 export type QueryRequest = S["QueryRequest"];
 export type QueryResponse = S["QueryResponse"];
+// TASK-020 (ADR-029)
+export type SeriesItem = S["SeriesItem"];
+export type SeriesListResponse = S["SeriesListResponse"];
+export type SeriesMembersResponse = S["SeriesMembersResponse"];
+export type SeriesReviewItem = S["SeriesReviewItem"];
 
 // summary와 categories(/index/overview)는 OpenAPI에 inline dict로 정의돼 unknown 키.
 // UI에서 안전하게 다루기 위한 narrow types — backend SummaryDict 형태에 맞춤.

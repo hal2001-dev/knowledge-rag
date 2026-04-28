@@ -2,14 +2,16 @@
 
 import { AppShell } from "@/components/app-shell";
 import { useDocuments } from "@/lib/hooks/use-documents";
+import { useSeriesList } from "@/lib/hooks/use-series";
 import { useQueryState, parseAsString } from "nuqs";
 import { FilterBar } from "@/components/library/filter-bar";
 import { DocCard } from "@/components/library/doc-card";
+import { SeriesCard } from "@/components/library/series-card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { useRouter } from "next/navigation";
 import { useMemo } from "react";
-import type { DocumentItem } from "@/lib/api/types";
+import type { DocumentItem, SeriesItem } from "@/lib/api/types";
 import { readSummary } from "@/lib/api/types";
 import { MessageCircle } from "lucide-react";
 
@@ -17,6 +19,7 @@ const ETC_LABEL = "기타";
 
 export default function LibraryPage() {
   const docsQuery = useDocuments();
+  const seriesQuery = useSeriesList();
   const router = useRouter();
   const [q] = useQueryState("q", parseAsString.withDefault(""));
   const [type] = useQueryState("type", parseAsString.withDefault("__all__"));
@@ -25,6 +28,10 @@ export default function LibraryPage() {
   const docs: DocumentItem[] = useMemo(
     () => docsQuery.data?.documents ?? [],
     [docsQuery.data],
+  );
+  const allSeries: SeriesItem[] = useMemo(
+    () => seriesQuery.data?.series ?? [],
+    [seriesQuery.data],
   );
 
   // 필터에 쓸 형식·카테고리 옵션
@@ -77,10 +84,30 @@ export default function LibraryPage() {
     });
   }, [docs, q, type, category]);
 
-  // 카테고리 그룹핑 (기타 마지막)
+  // TASK-020: 시리즈 묶기. filtered 중 series_id가 있는 멤버는 시리즈 카드로 응축.
+  // 시리즈 자체는 멤버가 1건이라도 (필터에 매칭된 멤버가 있어야) 표시.
+  const seriesGroups = useMemo(() => {
+    const memberMap = new Map<string, DocumentItem[]>();
+    for (const d of filtered) {
+      if (!d.series_id) continue;
+      const arr = memberMap.get(d.series_id) ?? [];
+      arr.push(d);
+      memberMap.set(d.series_id, arr);
+    }
+    const groups: { series: SeriesItem; members: DocumentItem[] }[] = [];
+    for (const s of allSeries) {
+      const ms = memberMap.get(s.series_id);
+      if (ms && ms.length > 0) groups.push({ series: s, members: ms });
+    }
+    groups.sort((a, b) => a.series.title.localeCompare(b.series.title));
+    return groups;
+  }, [filtered, allSeries]);
+
+  // 카테고리 그룹핑 — 시리즈 묶음에 들어간 멤버는 제외 (중복 표시 방지)
   const grouped = useMemo(() => {
     const map = new Map<string, DocumentItem[]>();
     for (const d of filtered) {
+      if (d.series_id) continue;
       const key = d.category ?? ETC_LABEL;
       const arr = map.get(key) ?? [];
       arr.push(d);
@@ -148,6 +175,19 @@ export default function LibraryPage() {
               <>필터에 매칭되는 문서가 없습니다.</>
             )}
           </div>
+        )}
+
+        {seriesGroups.length > 0 && (
+          <section className="mb-6">
+            <h2 className="mb-2 text-sm font-semibold">
+              📚 시리즈 <span className="ml-1 text-xs text-muted-foreground">· {seriesGroups.length}</span>
+            </h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {seriesGroups.map(({ series, members }) => (
+                <SeriesCard key={series.series_id} series={series} members={members} />
+              ))}
+            </div>
+          </section>
         )}
 
         {grouped.map(({ key, docs }) => (

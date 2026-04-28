@@ -14,5 +14,12 @@ export const keys = {
     list: () => [...keys.conversations.all, "list"] as const,
     detail: (sessionId: string) => [...keys.conversations.all, "detail", sessionId] as const,
   },
+  // TASK-020 (ADR-029)
+  series: {
+    all: ["series"] as const,
+    list: () => [...keys.series.all, "list"] as const,
+    detail: (seriesId: string) => [...keys.series.all, "detail", seriesId] as const,
+    members: (seriesId: string) => [...keys.series.all, "members", seriesId] as const,
+  },
   indexOverview: ["index-overview"] as const,
 };

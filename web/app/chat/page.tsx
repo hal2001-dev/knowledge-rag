@@ -16,6 +16,7 @@ export default function ChatPage() {
   const [sessionId, setSessionId] = useQueryState("session_id", parseAsString);
   const [docFilter] = useQueryState("doc_filter", parseAsString);
   const [category] = useQueryState("category", parseAsString);
+  const [seriesFilter] = useQueryState("series_filter", parseAsString);
   const [ask, setAsk] = useQueryState("ask", parseAsString);
   const ragMutation = useRagQuery();
   const conversation = useConversation(sessionId);
@@ -69,12 +70,16 @@ export default function ChatPage() {
     setLiveSuggestions([]);
     setLiveLatency(undefined);
     setLiveSources(undefined);
+    // 활성 스코프 우선순위 doc > category > series (ADR-029) — 상위 활성 시 하위는 null로 강제
+    const effectiveCategory = docFilter ? null : category;
+    const effectiveSeries = (docFilter || effectiveCategory) ? null : seriesFilter;
     ragMutation.mutate(
       {
         question: text,
         session_id: sessionId,
         doc_filter: docFilter,
-        category_filter: docFilter ? null : category,
+        category_filter: effectiveCategory,
+        series_filter: effectiveSeries,
       },
       {
         onSuccess: (data) => {
@@ -145,7 +150,9 @@ export default function ChatPage() {
               ? "이 책에 대해 질문하세요..."
               : category !== null
                 ? "이 카테고리에 대해 질문하세요..."
-                : "문서에 대해 질문하세요..."
+                : seriesFilter
+                  ? "이 시리즈에 대해 질문하세요..."
+                  : "문서에 대해 질문하세요..."
           }
         />
       </div>

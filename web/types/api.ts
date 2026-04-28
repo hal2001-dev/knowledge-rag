@@ -227,6 +227,143 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/series": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List All Series */
+        get: operations["list_all_series_series_get"];
+        put?: never;
+        /** Create One */
+        post: operations["create_one_series_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/series/{series_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get One */
+        get: operations["get_one_series__series_id__get"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete One
+         * @description 시리즈 삭제. FK ON DELETE SET NULL로 멤버 documents.series_id는 NULL로 분리됨.
+         */
+        delete: operations["delete_one_series__series_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update One */
+        patch: operations["update_one_series__series_id__patch"];
+        trace?: never;
+    };
+    "/series/{series_id}/members": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Members */
+        get: operations["list_members_series__series_id__members_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/series/_review/queue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Review Queue
+         * @description auto_attached + suggested 두 큐 일람 — 관리자 검수용.
+         */
+        get: operations["review_queue_series__review_queue_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/documents/{doc_id}/series_match/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm Match
+         * @description auto_attached → confirmed (관리자가 자동 묶기를 확정).
+         */
+        post: operations["confirm_match_documents__doc_id__series_match_confirm_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/documents/{doc_id}/series_match/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reject Match
+         * @description auto_attached/suggested → rejected (분리 + 동일 휴리스틱 재바인딩 차단).
+         */
+        post: operations["reject_match_documents__doc_id__series_match_reject_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/documents/{doc_id}/series_match/attach": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Attach Manual
+         * @description 수동 묶기 — 관리자가 시리즈를 직접 지정. status=confirmed로 마킹.
+         */
+        post: operations["attach_manual_documents__doc_id__series_match_attach_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -394,6 +531,19 @@ export interface components {
              * @default []
              */
             tags: string[];
+            /** Series Id */
+            series_id?: string | null;
+            /** Series Title */
+            series_title?: string | null;
+            /** Volume Number */
+            volume_number?: number | null;
+            /** Volume Title */
+            volume_title?: string | null;
+            /**
+             * Series Match Status
+             * @default none
+             */
+            series_match_status: string;
         };
         /** DocumentListResponse */
         DocumentListResponse: {
@@ -539,6 +689,11 @@ export interface components {
              * @description TASK-019: 특정 카테고리(`payload.metadata.category`)에 한정해 검색. 상단 카테고리 칩·도서관 카테고리 [이 카테고리에 묻기].
              */
             category_filter?: string | null;
+            /**
+             * Series Filter
+             * @description TASK-020 (ADR-029): 특정 series_id에 한정해 검색. 도서관 시리즈 카드 [이 시리즈에 대해 묻기]. doc_filter > category_filter 보다 후순위.
+             */
+            series_filter?: string | null;
         };
         /** QueryResponse */
         QueryResponse: {
@@ -569,6 +724,91 @@ export interface components {
             one_liner?: string | null;
             /** Category */
             category?: string | null;
+        };
+        /** SeriesCreateRequest */
+        SeriesCreateRequest: {
+            /** Series Id */
+            series_id?: string | null;
+            /** Title */
+            title: string;
+            /** Description */
+            description?: string | null;
+            /** Cover Doc Id */
+            cover_doc_id?: string | null;
+            /**
+             * Series Type
+             * @default book
+             */
+            series_type: string;
+        };
+        /**
+         * SeriesItem
+         * @description TASK-020 (ADR-029): 시리즈/묶음 1급 시민 응답 모델.
+         */
+        SeriesItem: {
+            /** Series Id */
+            series_id: string;
+            /** Title */
+            title: string;
+            /** Description */
+            description?: string | null;
+            /** Cover Doc Id */
+            cover_doc_id?: string | null;
+            /**
+             * Series Type
+             * @default book
+             */
+            series_type: string;
+            /**
+             * Member Count
+             * @default 0
+             */
+            member_count: number;
+            /** Created At */
+            created_at: string;
+        };
+        /** SeriesListResponse */
+        SeriesListResponse: {
+            /** Series */
+            series: components["schemas"]["SeriesItem"][];
+            /** Total */
+            total: number;
+        };
+        /** SeriesMembersResponse */
+        SeriesMembersResponse: {
+            /** Series Id */
+            series_id: string;
+            /** Members */
+            members: components["schemas"]["DocumentItem"][];
+        };
+        /** SeriesPatchRequest */
+        SeriesPatchRequest: {
+            /** Title */
+            title?: string | null;
+            /** Description */
+            description?: string | null;
+            /** Cover Doc Id */
+            cover_doc_id?: string | null;
+            /** Series Type */
+            series_type?: string | null;
+        };
+        /**
+         * SeriesReviewItem
+         * @description auto_attached + suggested 검수 큐 항목.
+         */
+        SeriesReviewItem: {
+            /** Doc Id */
+            doc_id: string;
+            /** Title */
+            title: string;
+            /** Series Id */
+            series_id?: string | null;
+            /** Series Title */
+            series_title?: string | null;
+            /** Volume Number */
+            volume_number?: number | null;
+            /** Series Match Status */
+            series_match_status: string;
         };
         /** SourceItem */
         SourceItem: {
@@ -1061,6 +1301,303 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["JobItem"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_all_series_series_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SeriesListResponse"];
+                };
+            };
+        };
+    };
+    create_one_series_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SeriesCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SeriesItem"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_one_series__series_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                series_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SeriesItem"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_one_series__series_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                series_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_one_series__series_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                series_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SeriesPatchRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SeriesItem"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_members_series__series_id__members_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                series_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SeriesMembersResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    review_queue_series__review_queue_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SeriesReviewItem"][];
+                };
+            };
+        };
+    };
+    confirm_match_documents__doc_id__series_match_confirm_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                doc_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentItem"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reject_match_documents__doc_id__series_match_reject_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                doc_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentItem"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    attach_manual_documents__doc_id__series_match_attach_post: {
+        parameters: {
+            query: {
+                series_id: string;
+                volume_number?: number | null;
+            };
+            header?: never;
+            path: {
+                doc_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */

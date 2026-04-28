@@ -5,6 +5,34 @@
 
 ---
 
+## [2026-04-28] impl | TASK-020 후속 — NextJS 시리즈 카드·시리즈 스코프 배지 (0.26.1)
+
+### 변경
+- `web/types/api.ts` — openapi-typescript 재생성 (`pnpm gen:api`). SeriesItem/SeriesListResponse/SeriesMembersResponse/SeriesReviewItem + DocumentItem.series 5필드 + QueryRequest.series_filter 자동 반영
+- `web/lib/api/types.ts` — series 4 type 별칭 추가
+- `web/lib/api/keys.ts` — `keys.series.{all,list,detail,members}` 추가
+- `web/lib/hooks/use-series.ts` 신설 — `useSeriesList()` + `useSeriesMembers(seriesId)`
+- `web/components/library/series-card.tsx` 신설 — 시리즈 N권 응축 카드. 상단 amber 배경+테두리로 단일 doc 카드와 시각 구분. 펼치기 시 멤버 목록 (volume_number 순), 각 권 클릭 → `?doc_filter=`. [이 시리즈에 묻기] → `?series_filter=`. series_match_status 표시
+- `web/components/library/doc-card.tsx` — 시리즈 멤버 doc에 "📚 Vol N" 배지 추가 (제목 옆). 비-시리즈 문서는 변화 없음
+- `web/app/library/page.tsx` — 시리즈 그룹 섹션 (카테고리 그룹 위). 시리즈 멤버는 카테고리 그룹에서 제외 — 중복 표시 방지
+- `web/components/chat/scope-banner.tsx` — `📚 시리즈 한정` 배지 모드 추가. amber 배경, 시리즈 제목+멤버 수 표시. 우선순위 doc > category > series 순으로 분기. clearAll에 `setSeriesFilter(null)` 포함
+- `web/app/chat/page.tsx` — `series_filter` URL state 인자 + 활성 스코프 우선순위 정렬(`docFilter > category > seriesFilter`) + ChatInput placeholder 4분기
+
+### 검증
+- `pnpm exec tsc --noEmit` 0 에러
+- `pnpm exec eslint` 0 경고 (변경 5파일)
+- Playwright Phase 1 (`AUTH_ENABLED=false pnpm exec playwright test ui-flow`): 9 passed / 1 skipped (mobile drawer chromium-desktop 의도 skip 유지). UI 추가 회귀 0
+- 백엔드 라이브: 시리즈 백필을 도서관에 즉시 노출하려면 `python scripts/suggest_series.py --apply`로 6 suggested 후보를 confirm 단계 거치거나, FastAPI `/documents/{id}/series_match/attach`로 수동 묶기. UI 자체는 series가 0건이어도 회귀 0 (시리즈 그룹 섹션 자동 숨김)
+
+### Streamlit 동결 정합 유지
+- 사용자 측 NextJS는 read-only — 카드·스코프·라우팅만 노출. 검수(confirm/reject/attach)는 ADR-029 결정대로 FastAPI 엔드포인트 + CLI로만 가능. NextJS admin 이전 시 검수 페이지 도입 (별건)
+
+### 영향 페이지
+- changelog 0.26.1
+- overview 동일 행 0.26.1로 NextJS UI 추가 표기
+
+---
+
 ## [2026-04-28] impl | TASK-020 — Series/묶음 문서 1급 시민 도입 완료 (ADR-029, 0.26.0)
 
 ### 데이터 모델
