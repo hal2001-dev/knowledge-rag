@@ -5,6 +5,95 @@
 
 ---
 
+## [2026-04-28] query | "검색 후 상위 섹션 펼쳐보기"는 미구현 — 도구는 갖춰짐, 별건 후속 후보
+
+### 사용자 질의
+- 청크 파싱 시 마크다운으로 변환 후 다시 청킹할 때 헤더 정보를 유지하는지 → 정정. 마크다운을 거치지 않음. Docling이 구조 트리에서 직접 청크 발행 + 각 청크 머리에 전체 heading 경로 breadcrumb prepend (`packages/loaders/docling_loader.py:57-114`). 마크다운(`data/markdown/{doc_id}.md`)은 별건의 사람용 사이드 산출물 (`_save_markdown` L141-160)
+- 청킹 본문이 로컬 로그에 남는지 → 아니오. `logs/`에는 개수·타이밍·플래그(`테이블/이미지`)만 한 줄. 청크 본문은 Qdrant payload(검색용) + `data/markdown/{doc_id}.md`(사람용)에 영속화
+- 검색에서 청크를 찾은 뒤 상위 섹션 검색 가능한지 → **현재 직접 지원 X. 도구는 거의 갖춰짐**
+
+### 현재 상태 (2026-04-28 시점 코드 기준)
+| 자원 | 상태 |
+|---|---|
+| `metadata.heading_path` (리스트, 상위→하위) | ✅ 모든 청크 영속화 (`docling_loader.py:123`) |
+| breadcrumb 문자열 청크 본문 prepend | ✅ 임베딩에 자연 포함 |
+| `metadata.heading_path` Qdrant payload index | ❌ `qdrant_store.py:152-157`은 `doc_id/doc_type/category/tags` 4개만 keyword index |
+| `scroll_by_doc_id(doc_id)` | ✅ chunk_index 순 회수 (`qdrant_store.py:375-397`) |
+| 검색 hit → 같은 헤딩 prefix 청크 묶음 확장 API/UI | ❌ 미구현 — retriever·pipeline·UI 어디에도 경로 없음 |
+| 유일한 활용 | 랜딩 카드 `top_headings` 집계 (`apps/routers/documents.py:241-257`) |
+
+### 후속 후보 (별건, 사용자 결정 대기)
+- **(A) "이 섹션 전체 보기"** — 검색 hit가 속한 `heading_path[0..k]` prefix 공유 청크를 chunk_index 순으로 모아 반환. 산정 ~80~150줄 + 테스트, 1~2시간. NextJS SourceExpander 옆 "📖 이 섹션 전체 보기" 버튼으로 자연스러운 UX
+- **(B) 헤딩 거시 검색** — `metadata.heading_path` keyword index 추가 + `GET /sections/search?q=` 엔드포인트, distinct 후보군. 산정 ~150~250줄 + 테스트
+- 결론: **(A)가 답변 품질·UX 양쪽에 즉시 도움**. 사용자 "위키 정리만"이라 본 query 항목으로만 기록, 태스크 등록 보류
+
+### 영향 페이지
+- 본 항목 (log.md) — 후속 결정에 활용
+
+---
+
+## [2026-04-28] impl | TASK-019 Phase B (a) — Clerk JWT 실 검증 구현 (0.25.0)
+
+### 변경
+- `apps/middleware/auth.py:_verify_token` — stub 제거 + 실 구현. PyJWKClient로 JWKS 자동 fetch+캐시 → RS256 서명 검증 → `iss` 일치 확인 → `sub` claim을 user_id 반환. 실패 분류:
+  - `PyJWKClientError` (네트워크·키 미존재) → `logger.warning` + `None`
+  - `InvalidTokenError` 계열 (만료·서명 불일치·issuer 불일치·claim 누락) → `logger.info` + `None`
+  - 기타 예외 → `logger.exception` + `None` (누설 차단)
+- `audience` 검증은 비활성화(`verify_aud: False`). Clerk 토큰은 통상 `aud` claim 미포함, 서명·exp·iss로 강도 확보. 필수 claim은 `["exp", "iat", "sub", "iss"]`로 강제
+- JWKS 클라이언트는 `__init__`에서 lazy(첫 검증 호출에서 1회 생성). 메모리 풋프린트 증가 0 (Phase 1 모드는 생성 자체 안 함)
+- `requirements.txt` — `pyjwt[crypto]>=2.8` 추가 (TASK-019, ADR-030 Phase 2 주석)
+- `tests/unit/test_middleware_auth.py` 신설 — 자체 RSA 키쌍으로 가짜 JWKS를 mock, 9개 케이스 회귀:
+  1. 정상 토큰 → sub 반환
+  2. 만료 토큰 → None
+  3. 잘못된 issuer → None
+  4. 잘못된 서명(다른 키) → None
+  5. 필수 claim(sub) 누락 → None
+  6. `clerk_jwks_url` 미설정 → None (시도 자체 안 함)
+  7. `clerk_issuer` 미설정 → None
+  8. JWKS 조회 실패(PyJWKClientError) → None
+  9. sub claim 비문자열 → None
+
+### 검증
+- `pytest tests/unit/test_middleware_auth.py -v` → **9/9 passed (0.80s)**
+- 전체 `pytest tests/unit/` → 본 작업 영향 0건 (기존 4건 실패는 base 동일 — generator 반환 타입 변경 사전 부채, 본 작업 무관)
+- 의존성 설치: `pyjwt 2.12.1`, `cryptography 47.0.0` (cffi 2.0.0, pycparser 3.0 부수)
+- `AUTH_ENABLED=false` 모드는 검증 호출 자체가 일어나지 않음 — 운영 동작 변화 0, 회귀 위험 0
+
+### 의도적 제외
+- `audience` 검증 — Clerk 토큰의 일반적 발급 형태 기준 비활성화. 향후 Clerk 설정에서 `aud` claim 추가 시 옵션 한 줄 변경
+- 실 Clerk dev 환경 통합 검증 — 본 항목은 운영에서 `AUTH_ENABLED=true` 전환 단계로 분리
+
+### Phase B 남은 항목 (최종)
+- 운영에서 `AUTH_ENABLED=true` 전환 + 회귀 검증 (env 토글 한 줄 + 백엔드 재기동)
+
+---
+
+## [2026-04-28] impl | TASK-019 Phase B 잔여 정리 — chat 라이브 sources 머지 + Playwright Phase 1/2 실 실행 통과 (0.24.2)
+
+### 변경
+- `web/app/chat/page.tsx` — RAG mutation 응답의 `sources` 필드를 `liveSources` 상태로 보존 + 마지막 assistant 메시지에 머지. 이전엔 `suggestions`/`latency_ms`만 머지하고 `sources` 누락 → conversation refetch 도착 전까지 SourceExpander 미표시 결함. 백엔드 `MessageItem`은 `sources`를 영속화하지 않으므로 라이브 값을 fallback으로 유지(`sources: liveSources ?? arr[i].sources`). sessionId 변경 시 동기 리셋에 `setLiveSources(undefined)` 추가
+- `web/tests/api-proxy.spec.ts` — 검증 경로를 `/api/health`(공개) → `/api/conversations`(보호)로 정정. proxy.ts `isPublicRoute`에 `/api/health`가 포함된 의도와 어긋나는 케이스를 수정. 보호된 `/api/*` 비인증 호출이 307 → `/sign-in` 인 것을 검증하는 본래 의도 회복. 헤더에 의도 명세 갱신
+
+### 검증 (실 실행, 2026-04-28)
+- `pnpm exec tsc --noEmit` 0 에러, `pnpm exec eslint app/chat/page.tsx` 0 경고
+- **Phase 1** (`AUTH_ENABLED=false pnpm exec playwright test ui-flow`): 9 passed / 1 skipped (chromium-desktop의 모바일 drawer는 `test.skip(!isMobile)` 의도된 skip)
+  - chromium-desktop / chromium-mobile 양 프로젝트
+  - 케이스: `/chat` 헤더·입력창·보내기, `/library` 검색 placeholder, `/library?q=test` URL state, `/` → `/chat` 리다이렉트, 모바일 사이드바 drawer
+- **Phase 2** (`AUTH_ENABLED=true pnpm exec playwright test auth-protected api-proxy`): 10 passed (8 auth-protected + 2 api-proxy)
+  - sign-in 페이지 Clerk SignIn 렌더, `/`·`/chat`·`/library` 비로그인 시 `/sign-in` 리다이렉트(307)
+  - `/api/conversations` 비인증 시 307 → `/sign-in` location 검증
+- 첫 시도 시 .next dev 캐시가 Phase 1↔Phase 2 전환에서 `Cannot find module '@clerk/nextjs'` 발생 → `rm -rf .next` 후 재빌드로 해소 (의존성은 정상, 캐시 손상)
+
+### 의도적 제외
+- 인증된 흐름(로그인 후 페이지 동작) — `@clerk/testing` 도입 후 별건
+- 백엔드 FastAPI 미가동 상태에서 실행 — Phase 1 ui-flow는 EmptyState fallback으로 페이지 로드 자체만 검증, Phase 2는 미들웨어 단계에서 차단되어 백엔드 도달 전 종료
+
+### Phase B 남은 항목
+- `apps/middleware/auth.py:_verify_token` Clerk JWT 실 검증 (현 stub)
+- 운영 환경에서 `AUTH_ENABLED=true` 전환 + 회귀 검증
+
+---
+
 ## [2026-04-28] impl | TASK-019 Phase B 진전 — proxy.ts AUTH 토글 + Playwright Phase 1/2 분리 (0.24.1)
 
 ### 발견 (Next 16 정정)

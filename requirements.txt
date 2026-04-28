@@ -38,6 +38,9 @@ kiwipiepy>=0.17
 # UI
 streamlit
 
+# 인증 (TASK-019, ADR-030 Phase 2) — Clerk JWT(RS256) JWKS 검증
+pyjwt[crypto]>=2.8
+
 # 유틸리티
 python-dotenv
 

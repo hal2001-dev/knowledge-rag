@@ -8,6 +8,7 @@ import { ChatInput } from "@/components/chat/chat-input";
 import { EmptyState } from "@/components/chat/empty-state";
 import { useConversation } from "@/lib/hooks/use-conversations";
 import { useRagQuery } from "@/lib/hooks/use-rag-query";
+import type { SourceItem } from "@/lib/api/types";
 import { useQueryState, parseAsString } from "nuqs";
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -23,11 +24,13 @@ export default function ChatPage() {
   // sessionId 변경 시 동기 리셋 — useEffect+setState 안티패턴 회피 (React docs: "Adjusting state on prop change")
   const [liveSuggestions, setLiveSuggestions] = useState<string[]>([]);
   const [liveLatency, setLiveLatency] = useState<number | undefined>();
+  const [liveSources, setLiveSources] = useState<SourceItem[] | undefined>();
   const [prevSessionId, setPrevSessionId] = useState<string | null>(sessionId);
   if (prevSessionId !== sessionId) {
     setPrevSessionId(sessionId);
     setLiveSuggestions([]);
     setLiveLatency(undefined);
+    setLiveSources(undefined);
   }
 
   // ?ask=... 자동 질의 가드 — ref만 만지므로 set-state-in-effect 룰 미저촉
@@ -41,22 +44,31 @@ export default function ChatPage() {
     return (conversation.data?.messages ?? []).map((m) => ({ ...m }));
   }, [conversation.data]);
 
-  // 마지막 assistant 메시지에 라이브 suggestions/latency 머지
+  // 마지막 assistant 메시지에 라이브 suggestions/latency/sources 머지
+  // (sources는 백엔드가 messages 페이로드에 영속화하지 않으므로 conversation refetch 후에도 라이브 값 유지)
   const messages = useMemo(() => {
-    if (!liveSuggestions.length && liveLatency === undefined) return baseMessages;
+    if (!liveSuggestions.length && liveLatency === undefined && !liveSources?.length) {
+      return baseMessages;
+    }
     const arr = [...baseMessages];
     for (let i = arr.length - 1; i >= 0; i--) {
       if (arr[i].role === "assistant") {
-        arr[i] = { ...arr[i], suggestions: liveSuggestions, latency_ms: liveLatency };
+        arr[i] = {
+          ...arr[i],
+          suggestions: liveSuggestions,
+          latency_ms: liveLatency,
+          sources: liveSources ?? arr[i].sources,
+        };
         break;
       }
     }
     return arr;
-  }, [baseMessages, liveSuggestions, liveLatency]);
+  }, [baseMessages, liveSuggestions, liveLatency, liveSources]);
 
   const sendMessage = (text: string) => {
     setLiveSuggestions([]);
     setLiveLatency(undefined);
+    setLiveSources(undefined);
     ragMutation.mutate(
       {
         question: text,
@@ -69,9 +81,10 @@ export default function ChatPage() {
           if (data.session_id && data.session_id !== sessionId) {
             setSessionId(data.session_id);
           }
-          // 응답 sources/latency를 message-list에 직접 주입할 수 없으니 별도 보존
+          // 응답 sources/latency/suggestions를 message-list에 직접 주입할 수 없으니 별도 보존
           setLiveSuggestions(data.suggestions ?? []);
           setLiveLatency(data.latency_ms);
+          setLiveSources(data.sources ?? []);
           // ScopeBanner 활성 시 conversation refetch는 hook의 invalidate가 처리
         },
       },

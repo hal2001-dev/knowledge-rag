@@ -13,6 +13,8 @@ from __future__ import annotations
 import ipaddress
 from urllib.parse import urlparse
 
+import jwt
+from jwt import InvalidTokenError, PyJWKClient, PyJWKClientError
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
@@ -73,8 +75,9 @@ class AuthMiddleware(BaseHTTPMiddleware):
     def __init__(self, app: ASGIApp, settings: Settings) -> None:
         super().__init__(app)
         self._settings = settings
-        # Clerk JWT 검증기는 Phase 2에서 lazy import. 현재는 stub.
-        self._verifier = None
+        # JWKS 클라이언트는 첫 검증 호출에서 lazy 생성 (PyJWKClient 내부에 키 캐시 보유).
+        # auth_enabled=false 또는 clerk_jwks_url 미설정 시 None 유지.
+        self._jwk_client: PyJWKClient | None = None
 
     async def dispatch(self, request: Request, call_next) -> Response:
         # health/문서 엔드포인트는 인증 면제 (모니터링 용도)
@@ -120,18 +123,51 @@ class AuthMiddleware(BaseHTTPMiddleware):
         )
 
     def _verify_token(self, token: str) -> str | None:
-        """Clerk JWT 검증. Phase 2에서 PyJWT + JWKS로 구현.
+        """Clerk JWT 검증 (RS256, JWKS).
 
-        Phase 1에선 stub: 토큰이 들어오면 Authorization 헤더 형식만 통과시키고
-        실제 검증은 미수행 (AUTH_ENABLED=true이면서 키 미발급 환경에서 401 회피).
-        Phase 2에서 본격 검증으로 전환할 때 이 함수만 교체.
+        절차:
+        1) 토큰 헤더 `kid`로 JWKS에서 공개키 조회 (PyJWKClient 내부 캐시)
+        2) RS256 서명 검증 + `exp`/`nbf`/`iat` 자동 검증
+        3) `iss`가 settings.clerk_issuer 와 일치하는지 검증
+        4) `sub` claim을 user_id로 반환 (Clerk user_xxx 형태)
+
+        실패 시 None 반환 → 미들웨어가 401. 어떤 단계에서든 예외는 흡수해 누설 차단.
         """
-        if not self._settings.clerk_jwks_url:
-            logger.warning("Clerk JWKS URL 미설정 — JWT 검증 stub 모드")
+        if not self._settings.clerk_jwks_url or not self._settings.clerk_issuer:
+            logger.warning("Clerk JWKS URL 또는 issuer 미설정 — JWT 검증 불가")
             return None
-        # TODO Phase 2: PyJWT + JWKS로 sub claim 추출, exp/aud 검증
-        logger.warning("Clerk JWT 검증 미구현 (Phase 2) — 토큰 거부")
-        return None
+
+        if self._jwk_client is None:
+            # PyJWKClient는 내부에서 응답 캐시 (max_cached_keys 기본 16, lifespan 300s)
+            self._jwk_client = PyJWKClient(self._settings.clerk_jwks_url)
+
+        try:
+            signing_key = self._jwk_client.get_signing_key_from_jwt(token)
+            payload = jwt.decode(
+                token,
+                signing_key.key,
+                algorithms=["RS256"],
+                issuer=self._settings.clerk_issuer,
+                # Clerk 토큰은 audience claim 없이 발급되는 경우가 일반적이라
+                # aud 검증은 비활성화 (서명·exp·iss로 충분히 강함)
+                options={"verify_aud": False, "require": ["exp", "iat", "sub", "iss"]},
+            )
+        except PyJWKClientError as exc:
+            logger.warning("JWKS 키 조회 실패: %s", exc)
+            return None
+        except InvalidTokenError as exc:
+            # 만료·서명 불일치·issuer 불일치·claim 누락 모두 여기로
+            logger.info("JWT 검증 거부: %s", exc)
+            return None
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("JWT 검증 중 예기치 못한 오류: %s", exc)
+            return None
+
+        sub = payload.get("sub")
+        if not isinstance(sub, str) or not sub:
+            logger.info("JWT에 sub claim 없음 또는 비문자열")
+            return None
+        return sub
 
 
 def get_request_user_id(request: Request) -> str:

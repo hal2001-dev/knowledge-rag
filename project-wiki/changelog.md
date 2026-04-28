@@ -22,6 +22,41 @@
 
 ---
 
+## [0.25.0] - 2026-04-28
+
+### Added
+- **Clerk JWT 실 검증** ([apps/middleware/auth.py](../apps/middleware/auth.py)) — TASK-019 Phase B (a):
+  - PyJWKClient로 JWKS 자동 fetch+캐시(기본 lifespan 300s, max_cached_keys 16)
+  - RS256 서명 검증 + `iss` 일치 확인 + `sub` claim → user_id 매핑
+  - 필수 claim 강제: `["exp", "iat", "sub", "iss"]`. `audience` 검증은 비활성화 (Clerk 토큰 형태 정합)
+  - 실패 시 `None` 반환 → 미들웨어가 401 응답. 예외 분류로 운영 로그 잡음 최소화 (네트워크 장애는 warning, 클라이언트 토큰 거부는 info, 그 외 unexpected는 exception)
+  - JWKS 클라이언트는 lazy 초기화 — `AUTH_ENABLED=false` 모드는 생성 자체 안 함, 메모리 풋프린트 증가 0
+- **`requirements.txt`** — `pyjwt[crypto]>=2.8` 추가 (Clerk JWT RS256 + JWKS)
+- **`tests/unit/test_middleware_auth.py`** 신설 — 자체 RSA 키쌍 + JWKS mock 9 케이스 (정상/만료/잘못된 issuer/잘못된 서명/필수 claim 누락/JWKS URL 미설정/issuer 미설정/JWKS 조회 실패/sub 비문자열). 9/9 passed (0.80s)
+
+### Verified
+- `pytest tests/unit/test_middleware_auth.py -v` → 9 passed
+- 본 작업의 회귀 영향 0건 (base 사전 부채 4건은 generator 반환 타입 변경 분, 본 작업과 무관)
+- Phase 1 (`AUTH_ENABLED=false`) 모드 — `_verify_token` 호출 자체가 안 일어나므로 운영 동작 변화 0
+
+---
+
+## [0.24.2] - 2026-04-28
+
+### Fixed
+- **`web/app/chat/page.tsx` 라이브 응답 머지 누락** — RAG mutation 응답의 `sources`가 `liveSources` 상태로 보존되지 않아 답변 직후 conversation refetch 도착 전까지 SourceExpander가 표시되지 않던 결함. `suggestions`/`latency_ms`와 동일하게 머지 + sessionId 변경 시 동기 리셋. 백엔드 `MessageItem`은 `sources`를 영속화하지 않으므로 라이브 값을 fallback으로 유지
+
+### Changed
+- **`web/tests/api-proxy.spec.ts` 검증 경로 정정** — `/api/health`(공개 라우트)에서 `/api/conversations`(보호 경로)로 변경. proxy.ts `isPublicRoute`(`/sign-in`, `/sign-up`, `/api/health`) 의도와 어긋나는 케이스를 수정해 보호 `/api/*`의 Clerk 게이트(307 → `/sign-in`) 회귀를 본래 의도대로 검증
+
+### Verified
+- **Playwright Phase 1** (`AUTH_ENABLED=false`, ui-flow): 9 passed / 1 skipped (mobile drawer는 `chromium-mobile` 한정 의도된 skip)
+- **Playwright Phase 2** (`AUTH_ENABLED=true`, auth-protected + api-proxy): 10 passed
+- `pnpm exec tsc --noEmit` 0 에러 / `pnpm exec eslint` 0 경고
+- 운영 메모: 첫 모드 전환 시 `.next` dev 캐시가 `@clerk/nextjs` 모듈 미해결 발생 → `rm -rf .next` 1회로 해소 (의존성 정상, 캐시 손상)
+
+---
+
 ## [0.24.1] - 2026-04-28
 
 ### Added

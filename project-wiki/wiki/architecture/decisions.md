@@ -1303,8 +1303,18 @@ LAN 신뢰 가정에 의존 — 외부 노출 시점에 reverse proxy로 Origin 
 - **Clerk Free 한도** — 10k MAU/월. 1인 운영 무관, 외부 공개 확장 시 점검
 - **마이그레이션 충돌** — bulk_ingest 또는 indexer 진행 중 ALTER 실행 시 락 대기. TASK-018 패턴(advisory lock + sentinel) 재사용으로 회피
 
+### Phase 2 JWT 실 검증 구현 (2026-04-28, 0.25.0)
+
+stub 제거 + 실 검증 적용. `apps/middleware/auth.py:_verify_token`:
+- PyJWKClient(`pyjwt[crypto]>=2.8`) — JWKS 자동 fetch+캐시 (lifespan 300s, max_cached_keys 16)
+- RS256 서명 검증 + `iss` 일치 + 필수 claim `["exp","iat","sub","iss"]` + `sub`을 user_id 매핑
+- `audience` 검증은 비활성화 (Clerk 토큰의 일반 형태 — 서명·exp·iss로 충분히 강함)
+- 실패 분류: `PyJWKClientError` warning, `InvalidTokenError` info, 기타 exception. 모두 `None` 반환 → 미들웨어가 401
+- JWKS 클라이언트는 lazy 초기화 — `AUTH_ENABLED=false` 모드는 인스턴스 생성 자체 안 함, 메모리 풋프린트 증가 0
+- 단위 회귀 9건 (`tests/unit/test_middleware_auth.py`) — 정상/만료/issuer/서명/claim/url/issuer미설정/JWKS실패/sub타입. 9/9 passed
+
 ### 후속
-- Phase 2 진입 후 `AUTH_ENABLED=true` 전환
+- 운영에서 `AUTH_ENABLED=true` 전환 + 회귀 검증
 - 시리즈 카드·시리즈 스코프 (TASK-020 완료 시 NextJS에 추가)
 - 답변 스트리밍 SSE 도입 — 별건
 - 외부 공개 시 Cloudflare Tunnel + Access (TASK-012)와 통합 가능 (Clerk 사용자 식별이 살아있는 채로 엣지 보호 추가)
