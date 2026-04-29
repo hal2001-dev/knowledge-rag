@@ -5,6 +5,42 @@
 
 ---
 
+## [2026-04-29] fix | 답변 빈약 보완 — 시스템 프롬프트 강화 + top_k 3→5 (0.26.4)
+
+### 사용자 보고
+- "답변이 조금 빈약 한데 보완 방법이 없을까?" — 같은 vi 매크로 질의에서 122자 단문 답변
+
+### 진단
+- 5가지 원인 차원: top_k(3), prompt 보수성, 모델 깊이, 청크 본문, heading 동반 검색
+- ROI 정렬 후 (A) 프롬프트 강화 + (B) top_k 5 채택. (C) 섹션 동반 / (D) self-critique / (E) 모델 토글은 별건
+
+### 변경
+- `packages/rag/generator.py:SYSTEM_PROMPT_PLAIN` — RESPONSE STRUCTURE(핵심 답변 → 근거·세부 → 유의사항 → 답변 가능 범위) + LENGTH GUIDANCE(단순/방법·절차/개념 비교 별도 가이드) + INSUFFICIENT CONTEXT 명시 추가
+- `packages/rag/generator.py:SYSTEM_PROMPT_WITH_SUGGESTIONS` — JSON `answer` 필드 작성 규칙 추가: RESPONSE STRUCTURE 그대로 따르기, `\n`·마크다운 적극 사용, 한 줄 압축 금지. JSON 모드에서도 풍부한 답변 보장
+- `apps/config.py:default_top_k` 3 → 5
+- `.env:DEFAULT_TOP_K` 3 → 5 (env override가 코드 default를 덮으므로 함께 변경)
+
+### 검증 (실 트레이스, 같은 시리즈 한정 query)
+| 메트릭 | Before (0.26.3) | After (0.26.4) |
+|---|---|---|
+| 답변 길이 | 122자 | **610자 (5x)** |
+| 구조 | 단일 문단 | 핵심 답변 + 근거 5단계 + 유의사항 + 답변 가능 범위 |
+| sources | 3 | 5 |
+| latency | 6971ms | 7226ms (+3.6%) |
+
+후속 질문(suggestions 3개)도 같은 호출에서 정상 생성.
+
+### 영향 페이지
+- changelog 0.26.4
+- log.md 본 항목
+
+### 후속 (별건)
+- (C) heading prefix 동반 검색 — 같은 섹션 청크 자동 동반, ~80줄, 1.5시간
+- (D) self-critique 1회 추가 — LLM 호출 2x, 비용·latency 부담
+- (E) 모델 `gpt-4o` 토글 — 비용 ~10x 사전 합의 필요
+
+---
+
 ## [2026-04-29] fix | LangSmith 부모 rag.query run 메타데이터 누락 (0.26.3)
 
 ### 증상

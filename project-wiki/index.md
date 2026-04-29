@@ -1,7 +1,7 @@
 # Wiki Index
 
 **마지막 업데이트**: 2026-04-28 (TASK-021 운영 인프라 도입 — launchd 5분 스냅샷 + 30초 워커 RSS 가드, ADR-031, monitoring.md 신설. 이전: 워커 15h 가동·#189 reset·ISSUE-005 갱신)
-**총 페이지 수**: 31 (루트 9 + wiki/ 17 + issues/open/ 4 + issues/resolved/ 1)
+**총 페이지 수**: 34 (루트 9 + wiki/ 17 + issues/open/ 7 + issues/resolved/ 1)
 
 ---
 
@@ -138,6 +138,9 @@
 | [ISSUE-003](wiki/issues/resolved/ISSUE-003-ingest-memory-spike-system-freeze.md) | 인덱싱 중 메모리 폭발로 시스템 freeze (qdrant_store.add_documents 미배치 임베딩) | resolved · 2026-04-26 (후속 노트 추가) | 2026-04-26 |
 | [ISSUE-004](wiki/issues/open/ISSUE-004-docling-parse-longtail.md) | Docling 파싱 단계 메모리·시간 long-tail (큰 PDF에서 RSS 12GB·8분) | open · 후순위 | 2026-04-26 |
 | [ISSUE-005](wiki/issues/open/ISSUE-005-memory-guard-worker-scapegoat.md) | 메모리 가드가 idle worker를 누명으로 SIGTERM (시스템 used% 폭주의 진짜 범인 미식별) | open · 관찰 중 | 2026-04-27 |
+| [ISSUE-006](wiki/issues/open/ISSUE-006-empty-state-suggestion-source-confusion.md) | EmptyState가 활성 스코프(doc_filter/category/series_filter) 인지 0 — 책 선택해도 본문 화면 고정 | open · WIP (ScopedEmptyState 적용, 사용자 검증 전) | 2026-04-28 |
+| [ISSUE-007](wiki/issues/open/ISSUE-007-overview-suggested-questions-mismatch.md) | /index/overview suggested_questions ↔ retrieval 정합 불일치 | open · 합의됨, 코드 보류 | 2026-04-28 |
+| [ISSUE-008](wiki/issues/open/ISSUE-008-scope-residue-on-switch.md) | 스코프 전환 시 이전 URL state 잔류 — 헤더 칩과 본문 표시 불일치 | open · 합의됨, 코드 보류 | 2026-04-28 |
 
 ---
 

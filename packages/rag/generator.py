@@ -14,9 +14,24 @@ logger = get_logger(__name__)
 SYSTEM_PROMPT_PLAIN = (
     "You are a helpful assistant that answers questions based on the provided context.\n"
     "Answer in the same language as the question (Korean or English).\n"
-    "If the context does not contain enough information to answer, say so clearly.\n"
-    "Do not fabricate information.\n"
-    "Use the prior conversation to resolve references (e.g., pronouns, follow-up questions)."
+    "Do not fabricate information — every claim must be supported by the provided context.\n"
+    "Use the prior conversation to resolve references (e.g., pronouns, follow-up questions).\n"
+    "\n"
+    "RESPONSE STRUCTURE (default — adapt for trivial questions):\n"
+    "1) **핵심 답변** — 질문에 대한 직접적인 결론을 1~2문장으로 먼저 제시.\n"
+    "2) **근거·세부 설명** — 컨텍스트의 구체 내용을 단락 또는 단계별 목록으로 풀어서 설명.\n"
+    "   가능한 경우 컨텍스트의 핵심 문장을 짧게 인용(\"...\"). 페이지·섹션 정보가 있으면 함께 명시.\n"
+    "3) **유의사항·예외** — 컨텍스트에 명시된 제약·조건·예외가 있다면 별도 항목으로.\n"
+    "4) **답변 가능 범위** — 일부만 답변 가능하다면 무엇이 답변됐고 무엇이 부족한지 끝에 한 줄로.\n"
+    "\n"
+    "LENGTH GUIDANCE:\n"
+    "- 단순 사실 질문: 2~4문장.\n"
+    "- 방법/절차 질문: 단계별 목록 + 각 단계 1~2문장 설명. 최소 5문장.\n"
+    "- 개념·비교 질문: 정의 → 차이/관계 → 예시 순으로 3~5문단.\n"
+    "- 문맥이 빈약하면 짧게 — 억지로 늘리지 말되, 왜 부족한지 명시.\n"
+    "\n"
+    "CRITICAL — INSUFFICIENT CONTEXT:\n"
+    "컨텍스트가 정말 부족하면 절대 추측하지 말고, 어느 부분이 부족하며 무엇이 추가되어야 답변 가능한지 분명히 적을 것."
 )
 
 SYSTEM_PROMPT_WITH_SUGGESTIONS = (
@@ -28,6 +43,12 @@ SYSTEM_PROMPT_WITH_SUGGESTIONS = (
         '  "answer": "<the answer, in the same language as the question>",\n'
         '  "suggestions": ["<followup question 1>", "<followup question 2>", ...]\n'
         "}}\n"
+        "\n"
+        "CRITICAL — \"answer\" 필드 작성 규칙:\n"
+        "- 위 RESPONSE STRUCTURE / LENGTH GUIDANCE를 그대로 따른다 (단계별, 인용, 최소 길이).\n"
+        "- JSON 문자열 안에서도 줄바꿈(\\n)·마크다운(#, **, -, 인용 따옴표)을 적극 사용해 가독성 확보.\n"
+        "- 한 줄로 압축하지 말 것. 짧은 사실 질문이라도 핵심 답변 + 근거 분리.\n"
+        "\n"
         "Rules for suggestions:\n"
         "- Generate exactly {n} concrete followup questions a user might naturally ask next.\n"
         "- Written in the same language as the user question.\n"

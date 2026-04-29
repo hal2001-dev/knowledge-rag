@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     # 앱
     upload_dir: str = "./data/uploads"
     markdown_dir: str = "./data/markdown"
-    default_top_k: int = 3
+    default_top_k: int = 5          # 답변 빈약 보완 (2026-04-29) — 3→5: LLM 컨텍스트 풍부, 같은 섹션 인접 청크 동반 효과
     default_initial_k: int = 20
     default_score_threshold: float = 0.3
     max_upload_size_mb: int = 200

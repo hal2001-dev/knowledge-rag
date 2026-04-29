@@ -55,6 +55,9 @@
 |----|------|---------|
 | [ISSUE-001](wiki/issues/open/ISSUE-001-mobile-file-uploader-no-preview.md) | 모바일 파일 업로더가 선택된 파일을 표시하지 않음 | 중 · **🛑 보류 (인증·공개배포 묶음에 포함)** |
 | [ISSUE-002](wiki/issues/open/ISSUE-002-suggestion-badge-click-unresponsive.md) | 후속 질문 배지 두 번째 이후 클릭 무반응 (3회 수정 시도 증상 지속, 모바일 특정 의심) | 중 · **🛑 보류 (인증·공개배포 묶음에 포함)** |
+| [ISSUE-006](wiki/issues/open/ISSUE-006-empty-state-suggestion-source-confusion.md) | EmptyState가 활성 스코프(doc_filter/category/series_filter) 인지 0 — 책 선택해도 본문 화면 고정 | 중 · **WIP** (ScopedEmptyState 코드 적용, 사용자 검증 전) |
+| [ISSUE-007](wiki/issues/open/ISSUE-007-overview-suggested-questions-mismatch.md) | /index/overview suggested_questions ↔ retrieval 정합 불일치 (LLM 추론 질문이 실제 답할 수 있는 책과 어긋남) | 중 · **합의됨, 코드 보류** (옵션 a 채택) |
+| [ISSUE-008](wiki/issues/open/ISSUE-008-scope-residue-on-switch.md) | 스코프 전환 시 이전 스코프 URL state 잔류 — 헤더 칩과 본문 표시 불일치 | 중 · **합의됨, 코드 보류** |
 
 ---
 

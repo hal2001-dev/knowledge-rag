@@ -22,6 +22,25 @@
 
 ---
 
+## [0.26.4] - 2026-04-29
+
+### Improved — 답변 품질 보완 (사용자 보고 "답변이 조금 빈약")
+- **`packages/rag/generator.py:SYSTEM_PROMPT_PLAIN`** — RESPONSE STRUCTURE(핵심 답변 → 근거·세부 → 유의사항 → 답변 가능 범위) + LENGTH GUIDANCE(단순/방법·절차/개념·비교) + INSUFFICIENT CONTEXT 명시 추가. 비용 0(프롬프트만)
+- **`packages/rag/generator.py:SYSTEM_PROMPT_WITH_SUGGESTIONS`** — JSON 모드의 answer 필드 작성 규칙 추가: 위 STRUCTURE 그대로 따르기, `\n`·마크다운 적극 사용, 한 줄 압축 금지
+- **`apps/config.py:default_top_k`** 3 → 5 (LLM 컨텍스트 풍부 + 인접 섹션 동반 효과)
+- **`.env:DEFAULT_TOP_K`** 3 → 5 (env override가 우선이므로 함께 갱신)
+
+### Verified
+- 같은 시리즈 한정 query 비교 — 답변 122자 → **610자 (5x)**, 구조 단일 문단 → 핵심/근거 5단계/유의사항/답변 범위, sources 3 → 5, latency +3.6%(허용)
+- 후속 질문 3개 정상 생성 (회귀 0)
+
+### Notes — 후속 별건
+- (C) heading prefix 동반 검색 — 같은 섹션 청크 자동 동반, ~80줄
+- (D) self-critique 1회 추가 — 비용·latency 2x
+- (E) `LLM_MODEL=gpt-4o` 토글 — 비용 ~10x 사전 합의 필요
+
+---
+
 ## [0.26.3] - 2026-04-29
 
 ### Fixed
