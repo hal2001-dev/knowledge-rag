@@ -37,6 +37,8 @@
 → 🕐 TASK-012 (후순위, 2026-04-23 큐잉) — Cloudflare Tunnel + Access 외부 노출 게이트웨이 (코드 0줄, 운영 문서 중심)
 → 🕐 TASK-013 (후순위, 2026-04-23 큐잉) — MkDocs Material + GitHub Pages 문서 사이트 (현재 project-wiki/ 구조 유지, CI 자동 배포)
 → ✅ TASK-020 (2026-04-28 완료) — Series/묶음 문서 1급 시민 (ADR-029, changelog 0.26.0)
+→ 🕐 TASK-022 (후순위, 2026-04-29 큐잉) — heading prefix 동반 검색 (검색 hit 청크가 속한 같은 섹션 인접 청크 자동 동반, 답변 일관성 ↑)
+→ 🕐 TASK-023 (후순위, 2026-04-29 큐잉) — 답변 self-critique step (1차 답변 후 LLM이 자체 검토·보강. 비용·latency 2x 트레이드오프)
 → 🛑 인증·공개배포 전체 묶음 (사용자 지시까지 전부 보류, 2026-04-22)
      · ISSUE-001 (모바일 업로드) · 관리자 UI 2단계 · HTTPS 배포 · 앱 내 API 키/OAuth · 관리자 전용 UI 버튼
 → 🔄 장기 검토: Graph RAG, MCP 재개, 대화 요약, 스트리밍, L2 중복 감지
@@ -949,6 +951,118 @@ indexer_worker BackgroundTasks 체인을 확장: `summary → classify → serie
 → ADR-031, changelog [0.24.0], [wiki/deployment/monitoring.md](wiki/deployment/monitoring.md)
 
 **결과**: 스크립트 2개 + LaunchAgents 2개 도입, launchd 등록 시 즉시 1회 실행 + 정기 fork 정상. 모의 SIGTERM 테스트 통과(decoy 프로세스 KILL + 사후 dump 82KB + 자기 PID 제외 검증). ISSUE-005/004 위키 cross-link 완료. TASK-019 Phase B 재개 차례.
+
+---
+
+## TASK-022: heading prefix 동반 검색 — 같은 섹션 인접 청크 자동 동반
+
+**상태**: queued (후순위, 2026-04-29 큐잉)
+**우선순위**: 중 — 답변 품질 개선의 본질적 해결책. 사용자 명시 "착수" 지시 시 진행
+**관련**: 0.26.4 (답변 빈약 보완 A+B의 후속 옵션 C). 사용자 query 기록(2026-04-28 "검색에서 청크를 찾고 난후 상위 섹터를 검색 할수 있나?") + 답변 길이 보강 후속
+
+### 배경
+- 검색 hit 청크는 매크로 정의 페이지 116·107·75 같이 흩어진 위치에서 선택됨. **같은 섹션의 인접 청크**(예: 31.10 vi 키맵 ~ 31.12 매크로 활용)가 함께 들어가면 LLM이 흐름을 끊지 않고 답할 수 있음
+- 현재 retriever는 점수 기준 top-k만 반환 → 같은 섹션 흐름이 끊김
+- 사용자가 답변 길이 보강 후 "ROS 2.0.3 같은 정확한 용어 매칭 + 같은 섹션 펼침"을 한꺼번에 활용 가능
+
+### 목표
+- 검색 hit 청크 각각의 `metadata.heading_path`(상위→하위 리스트)에서 prefix(예: 첫 1~2단계)를 잡아 같은 prefix를 공유하는 인접 청크를 N개 자동 동반
+- LLM 컨텍스트가 `top_k * (1 + 동반 수)`로 확장되어 답변 일관성 ↑
+- 동반 청크는 reranker 점수가 0이라 답변 sources 표시에서는 별도 표기(보조 컨텍스트)
+
+### 아키텍처 결정 (초안)
+- `packages/rag/retriever.py:retrieve` — top_n 결정 후 각 hit에 대해 Qdrant scroll로 같은 `heading_path[0..k]` prefix 공유 청크 N개 추가 회수
+- `metadata.heading_path` payload index 추가(현재 미인덱싱) — keyword 단일 prefix 저장 또는 array 인덱스 + prefix 매칭은 client-side
+- 답변 sources에는 hit 청크만 노출, 동반 청크는 LLM 컨텍스트에만 들어가 사용자 혼란 회피
+- `HEADING_EXPAND_ENABLED=true|false` 토글, `HEADING_EXPAND_NEIGHBORS=2` 등 환경 변수
+- 신규 ADR 예약 (다음 가용 ADR-032)
+
+### 범위 — 에이전트가 할 일 (착수 시)
+
+**백엔드:**
+- [ ] `packages/vectorstore/qdrant_store.py` — `scroll_by_heading_prefix(doc_id, prefix, limit)` 신설. payload index `metadata.heading_path` 추가
+- [ ] `packages/rag/retriever.py` — hit 청크의 heading_path[0..k] prefix로 인접 청크 N개 회수 → reranker 통과한 top_n에 동반(점수 0). 중복 doc_id+chunk_index 회피
+- [ ] `packages/rag/generator.py:_build_messages` — 동반 청크와 hit 청크를 시각 구분하지 않고 같은 컨텍스트에 주입(LLM에게 같은 가중)
+- [ ] `apps/config.py` + `.env.example` — `HEADING_EXPAND_ENABLED` (기본 false → 도입 후 안정화 후 true), `HEADING_EXPAND_PREFIX_DEPTH` (기본 1), `HEADING_EXPAND_NEIGHBORS` (기본 2)
+- [ ] LangSmith 트레이스 — `expanded_chunks_count` 메타 추가
+- [ ] 단위 테스트: `packages/rag/test_retriever_heading_expand.py` — heading_path 기반 prefix 매칭 5케이스
+- [ ] 통합 smoke: 같은 vi 매크로 질의로 before/after 비교, 답변 길이·일관성 측정
+
+**문서:**
+- [ ] ADR-032 — heading prefix 동반 검색 결정·임계값·회귀 전략
+- [ ] `wiki/features/retrieval.md` (미작성이면 신설) — 동반 검색 정책
+- [ ] `wiki/data/schema.md` — payload index 추가
+- [ ] changelog 신규 버전, log impl 항목
+
+### 의도적 제외
+- LLM 의 "이 섹션 전체 보기" UI 노출 — 별건 후속(NextJS UI)
+- heading 거시 검색(섹션 단위 검색 엔드포인트) — 별건
+- LLM이 동반 청크 가중치 다르게 보도록 prompt 별도 표기 — 단순화로 같은 가중
+
+### 완료 기준
+- `HEADING_EXPAND_ENABLED=true`로 vi 매크로 질의 시 sources 5개 + 동반 청크 5x2=10개가 LLM 컨텍스트에 들어감 (트레이스 검증)
+- 답변 일관성 정성 평가: same-section 흐름이 끊기지 않음
+- 회귀: `HEADING_EXPAND_ENABLED=false`에서 0.26.4 동작 100% 보존
+
+### 회귀 전략
+- env 토글 1줄로 즉시 회귀
+- payload index 추가는 idempotent — 기존 데이터 영향 0
+
+### 산정
+- ~80~150줄 + 테스트, 1.5~2시간
+
+---
+
+## TASK-023: 답변 self-critique step — 1차 답변 후 LLM 자체 검토·보강
+
+**상태**: queued (후순위, 2026-04-29 큐잉)
+**우선순위**: 낮음 — 비용·latency 2x 트레이드오프. 사용자 명시 "착수" 지시 시 진행
+**관련**: 0.26.4 (답변 빈약 보완 A+B의 후속 옵션 D)
+
+### 배경
+- 0.26.4의 프롬프트 강화로 답변 길이·구조 5x 개선됐으나 일부 질문에서 "표면 합성"에 그치는 경향
+- LLM이 1차 답변을 만들고, 그 답변과 원본 컨텍스트를 다시 보면서 누락·과장·근거 부재 등을 self-critique하면 **답변 완결성·신뢰도 ↑**
+- 비용 트레이드오프: LLM 호출 2x, latency 2x, 비용 2x. 일반 사용자에겐 부담
+
+### 목표
+- 답변 품질이 critical한 질문(예: 사실 합성·복잡한 절차)에서만 self-critique 활성화 — 토글 방식
+- 일반 모드(0.26.4)는 그대로 유지
+
+### 아키텍처 결정 (초안)
+- `packages/rag/generator.py:generate` — `self_critique_enabled=True`일 때 1차 답변 → 두 번째 LLM 호출(원본 컨텍스트 + 1차 답변 + critique 프롬프트)로 보강된 답변 반환
+- `SUGGESTIONS_ENABLED`와 별개 토글
+- `.env`의 `SELF_CRITIQUE_ENABLED=false` 기본
+- `QueryRequest.self_critique: bool | None`로 호출자 선택권 부여
+- 신규 ADR 예약 (다음 가용 ADR-033)
+
+### 범위 — 에이전트가 할 일 (착수 시)
+- [ ] `packages/rag/generator.py` — self-critique 1회 추가 호출 분기. 두 호출 모두 LangSmith 자식 run으로 추적
+- [ ] `apps/schemas/query.py:QueryRequest.self_critique` 추가
+- [ ] `apps/config.py` + `.env.example` — `SELF_CRITIQUE_ENABLED` 글로벌 기본값
+- [ ] `packages/rag/pipeline.py` — request 통과 + LangSmith 메타에 `self_critique_used` 기록
+- [ ] 비용·latency 측정 — 같은 질의 5건 before/after 비교, 평균 latency·토큰 사용량
+- [ ] NextJS UI — chat input 옆 "정밀 답변" 토글 버튼 (선택)
+- [ ] 단위 테스트: 두 호출 모두 발생 / suggestions와 자유 조합 회귀
+
+**문서:**
+- [ ] ADR-033 — self-critique 결정·비용·운영 가이드
+- [ ] `wiki/features/generation.md` (미작성이면 신설) — 답변 생성 정책
+- [ ] changelog, log impl
+
+### 의도적 제외
+- 자동 critique 활성 — 사용자가 명시 토글한 경우만
+- multi-step retrieval (re-search) — 본 TASK 범위 밖, 별건
+
+### 완료 기준
+- `SELF_CRITIQUE_ENABLED=true`로 vi 매크로 질의 시 LangSmith에 두 LLM 호출 자식 run 가시화. 답변 품질 정성 평가 ↑
+- 회귀: 기본 false에서 0.26.4 동작 100% 보존
+- 비용·latency 2x 측정값 기록
+
+### 회귀 전략
+- env 또는 request 토글 둘 중 하나로 즉시 비활성
+
+### 산정
+- ~50~80줄 + 테스트, 1~1.5시간 (TASK-022 후 진행 권장)
 
 ---
 

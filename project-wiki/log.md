@@ -5,6 +5,37 @@
 
 ---
 
+## [2026-04-29] queue | 답변 품질 후속 — TASK-022 (heading 동반 검색) + TASK-023 (self-critique) 큐잉
+
+### 큐잉 배경
+- 0.26.4(2026-04-29 답변 빈약 보완 A+B) 진단 시 5차원 옵션 중 (C)/(D) 채택 보류 → 후속 태스크로 등록 합의
+- 사용자 명시 "착수" 지시 시 진행. TASK-012/013과 동일 후순위 정책
+
+### TASK-022: heading prefix 동반 검색
+- **요지**: 검색 hit 청크의 `metadata.heading_path[0..k]` prefix를 공유하는 인접 청크 N개를 reranker top-k 외에 자동 동반해 LLM 컨텍스트 풍부화. 답변 일관성·흐름 ↑
+- **연결**: 사용자 query(2026-04-28 "검색에서 청크를 찾고 난후 상위 섹터를 검색 할수 있나?") 정합 — 본 TASK가 그 결함의 백엔드 본질 해결책
+- **ADR**: 다음 가용 ADR-032 예약 (착수 시 작성)
+- **신규 토글**: `HEADING_EXPAND_ENABLED` / `HEADING_EXPAND_PREFIX_DEPTH` / `HEADING_EXPAND_NEIGHBORS`
+- **Qdrant**: payload index `metadata.heading_path` 추가 (현재 미인덱싱)
+- **산정**: 80~150줄 + 테스트, 1.5~2시간
+
+### TASK-023: 답변 self-critique step
+- **요지**: 1차 답변 후 LLM이 원본 컨텍스트와 자기 답변을 다시 보면서 누락·과장 검토 → 보강된 답변 반환. 답변 완결성·신뢰도 ↑
+- **트레이드오프**: LLM 호출 2x, latency 2x, 비용 2x — 토글로만 활성(`SELF_CRITIQUE_ENABLED=false` 기본)
+- **호출자 선택**: `QueryRequest.self_critique` 옵션. NextJS UI에 "정밀 답변" 토글 버튼 후속
+- **ADR**: 다음 가용 ADR-033 예약
+- **산정**: 50~80줄 + 테스트, 1~1.5시간. TASK-022 후 진행 권장
+
+### 영향 페이지
+- `roadmap.md` 큐 표 + TASK-022/023 상세 섹션 신규
+- `overview.md` 다음 예정 표에 두 행 추가
+- `log.md` 본 항목
+
+### 다음 단계
+- 별도 사용자 지시 시까지 자동 진행 금지
+
+---
+
 ## [2026-04-29] fix | 답변 빈약 보완 — 시스템 프롬프트 강화 + top_k 3→5 (0.26.4)
 
 ### 사용자 보고
