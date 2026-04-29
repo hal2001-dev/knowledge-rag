@@ -5,7 +5,7 @@ import { ScopeBanner } from "@/components/chat/scope-banner";
 import { MessageList, type AssistantMessage } from "@/components/chat/message-list";
 import { Suggestions } from "@/components/chat/suggestions";
 import { ChatInput } from "@/components/chat/chat-input";
-import { EmptyState } from "@/components/chat/empty-state";
+import { ScopedEmptyState } from "@/components/chat/scoped-empty-state";
 import { useConversation } from "@/lib/hooks/use-conversations";
 import { useRagQuery } from "@/lib/hooks/use-rag-query";
 import type { SourceItem } from "@/lib/api/types";
@@ -120,7 +120,7 @@ export default function ChatPage() {
         <div className="flex-1 overflow-y-auto px-3 py-4">
           <div className="max-w-4xl mx-auto">
             {isEmpty ? (
-              <EmptyState onPickQuestion={(q) => sendMessage(q)} />
+              <ScopedEmptyState onPickQuestion={(q) => sendMessage(q)} />
             ) : (
               <>
                 <MessageList messages={messages} />
