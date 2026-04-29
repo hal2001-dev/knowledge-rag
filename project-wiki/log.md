@@ -5,6 +5,56 @@
 
 ---
 
+## [2026-04-29] fix | LangSmith 부모 rag.query run 메타데이터 누락 (0.26.3)
+
+### 증상
+- LangSmith 대시보드에서 `rag.query` run의 `metadata`에 `session_id/user_id/history_turns`(query.py 측)는 보이는데 `reranker_backend/llm_backend/llm_model/doc_filter/category_filter/series_filter/suggestions_*`(pipeline.py 측)는 빠져 있음
+
+### 원인
+- `@traceable`이 만든 부모 run은 함수 진입 시점에 시작되는데, 그 함수 안에서 호출한 `tracing_context(...)`는 부모 run을 덮어쓰지 못하고 그 컨텍스트 안에서 만들어지는 child run(retrieve 등)에만 적용됨
+- query.py의 tracing_context는 pipeline.query를 호출하기 전에 적용되므로 자식 rag.query run이 상속해 보이는 것이고, pipeline.py의 tracing_context는 retrieve의 손자에만 적용됨
+
+### 수정
+- `packages/rag/pipeline.py` — `langsmith.run_helpers.get_current_run_tree()`로 부모 run을 직접 잡아 `add_metadata(scope_metadata)` + `add_tags(scope_tag_list)` 호출 추가. tracing_context 블록도 그대로 유지(자식에 동일 메타 상속)
+
+### 검증 (실 트레이스, 2026-04-29)
+- 같은 시리즈 한정 query 1건 재발송 → 부모 rag.query run의 metadata에 누락 7필드 모두 정상 노출 + tags 4개(`reranker:bge-m3`, `llm:openai`, `suggestions:True`, `series_filter:ser_63f37a204`)
+- 기존 `session_id/user_id/history_turns/ls_*/revision_id` 회귀 0
+
+### 영향 페이지
+- changelog 0.26.3
+- log.md 본 항목
+
+---
+
+## [2026-04-28] query | NextJS 도서관·채팅 진단 — ISSUE-006 / 007 / 008 등록
+
+### 사용자 보고 흐름
+1. "채팅에서 주어진 대화를 클릭 했는데 왜 답변을 못찾는다는게 나오지?" — 검색 0건 분기 의심
+2. "책을 선택 했을때 예시질문은 어떻게 나온거지?" — sample_questions 출처 추적 (TASK-014/ADR-024 — 인덱싱 시 LLM 1회, documents.summary JSONB 영속화)
+3. "파이썬_데이터_싸이언스_핸드북 를 선택 헀는데 3D 게임 프로그래밍에서 중요한 기술은 무엇인가요? 라는 질문이 어떻게 나오게 된거지?" — DB 조회로 캐시 sample_questions 확인(마라톤·이산 레이블·NumPy 등 정합). "3D 게임 프로그래밍" 질문은 그 책 카드가 아니라 `/index/overview` 인덱스 전체 5개 질문이었음 → ISSUE-006/007 단서
+4. "책을 선택 헀을떄 나오는 화면이 고정인거 같네" — EmptyState가 활성 스코프 인지 0 (ISSUE-006)
+5. "이책에 묻기 하면 나오는 화면은 내가 선택 한 책하고는 상관이없네" — 같은 결함 재확인
+6. "책을 선택 하고 상위 카테고리를 변경 하면 뭐가 안맞지 않나?" — 헤더 칩이 doc_filter 정리 안 함 → ISSUE-008
+7. "일단 문서만 업데이트 해줘" — ISSUE-006/007/008 등록만, 코드 수정 보류
+
+### 등록한 이슈 3건
+| ID | 결함 | 코드 상태 |
+|---|---|---|
+| ISSUE-006 | EmptyState가 활성 스코프 인지 0 — `?doc_filter=` 활성에도 인덱스 전체 화면 고정 | **WIP** — `web/components/chat/scoped-empty-state.tsx` 신설 + `app/chat/page.tsx`에서 EmptyState→ScopedEmptyState 교체 적용. 사용자 검증 전이라 wiki는 open/WIP 유지 |
+| ISSUE-007 | `/index/overview` suggested_questions(LLM 추론)가 retrieval 정합과 어긋남 — sources hit하나 LLM "정보 없음" | **합의됨, 보류** — 옵션 (a) 채택: LLM 호출 → 책 5권 무작위 + 캐시된 책별 sample_question 1개씩 직접 사용 + 자동 doc_filter 첨부. 산정 1.5시간 |
+| ISSUE-008 | 스코프 전환 시 이전 URL state 잔류(헤더 카테고리·도서관 카드·시리즈 카드·EmptyState 4개 진입점) — 칩 활성색과 본문 불일치 | **합의됨, 보류** — 4 파일 수정 + 회귀, 산정 30~45분. 헬퍼 `setExclusiveScope` 도입 권장 |
+
+### 영속화 정보
+- DB 조회로 확정한 사실: `documents.summary` JSONB의 `sample_questions`는 인덱싱 시 LLM 1회 호출로 영구 캐시(파이썬 데이터 사이언스 책 = 마라톤·이산 레이블·NumPy). UI는 이 캐시를 그대로 보여줘야 정합.
+- 활성 스코프 정책 ADR-029: 우선순위 doc > category > series, 한 번에 하나. retrieval/ScopeBanner는 이 정책 따름. 진입점들이 정책을 어김 = ISSUE-008.
+- 인덱스 전체 추론(/index/overview)은 책별 데이터를 합산해 빚어낸 추측 — 책 단위 캐시(ADR-024)와 분리 운영되어 ISSUE-007 발생.
+
+### 다음 단계
+- 사용자가 ISSUE-006 적용분(ScopedEmptyState)을 직접 확인 후 resolved 이동 + 별도 코드 수정 진행 합의 시 ISSUE-007/008 진행
+
+---
+
 ## [2026-04-28] ops | TASK-020 백필 적용 — 6 suggested → 3 시리즈 confirmed + end-to-end 검증 (0.26.2)
 
 ### 변경

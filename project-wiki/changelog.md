@@ -22,6 +22,16 @@
 
 ---
 
+## [0.26.3] - 2026-04-29
+
+### Fixed
+- **`packages/rag/pipeline.py:query`** — LangSmith 부모 `rag.query` run에서 `reranker_backend / llm_backend / llm_model / doc_filter / category_filter / series_filter / suggestions_*` 7필드와 4태그가 누락되던 결함. 원인: `@traceable`이 만든 부모 run은 함수 내부의 `tracing_context`로 덮어씌워지지 않음. `langsmith.run_helpers.get_current_run_tree().add_metadata/add_tags`로 부모 run에 직접 부여. 자식 run에는 기존 `tracing_context`가 그대로 상속해 동일 메타 유지
+
+### Verified
+- 같은 시리즈 한정 query 1건 재발송 → 누락 7필드 + 4태그 모두 부모 run metadata에 정상 노출. 기존 메타(session_id/user_id/history_turns 등) 회귀 0
+
+---
+
 ## [0.26.2] - 2026-04-28
 
 ### Fixed

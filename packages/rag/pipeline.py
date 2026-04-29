@@ -4,7 +4,7 @@ from pathlib import Path
 
 from langchain_openai import ChatOpenAI
 from langsmith import traceable
-from langsmith.run_helpers import tracing_context
+from langsmith.run_helpers import get_current_run_tree, tracing_context
 
 from apps.config import Settings
 from packages.code.models import DocRecord
@@ -120,23 +120,29 @@ class RAGPipeline:
         elif effective_series:
             scope_tags.append(f"series_filter:{effective_series[:12]}")
 
-        with tracing_context(
-            tags=[
-                f"reranker:{self._reranker.backend}",
-                f"llm:{llm_backend}",
-                f"suggestions:{self._settings.suggestions_enabled}",
-            ] + scope_tags,
-            metadata={
-                "reranker_backend": self._reranker.backend,
-                "llm_backend": llm_backend,
-                "suggestions_enabled": self._settings.suggestions_enabled,
-                "suggestions_count": self._settings.suggestions_count,
-                "llm_model": llm_model,
-                "doc_filter": doc_filter,
-                "category_filter": effective_category,
-                "series_filter": effective_series,
-            },
-        ):
+        scope_tag_list = [
+            f"reranker:{self._reranker.backend}",
+            f"llm:{llm_backend}",
+            f"suggestions:{self._settings.suggestions_enabled}",
+        ] + scope_tags
+        scope_metadata = {
+            "reranker_backend": self._reranker.backend,
+            "llm_backend": llm_backend,
+            "suggestions_enabled": self._settings.suggestions_enabled,
+            "suggestions_count": self._settings.suggestions_count,
+            "llm_model": llm_model,
+            "doc_filter": doc_filter,
+            "category_filter": effective_category,
+            "series_filter": effective_series,
+        }
+
+        # @traceable이 만든 부모 run(rag.query)에 직접 메타/태그 부여 — tracing_context는 자식 run에만 적용됨
+        parent_run = get_current_run_tree()
+        if parent_run is not None:
+            parent_run.add_metadata(scope_metadata)
+            parent_run.add_tags(scope_tag_list)
+
+        with tracing_context(tags=scope_tag_list, metadata=scope_metadata):
             chunks = retrieve(
                 store=self._store,
                 query=question,
