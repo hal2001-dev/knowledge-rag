@@ -43,13 +43,44 @@ class DoclingDocumentLoader(BaseLoader):
     """
     Docling 기반 로더. PDF의 텍스트, 테이블, 이미지를 모두 추출한다.
     markdown_save_dir 지정 시 파싱 결과를 {doc_id}.md 파일로 저장한다.
+
+    `force_full_page_ocr=True` 인 경우 macOS Vision(ocrmac)으로 페이지 전체 OCR.
+    스캔본 PDF(텍스트 레이어 없음) 재색인용 — 일반 디지털 PDF에는 불필요(시간만 소모).
     """
 
-    def __init__(self, markdown_save_dir: str | None = None):
+    def __init__(
+        self,
+        markdown_save_dir: str | None = None,
+        force_full_page_ocr: bool = False,
+        ocr_lang: tuple[str, ...] = ("ko-KR", "en-US"),
+    ):
         self._markdown_save_dir = markdown_save_dir
+        self._force_full_page_ocr = force_full_page_ocr
+        self._ocr_lang = ocr_lang
+
+    def _build_ocr_converter(self):
+        """OCR 활성 시 사용할 Docling DocumentConverter."""
+        from docling.datamodel.base_models import InputFormat
+        from docling.datamodel.pipeline_options import OcrMacOptions, PdfPipelineOptions
+        from docling.document_converter import DocumentConverter, PdfFormatOption
+
+        opts = PdfPipelineOptions(
+            do_ocr=True,
+            do_table_structure=True,
+            ocr_options=OcrMacOptions(
+                lang=list(self._ocr_lang),
+                force_full_page_ocr=True,
+            ),
+        )
+        return DocumentConverter(
+            format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=opts)}
+        )
 
     def load(self, file_path: str, doc_id: str, title: str) -> list[Document]:
-        logger.info(f"Docling 파싱 시작: {file_path}")
+        logger.info(
+            f"Docling 파싱 시작: {file_path}"
+            + (" [OCR 모드]" if self._force_full_page_ocr else "")
+        )
 
         if self._markdown_save_dir:
             self._save_markdown(file_path, doc_id, title)
@@ -80,11 +111,14 @@ class DoclingDocumentLoader(BaseLoader):
                 always_emit_headings=True,
                 omit_header_on_overflow=False,
             )
-        lc_docs = _DoclingLoader(
-            file_path=file_path,
-            export_type=ExportType.DOC_CHUNKS,
-            chunker=chunker,
-        ).load()
+        loader_kwargs = {
+            "file_path": file_path,
+            "export_type": ExportType.DOC_CHUNKS,
+            "chunker": chunker,
+        }
+        if self._force_full_page_ocr:
+            loader_kwargs["converter"] = self._build_ocr_converter()
+        lc_docs = _DoclingLoader(**loader_kwargs).load()
 
         documents: list[Document] = []
         indexed_at = datetime.now(timezone.utc).isoformat()
@@ -143,10 +177,10 @@ class DoclingDocumentLoader(BaseLoader):
         save_dir.mkdir(parents=True, exist_ok=True)
         md_path = save_dir / f"{doc_id}.md"
 
-        md_docs = _DoclingLoader(
-            file_path=file_path,
-            export_type=ExportType.MARKDOWN,
-        ).load()
+        md_kwargs = {"file_path": file_path, "export_type": ExportType.MARKDOWN}
+        if self._force_full_page_ocr:
+            md_kwargs["converter"] = self._build_ocr_converter()
+        md_docs = _DoclingLoader(**md_kwargs).load()
         # 페이지별 Markdown을 이어붙인 뒤 한 번만 normalize.
         # 테이블 구조는 페이지 내부에서 완결되므로 파편별 cleanup은 안전.
         markdown_content = _normalize_markdown(

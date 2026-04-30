@@ -74,12 +74,31 @@ def delete_conversation(db: Session, session_id: str, user_id: str) -> bool:
     return True
 
 
+_TITLE_MAX_LEN = 60
+
+
 def add_message(db: Session, session_id: str, role: str, content: str) -> MessageRecord:
     message = MessageRecord(session_id=session_id, role=role, content=content)
     db.add(message)
+    # 첫 user 메시지 도착 시 conversation title 자동 설정 (이미 설정돼 있으면 손대지 않음).
+    if role == "user":
+        conv = db.query(ConversationRecord).filter(
+            ConversationRecord.session_id == session_id
+        ).first()
+        if conv is not None and not (conv.title or "").strip():
+            conv.title = _summarize_to_title(content)
     db.commit()
     db.refresh(message)
     return message
+
+
+def _summarize_to_title(text: str) -> str:
+    """질문을 한 줄 제목으로 압축. 첫 줄 → 공백 정규화 → 60자 컷 + 말줄임표."""
+    first_line = (text or "").splitlines()[0].strip() if text else ""
+    normalized = " ".join(first_line.split())
+    if len(normalized) <= _TITLE_MAX_LEN:
+        return normalized
+    return normalized[: _TITLE_MAX_LEN - 1].rstrip() + "…"
 
 
 def get_recent_messages(db: Session, session_id: str, limit: int = 20) -> list[MessageRecord]:

@@ -77,6 +77,7 @@ def to_doc_record(db_record: DocumentRecord) -> DocRecord:
         volume_number=db_record.volume_number,
         volume_title=db_record.volume_title,
         series_match_status=db_record.series_match_status or "none",
+        extraction_quality=db_record.extraction_quality,
     )
 
 

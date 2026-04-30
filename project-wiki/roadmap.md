@@ -39,6 +39,7 @@
 → ✅ TASK-020 (2026-04-28 완료) — Series/묶음 문서 1급 시민 (ADR-029, changelog 0.26.0)
 → 🕐 TASK-022 (후순위, 2026-04-29 큐잉) — heading prefix 동반 검색 (검색 hit 청크가 속한 같은 섹션 인접 청크 자동 동반, 답변 일관성 ↑)
 → 🕐 TASK-023 (후순위, 2026-04-29 큐잉) — 답변 self-critique step (1차 답변 후 LLM이 자체 검토·보강. 비용·latency 2x 트레이드오프)
+→ ✅ TASK-024 (완료, 2026-04-30) — 답변 스트리밍 SSE (첫 토큰 ~500ms, 체감 latency 5x ↓). ADR-033, 0.28.0 릴리즈
 → 🛑 인증·공개배포 전체 묶음 (사용자 지시까지 전부 보류, 2026-04-22)
      · ISSUE-001 (모바일 업로드) · 관리자 UI 2단계 · HTTPS 배포 · 앱 내 API 키/OAuth · 관리자 전용 UI 버튼
 → 🔄 장기 검토: Graph RAG, MCP 재개, 대화 요약, 스트리밍, L2 중복 감지
@@ -1063,6 +1064,69 @@ indexer_worker BackgroundTasks 체인을 확장: `summary → classify → serie
 
 ### 산정
 - ~50~80줄 + 테스트, 1~1.5시간 (TASK-022 후 진행 권장)
+
+---
+
+## TASK-024: 답변 스트리밍 SSE — 첫 토큰 ~500ms로 체감 latency 5x 개선
+
+**상태**: ✅ completed (2026-04-30) — 0.28.0 릴리즈, ADR-033 작성
+**우선순위**: 현재 — 사용자 명시 (2026-04-30)
+**관련**: ADR-030 후속 ("답변 스트리밍 SSE 도입 — 별건"), ISSUE-010 OCR 작업 묶음, ADR-033(본 결정 기록)
+
+### 배경
+- 현재 `/query`는 retrieval + rerank + generation 전부 끝나고 한 번에 JSON 응답 — 사용자 체감 latency 3~5초
+- LLM 생성 토큰은 OpenAI streaming으로 즉시 받을 수 있는데, 평가·테스트 호환성 우려로 그동안 묶여 있었음
+- TASK-024 채택으로 사용자 측 체감 latency가 본질적 개선(첫 토큰 ~500ms)
+
+### 목표
+- 신규 `/query/stream` SSE 엔드포인트 — 기존 `/query`(평가 스크립트·기타 호출자)는 유지
+- NextJS chat 페이지가 신규 엔드포인트 사용으로 전환
+- AbortController로 사용자가 스트림 중단 가능
+
+### 아키텍처 결정 (초안)
+- `/query/stream` SSE 응답:
+  - `event: meta`  → `{session_id, retrieval_ms}`  (검색 직후)
+  - `event: sources` → `[{doc_id, title, page, score, content_type, excerpt}]` (rerank 직후)
+  - `event: token` → `"부분 텍스트"` (LLM 토큰마다)
+  - `event: suggestions` → `[...]` (생성 완료 후)
+  - `event: done`  → `{latency_ms}` (스트림 종료)
+- LangChain `ChatOpenAI.astream()` 사용 — 기존 `.invoke()`와 코드 분기
+- DB 메시지 저장은 스트림 종료 시점에 한 번 commit (현 패턴 보존)
+- LangSmith 트레이스: streaming 친화 — 자식 run에 token 카운트만 누적
+- 신규 ADR 예약 (다음 가용 ADR-033 또는 -034)
+
+### 범위 — 에이전트가 할 일 (착수 시)
+- [ ] `apps/routers/query.py` — `POST /query/stream` 신설 (StreamingResponse + `text/event-stream`)
+- [ ] `packages/rag/generator.py` — `generate_stream(...)` async generator. 토큰별 yield
+- [ ] `packages/rag/pipeline.py` — `query_stream(...)` orchestration (기존 `query`와 분기)
+- [ ] `web/lib/hooks/use-rag-stream.ts` — `fetch + ReadableStream` SSE 파서
+- [ ] `web/app/chat/page.tsx` — `useRagQuery` → `useRagStream`. assistant 메시지를 토큰 누적으로 점진 렌더
+- [ ] `web/components/chat/message-list.tsx` — streaming 상태 표시 (typing cursor 등)
+- [ ] AbortController — chat-input "중지" 버튼
+- [ ] Playwright e2e — 첫 토큰 1.5s 이내, 전체 응답 정상
+
+**문서:**
+- [ ] ADR-033 — 스트리밍 SSE 결정·이벤트 스키마·후방호환 정책
+- [ ] `wiki/api/endpoints.md` — 새 엔드포인트 스펙
+- [ ] changelog, log impl
+
+### 의도적 제외
+- 평가 스크립트(`scripts/bench_*`) 스트리밍 전환 — `/query` 그대로 사용
+- 모바일 SSE 호환성 검증 — Playwright 데스크톱만 (모바일은 ISSUE-001 묶음)
+- 백프레셔/플로우 컨트롤 — 단일 사용자 환경엔 과함
+
+### 완료 기준
+- 채팅 첫 토큰 1.5초 이내 도착 (현 5초 → 5x 개선)
+- 기존 `/query` 회귀 0 (평가 벤치 통과)
+- AbortController로 중단 시 LangSmith run 정상 마감
+- LangSmith 트레이스에 streaming 메타·token 카운트 가시
+
+### 회귀 전략
+- 신규 엔드포인트만 추가 — 기존 `/query` 변경 0
+- UI 측은 환경변수 `NEXT_PUBLIC_STREAM_ENABLED=false`로 즉시 회귀
+
+### 산정
+- 0.5~1일 (백엔드 ~150줄 + 프론트 ~100줄 + 테스트)
 
 ---
 

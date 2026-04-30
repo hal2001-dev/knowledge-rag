@@ -1,6 +1,7 @@
 import time
 import uuid
 from pathlib import Path
+from typing import Iterator
 
 from langchain_openai import ChatOpenAI
 from langsmith import traceable
@@ -11,9 +12,10 @@ from packages.code.models import DocRecord
 from packages.code.logger import get_logger
 from packages.loaders.factory import get_loader
 from packages.rag.chunker import chunk_documents
-from packages.rag.generator import generate
+from packages.rag.generator import generate, generate_stream, generate_suggestions
 from packages.rag.reranker import Reranker
 from packages.rag.retriever import retrieve
+from packages.rag.title_match import detect_implicit_doc_filter
 from packages.vectorstore.qdrant_store import QdrantDocumentStore
 
 logger = get_logger(__name__)
@@ -101,6 +103,14 @@ class RAGPipeline:
 
         # 활성 스코프 우선순위 doc > category > series (한 번에 하나, ADR-029).
         # 상위 우선순위가 들어오면 하위 인자는 무시.
+        # 명시된 scope filter가 모두 없을 때만 implicit doc_filter 매칭을 시도한다.
+        implicit_doc_title = None
+        if not doc_filter and not category_filter and not series_filter:
+            hit = detect_implicit_doc_filter(question)
+            if hit:
+                doc_filter = hit[0]
+                implicit_doc_title = hit[1]
+                logger.info(f"implicit doc_filter 감지 — title='{hit[1]}' doc_id={hit[0][:8]}…")
         effective_category = None if doc_filter else category_filter
         effective_series = None if (doc_filter or effective_category) else series_filter
 
@@ -134,6 +144,7 @@ class RAGPipeline:
             "doc_filter": doc_filter,
             "category_filter": effective_category,
             "series_filter": effective_series,
+            "implicit_doc_title": implicit_doc_title,
         }
 
         # @traceable이 만든 부모 run(rag.query)에 직접 메타/태그 부여 — tracing_context는 자식 run에만 적용됨
@@ -196,3 +207,128 @@ class RAGPipeline:
             "latency_ms": latency_ms,
             "suggestions": suggestions,
         }
+
+    @traceable(run_type="chain", name="rag.query_stream")
+    def query_stream(
+        self,
+        question: str,
+        top_k: int | None = None,
+        initial_k: int | None = None,
+        score_threshold: float | None = None,
+        history: list[dict] | None = None,
+        doc_filter: str | None = None,
+        category_filter: str | None = None,
+        series_filter: str | None = None,
+    ) -> Iterator[tuple[str, object]]:
+        """TASK-024: 답변 스트리밍.
+
+        yield 시퀀스: ("sources", [...]) → ("token", "...")* → ("suggestions", [...]) → ("done", {...}).
+        검색 0건이면 "no_context" + "done"만 발급.
+        """
+        top_k = top_k or self._settings.default_top_k
+        initial_k = initial_k or self._settings.default_initial_k
+        score_threshold = score_threshold if score_threshold is not None else self._settings.default_score_threshold
+
+        # implicit doc_filter — explicit scope 미지정 시만
+        implicit_doc_title = None
+        if not doc_filter and not category_filter and not series_filter:
+            hit = detect_implicit_doc_filter(question)
+            if hit:
+                doc_filter = hit[0]
+                implicit_doc_title = hit[1]
+                logger.info(f"스트림 implicit doc_filter — title='{hit[1]}' doc_id={hit[0][:8]}…")
+        effective_category = None if doc_filter else category_filter
+        effective_series = None if (doc_filter or effective_category) else series_filter
+
+        llm_model = getattr(self._llm, "model_name", None) or getattr(self._llm, "model", "")
+        llm_backend = self._settings.llm_backend or "openai"
+        logger.info(
+            f"스트림 질의: '{question}' (history={len(history or [])}턴, "
+            f"reranker={self._reranker.backend}, llm={llm_backend}:{llm_model})"
+        )
+        start = time.monotonic()
+
+        scope_tags = []
+        if doc_filter:
+            scope_tags.append(f"doc_filter:{doc_filter[:8]}")
+        elif effective_category:
+            scope_tags.append(f"category_filter:{effective_category}")
+        elif effective_series:
+            scope_tags.append(f"series_filter:{effective_series[:12]}")
+
+        scope_tag_list = [
+            f"reranker:{self._reranker.backend}",
+            f"llm:{llm_backend}",
+            "stream:true",
+        ] + scope_tags
+        scope_metadata = {
+            "reranker_backend": self._reranker.backend,
+            "llm_backend": llm_backend,
+            "stream": True,
+            "llm_model": llm_model,
+            "doc_filter": doc_filter,
+            "category_filter": effective_category,
+            "series_filter": effective_series,
+            "implicit_doc_title": implicit_doc_title,
+        }
+        parent_run = get_current_run_tree()
+        if parent_run is not None:
+            parent_run.add_metadata(scope_metadata)
+            parent_run.add_tags(scope_tag_list)
+
+        with tracing_context(tags=scope_tag_list, metadata=scope_metadata):
+            chunks = retrieve(
+                store=self._store,
+                query=question,
+                reranker=self._reranker,
+                initial_k=initial_k,
+                top_n=top_k,
+                score_threshold=score_threshold,
+                doc_id=doc_filter,
+                category=effective_category,
+                series_id=effective_series,
+            )
+
+        sources = [
+            {
+                "doc_id": c.metadata.get("doc_id"),
+                "title": c.metadata.get("title"),
+                "page": c.metadata.get("page"),
+                "content_type": c.metadata.get("content_type", "text"),
+                "score": round(c.score, 4),
+                "excerpt": c.content[:200],
+            }
+            for c in chunks
+        ]
+        yield ("sources", sources)
+
+        if not chunks:
+            no_ctx = "관련 문서를 찾지 못했습니다."
+            yield ("token", no_ctx)
+            yield ("done", {
+                "latency_ms": int((time.monotonic() - start) * 1000),
+                "answer": no_ctx,
+            })
+            return
+
+        answer_parts: list[str] = []
+        with tracing_context(tags=scope_tag_list, metadata=scope_metadata):
+            for token in generate_stream(self._llm, question, chunks, history):
+                answer_parts.append(token)
+                yield ("token", token)
+        full_answer = "".join(answer_parts)
+
+        suggestions: list[str] = []
+        if self._settings.suggestions_enabled and full_answer:
+            with tracing_context(tags=scope_tag_list + ["suggestions:true"], metadata=scope_metadata):
+                suggestions = generate_suggestions(
+                    self._llm, question, full_answer, self._settings.suggestions_count
+                )
+        yield ("suggestions", suggestions)
+
+        latency_ms = int((time.monotonic() - start) * 1000)
+        logger.info(
+            f"스트림 질의 완료: {latency_ms}ms, {len(sources)}개 소스, "
+            f"answer_len={len(full_answer)}, suggestions={len(suggestions)}"
+        )
+        yield ("done", {"latency_ms": latency_ms, "answer": full_answer})

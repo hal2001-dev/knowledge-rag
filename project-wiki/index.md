@@ -1,7 +1,7 @@
 # Wiki Index
 
-**마지막 업데이트**: 2026-04-28 (TASK-021 운영 인프라 도입 — launchd 5분 스냅샷 + 30초 워커 RSS 가드, ADR-031, monitoring.md 신설. 이전: 워커 15h 가동·#189 reset·ISSUE-005 갱신)
-**총 페이지 수**: 34 (루트 9 + wiki/ 17 + issues/open/ 7 + issues/resolved/ 1)
+**마지막 업데이트**: 2026-04-30 (0.30.0 — 질문 본문 책 제목 매칭으로 implicit doc_filter 자동 적용 + ADR-034. 이전: 0.29.0 UX 폴리시 묶음)
+**총 페이지 수**: 39 (루트 9 + wiki/ 17 + issues/open/ 7 + issues/resolved/ 6)
 
 ---
 
@@ -141,6 +141,11 @@
 | [ISSUE-006](wiki/issues/open/ISSUE-006-empty-state-suggestion-source-confusion.md) | EmptyState가 활성 스코프(doc_filter/category/series_filter) 인지 0 — 책 선택해도 본문 화면 고정 | open · WIP (ScopedEmptyState 적용, 사용자 검증 전) | 2026-04-28 |
 | [ISSUE-007](wiki/issues/open/ISSUE-007-overview-suggested-questions-mismatch.md) | /index/overview suggested_questions ↔ retrieval 정합 불일치 | open · 합의됨, 코드 보류 | 2026-04-28 |
 | [ISSUE-008](wiki/issues/open/ISSUE-008-scope-residue-on-switch.md) | 스코프 전환 시 이전 URL state 잔류 — 헤더 칩과 본문 표시 불일치 | open · 합의됨, 코드 보류 | 2026-04-28 |
+| [ISSUE-009](wiki/issues/resolved/ISSUE-009-clerk-handshake-loop-http-lan.md) | Clerk dev handshake 무한 루프 — HTTP LAN host 접속 시 도서관·채팅 화면 0건 (Secure 쿠키 미저장) | resolved · workaround | 2026-04-30 |
+| [ISSUE-010](wiki/issues/resolved/ISSUE-010-scan-only-pdf-extraction.md) | 스캔본 PDF 16건 본문 추출 사실상 0 — 검색·답변 불가 (소설 묶음) | resolved · macOS Vision OCR 재색인 | 2026-04-30 |
+| [ISSUE-011](wiki/issues/resolved/ISSUE-011-chat-no-optimistic-user-bubble.md) | 채팅 사용자 메시지가 응답 도착 전까지 화면에 안 뜸 — 옵티미스틱 렌더 누락 | resolved | 2026-04-30 |
+| [ISSUE-012](wiki/issues/resolved/ISSUE-012-chat-input-not-bottom-fixed.md) | 채팅 입력창이 하단에 고정되지 않음 — 스크롤 내려야 보임 | resolved | 2026-04-30 |
+| [ISSUE-013](wiki/issues/resolved/ISSUE-013-sidebar-title-overflow.md) | 사이드바 대화 제목이 오른쪽으로 overflow — flex min-w-0 누락 + ScrollArea 부적합 | resolved | 2026-04-30 |
 
 ---
 

@@ -13,6 +13,7 @@ data/qdrant_storage/
 data/pg_data/
 data/uploads/
 data/markdown/
+data/markdown_ocr_test/
 data/faiss_index/
 
 # Python 캐시

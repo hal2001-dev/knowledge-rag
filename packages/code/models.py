@@ -35,6 +35,8 @@ class DocRecord:
     volume_number: Optional[int] = None
     volume_title: Optional[str] = None
     series_match_status: str = "none"
+    # ISSUE-010: 텍스트 추출 품질 (NULL/None = 미평가/ok 취급)
+    extraction_quality: Optional[str] = None
 
 
 @dataclass

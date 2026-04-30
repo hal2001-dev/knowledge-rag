@@ -1,0 +1,264 @@
+{
+  "started_at": "2026-04-30T06:10:50.581333+00:00",
+  "finished_at": "2026-04-30T06:12:22.467718+00:00",
+  "elapsed_sec": 91.89,
+  "total": 17,
+  "ok": 17,
+  "failed": 0,
+  "empty": 0,
+  "regenerate": false,
+  "dry_run": false,
+  "results": [
+    {
+      "doc_id": "8b3358da-0a77-463e-be7f-a905b7cb1489",
+      "title": "종말일기_Z_암흑의날",
+      "status": "ok",
+      "model": "gpt-4o-mini",
+      "one_liner": "종말을 배경으로 한 긴장감 넘치는 이야기",
+      "topics": [
+        "종말",
+        "언데드",
+        "생존",
+        "루시아",
+        "긴장감"
+      ],
+      "elapsed_ms": 7851
+    },
+    {
+      "doc_id": "96cc8042-2a1b-40b9-bd78-8e282c17d82e",
+      "title": "종말일기_Z",
+      "status": "ok",
+      "model": "gpt-4o-mini",
+      "one_liner": "종말을 맞이한 세계의 일기 형식 이야기",
+      "topics": [
+        "종말",
+        "일기",
+        "생존",
+        "언데드",
+        "공포"
+      ],
+      "elapsed_ms": 8310
+    },
+    {
+      "doc_id": "5d58358f-2c0d-4db7-8f99-08dd9bee8e61",
+      "title": "우주바이러스_The_Andromeda_Strain",
+      "status": "ok",
+      "model": "gpt-4o-mini",
+      "one_liner": "우주 바이러스와 외계 생물의 접촉 탐구",
+      "topics": [
+        "우주 바이러스",
+        "외계 생물",
+        "병리학",
+        "생물학적 영향",
+        "위기 관리"
+      ],
+      "elapsed_ms": 4774
+    },
+    {
+      "doc_id": "8fad80d8-d420-410a-a0ff-a2c4faec5dcd",
+      "title": "성채_2",
+      "status": "ok",
+      "model": "gpt-4o-mini",
+      "one_liner": "소설 '성채_2'의 일부 내용 요약",
+      "topics": [
+        "소설",
+        "감정",
+        "인물 관계",
+        "갈등"
+      ],
+      "elapsed_ms": 4913
+    },
+    {
+      "doc_id": "c14e9372-6d6a-4347-905a-285a62a9119e",
+      "title": "스노우_크래쉬2",
+      "status": "ok",
+      "model": "gpt-4o-mini",
+      "one_liner": "스노우 크래쉬2의 복잡한 서사 전개",
+      "topics": [
+        "스노우 크래쉬",
+        "히로",
+        "언어와 사고",
+        "현대 사회 문제"
+      ],
+      "elapsed_ms": 6235
+    },
+    {
+      "doc_id": "365a35c9-6123-4ec0-8eee-dd55cfd72573",
+      "title": "하루하루가_세상의_종말_2",
+      "status": "ok",
+      "model": "gpt-4o-mini",
+      "one_liner": "종말 이후의 생존을 다룬 이야기",
+      "topics": [
+        "종말",
+        "생존",
+        "고주파 채널",
+        "자원 부족",
+        "일기 형식"
+      ],
+      "elapsed_ms": 4956
+    },
+    {
+      "doc_id": "a4b90578-d1dd-4e1e-b6db-e1caeee73b3c",
+      "title": "성채_1",
+      "status": "ok",
+      "model": "gpt-4o-mini",
+      "one_liner": "세계문학전집 215의 일부 내용",
+      "topics": [
+        "세계문학",
+        "갈등",
+        "대화",
+        "인물 간의 관계"
+      ],
+      "elapsed_ms": 4370
+    },
+    {
+      "doc_id": "964898f8-0c0b-4ae0-82cf-d8763f8c85ea",
+      "title": "스노우_크래쉬1",
+      "status": "ok",
+      "model": "gpt-4o-mini",
+      "one_liner": "스노우 크래쉬의 세계와 캐릭터 탐구",
+      "topics": [
+        "스노우 크래쉬",
+        "HIRO PROTAGONIST",
+        "디스토피아",
+        "기술적 상상력",
+        "사회적 맥락"
+      ],
+      "elapsed_ms": 5605
+    },
+    {
+      "doc_id": "a015b6dd-97e1-423c-8dbc-7c8949d720ec",
+      "title": "하루하루가_세상의_종말_1",
+      "status": "ok",
+      "model": "gpt-4o-mini",
+      "one_liner": "좀비 아포칼립스를 배경으로 한 이야기",
+      "topics": [
+        "좀비 아포칼립스",
+        "생존",
+        "일기 형식",
+        "인간 본성"
+      ],
+      "elapsed_ms": 4324
+    },
+    {
+      "doc_id": "9c747df9-2949-4a50-acdc-be5e28e1b3b0",
+      "title": "디지털_포트리스_02",
+      "status": "ok",
+      "model": "gpt-4o-mini",
+      "one_liner": "디지털 포트리스의 긴장감 넘치는 이야기",
+      "topics": [
+        "디지털 포트리스",
+        "갈등",
+        "비밀",
+        "암호",
+        "캐릭터 관계"
+      ],
+      "elapsed_ms": 5604
+    },
+    {
+      "doc_id": "2882ffcb-00da-4402-b2fa-a059a3869ec2",
+      "title": "디지털_포트리스_01",
+      "status": "ok",
+      "model": "gpt-4o-mini",
+      "one_liner": "디지털 포트리스의 긴장감 넘치는 이야기",
+      "topics": [
+        "디지털 포트리스",
+        "NSA",
+        "갈등",
+        "위기",
+        "음모"
+      ],
+      "elapsed_ms": 4617
+    },
+    {
+      "doc_id": "c37b262f-1a73-4f23-99fc-5e23cdd0a177",
+      "title": "좀비_서바이벌_가이드",
+      "status": "ok",
+      "model": "gpt-4o-mini",
+      "one_liner": "좀비 생존을 위한 실용 가이드",
+      "topics": [
+        "좀비 생존",
+        "무기 단련",
+        "피난 경로",
+        "지형 대응 전략",
+        "해양 석유 시추"
+      ],
+      "elapsed_ms": 4129
+    },
+    {
+      "doc_id": "d6d64e39-5ab8-453b-bd3b-18f3d48e8afd",
+      "title": "데드_아일랜드",
+      "status": "ok",
+      "model": "gpt-4o-mini",
+      "one_liner": "데드 아일랜드의 좀비 생존 이야기",
+      "topics": [
+        "데드 아일랜드",
+        "좀비",
+        "생존",
+        "캐릭터 간의 관계",
+        "전투"
+      ],
+      "elapsed_ms": 5437
+    },
+    {
+      "doc_id": "f7c9799b-8397-43c5-9ae3-3c14864472e1",
+      "title": "양심의_문제",
+      "status": "ok",
+      "model": "gpt-4o-mini",
+      "one_liner": "양심과 도덕적 갈등을 다룬 이야기",
+      "topics": [
+        "양심",
+        "도덕적 갈등",
+        "리티아",
+        "과학자 관계",
+        "생태계"
+      ],
+      "elapsed_ms": 4496
+    },
+    {
+      "doc_id": "0c74df2c-f8fc-4edd-871b-10e5f9812ac8",
+      "title": "천사들의_제국_하",
+      "status": "ok",
+      "model": "gpt-4o-mini",
+      "one_liner": "천사들과 인간의 갈등을 다룬 소설",
+      "topics": [
+        "천사",
+        "인간 존재",
+        "내면 갈등",
+        "소설",
+        "자살"
+      ],
+      "elapsed_ms": 6127
+    },
+    {
+      "doc_id": "ae5fe88c-9d3c-4b3d-96ff-e6b8fcc12007",
+      "title": "천사들의_제국_상",
+      "status": "ok",
+      "model": "gpt-4o-mini",
+      "one_liner": "인간 존재와 죽음에 대한 철학적 탐구",
+      "topics": [
+        "인간 존재",
+        "죽음",
+        "철학",
+        "태아",
+        "지식 전달"
+      ],
+      "elapsed_ms": 5636
+    },
+    {
+      "doc_id": "af03e051-58d9-4f21-8645-fd5bb69d4e79",
+      "title": "TCP_IP_소켓프로그래밍_C",
+      "status": "ok",
+      "model": "gpt-4o-mini",
+      "one_liner": "C 언어로 TCP/IP 소켓 프로그래밍 안내서",
+      "topics": [
+        "TCP/IP",
+        "소켓 프로그래밍",
+        "C 언어",
+        "UDP",
+        "클라이언트-서버 모델"
+      ],
+      "elapsed_ms": 4334
+    }
+  ]
+}

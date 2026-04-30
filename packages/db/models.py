@@ -37,6 +37,9 @@ class DocumentRecord(Base):
     volume_title = Column(Text, nullable=True)
     series_match_status = Column(String(16), nullable=False, default="none")
 
+    # ISSUE-010: 텍스트 추출 품질 — NULL=미평가/legacy, 'ok'/'partial'/'scan_only'
+    extraction_quality = Column(String(16), nullable=True)
+
     __table_args__ = (
         CheckConstraint(
             "doc_type IN ('book','article','paper','note','report','web','other')",
@@ -45,6 +48,10 @@ class DocumentRecord(Base):
         CheckConstraint(
             "series_match_status IN ('none','auto_attached','suggested','confirmed','rejected')",
             name="documents_series_match_status_check",
+        ),
+        CheckConstraint(
+            "extraction_quality IS NULL OR extraction_quality IN ('ok','partial','scan_only')",
+            name="documents_extraction_quality_check",
         ),
     )
 

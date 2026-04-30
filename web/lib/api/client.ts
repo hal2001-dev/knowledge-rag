@@ -10,17 +10,19 @@ import createClient from "openapi-fetch";
 import { useAuth } from "@clerk/nextjs";
 import { useMemo } from "react";
 import type { paths } from "@/types/api";
+import { AUTH_ENABLED } from "@/lib/auth-flag";
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
 
 /**
- * 현재 사용자의 Clerk JWT를 자동 첨부하는 fetch 클라이언트 hook.
+ * Clerk 활성: 현재 사용자 JWT를 자동 첨부.
+ * Clerk 비활성: 토큰 없이 same-origin 호출 (FastAPI 측이 LAN/localhost를 admin으로 자동 부여).
  *
  *   const api = useApiClient();
  *   const { data, error } = await api.GET("/conversations");
  */
-export function useApiClient() {
+function useApiClientWithAuth() {
   const { getToken } = useAuth();
 
   return useMemo(() => {
@@ -37,5 +39,12 @@ export function useApiClient() {
     return client;
   }, [getToken]);
 }
+
+function useApiClientNoAuth() {
+  return useMemo(() => createClient<paths>({ baseUrl: API_BASE_URL }), []);
+}
+
+export const useApiClient: typeof useApiClientWithAuth =
+  AUTH_ENABLED ? useApiClientWithAuth : useApiClientNoAuth;
 
 export const apiBaseUrl = API_BASE_URL;

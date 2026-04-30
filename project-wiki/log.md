@@ -5,6 +5,323 @@
 
 ---
 
+## [2026-04-30] feat | 질문 본문에서 책 제목 매칭 → implicit doc_filter (ADR-034)
+
+### 발견 경로
+- 사용자 질의 `"2001 스페이스 오디세이에서 HAL9000은 뭐지?"` 시 retrieval 진단 보고
+- top-1이 **『인공생명』 p.65**(HAL을 각주로 정의한 단락, score 0.61)로 잡히고, 정작 원작 『2001 스페이스 오디세이』 본문은 top-4 안에도 못 들어옴
+- 사용자 지적: "질문에 책 제목이 명시되어 있는데 다른 책 청크를 가져옴"
+
+### 왜 이런 결정?
+**핵심 문제**: chunk text에 책 제목이 직접 포함되지 않음(heading_path만 prepend됨). BM25·dense embedding 모두 query의 "2001 스페이스 오디세이" 토큰을 chunk의 title metadata에 매칭할 수 없음. 사용자가 책을 명시했음에도 retrieval은 그 의도를 알 수 없음.
+
+**검토한 5가지 옵션**:
+| 옵션 | 평가 |
+|---|---|
+| (1) 질문 substring 매칭 → implicit doc_filter | **채택** — 비용 0, 의도 명시 케이스 정확 처리 |
+| (2) 모든 청크에 title prepend 후 재임베딩 | 1.7만 청크 재임베딩 부담(시간·OpenAI 비용). 일반적이나 과함 |
+| (3) rerank 단계 title 가중치 boost | 수치 튜닝 필요, 명시 케이스엔 boost로 부족 |
+| (4) LLM 기반 query 파싱 | latency·비용 추가, 단순 매칭에 비해 과한 도구 |
+| (5) UI 토글 추가 | UX 마찰 + 발견성 낮음 |
+
+**옵션 1을 선택한 이유**:
+1. **사용자 의도가 가장 명확하게 표명되는 시점**(질문 본문)에서 처리 — UI 추가 동작 0
+2. **확정성 높음** — title 텍스트가 정규화 후 그대로 질문에 포함되면 사용자가 명시한 것이 분명. False positive 리스크 낮음
+3. 기존 `doc_filter` 인프라 100% 재사용 — Qdrant filter, 라우팅, ScopeBanner 등 변경 0
+4. ADR-029 스코프 우선순위(doc > category > series) 정책 일관 유지 — explicit이 하나라도 있으면 implicit 우회
+5. **비용 0** — 추가 LLM 호출·재임베딩·새 인프라 없음. SQL 1회 + Python regex가 전부
+
+### 매칭 알고리즘 — 왜 이렇게?
+1. **정규화** (공백·언더스코어·하이픈·점·중점 → 단일 공백, 소문자):
+   - DB의 title은 `"2001_스페이스_오디세이"` 같이 underscore-separated인데 사용자는 공백으로 입력 → 정규화 없으면 매칭 0건
+2. **길이 ≥ 4 컷오프**: 너무 짧은 title("eo" 같은 키워드)이 일반 질문에도 매칭되는 false positive 1차 차단
+3. **substring + 가장 긴 매칭 1건 채택**:
+   - 시리즈명만 매칭(예: "스페이스 오디세이")되면 1·2·3편 모두 동률 → 모호함
+   - "2001 스페이스 오디세이"는 "스페이스 오디세이"보다 길고 구체적 → 길이 우선
+4. **동률 시 None (적용 안 함)**:
+   - 사용자가 시리즈 전체를 원했을 수도, 특정 권을 원했을 수도 → 잘못 추측해 한 권만 필터링하면 손해 큼
+   - 차라리 implicit 적용 안 하고 사용자에게 explicit 시리즈 카드 클릭(ADR-020) 권유
+
+### 캐시 정책 — 왜 모듈 레벨 60초 TTL?
+- documents.title 변경은 드물어(색인 시점만) 매 query마다 SQL 실행 부담 큼
+- 모듈 레벨 list 캐시 — 1.7만건 정도면 메모리 무시 가능 수준
+- TTL 60초: 신규 색인 후 최대 1분 내 자동 반영, 즉시성 필요 시 uvicorn restart로 강제 갱신
+- 동시성 안전: read-only 데이터라 race condition 무관(마지막 writer wins로 충분)
+
+### 구현
+- **신규 모듈**: `packages/rag/title_match.py` (~50줄)
+  - `_normalize(text)`: 정규화 헬퍼
+  - `_refresh_cache()`: `SELECT doc_id, title FROM documents`
+  - `detect_implicit_doc_filter(question) -> (doc_id, title) | None`: 매칭 진입점
+- **`packages/rag/pipeline.py:query` / `query_stream`**:
+  - 진입 직후 explicit scope(`doc_filter`/`category_filter`/`series_filter`) 모두 None일 때만 호출
+  - 매칭 시 `doc_filter`로 자동 주입 + LangSmith 메타에 `implicit_doc_title` 기록(트레이스 인지)
+  - 로그: `implicit doc_filter 감지 — title='...' doc_id=...`
+
+### 검증 결과 (실측)
+질문: `"2001 스페이스 오디세이에서 HAL9000은 뭐지?"`
+
+| 항목 | 이전 | 현재 |
+|---|---|---|
+| Top-1 출처 | 『인공생명』 p.65 (각주, 0.61) | **『2001_스페이스_오디세이』 p.145** (본문, 0.71) ✓ |
+| 답변 | "최고의 지능을 갖춘 컴퓨터…" (각주 인용) | "디스커버리 호의 여섯 번째 승무원으로, 우주선의 두뇌…" (원작 인용) |
+| sources 5건 | 다른 책 혼재 | 모두 『2001_스페이스_오디세이』 본문 |
+
+### 영향 페이지
+- `wiki/architecture/decisions.md` ADR-034 신규 + 헤더 마지막 업데이트
+- `changelog.md` (다음 릴리즈에 포함 예정)
+- `log.md` 본 항목
+
+### 회귀 전략
+- explicit scope를 하나라도 지정하면 implicit 우회 — 기존 동작 변경 0
+- title 매칭 실패 시 기본 retrieval (전체 컬렉션) — 이전 동작과 동일
+- roll back 시 두 import + 두 분기만 제거
+
+### 리스크 / 한계
+- **부분 매칭 false positive**: 짧은 일반어 title은 일반 질문에 매칭 가능 (현재 길이 ≥ 4 컷으로 1차 차단)
+- **동률 처리**: 같은 길이 다중 매칭 시 None 반환. 사용자에겐 "왜 안 잡혔지?" 가능하나 잘못 잡는 것보다 안전
+- **history 무관**: 직전 turn 책 제목 언급은 본 turn에 매칭 안 됨. history 인지 매칭은 별건
+
+### 후속
+- TASK-022(heading prefix 동반 검색)와 결합 시 같은 챕터 인접 청크 자동 동반 → 답변 일관성 추가 ↑
+- LangSmith `implicit_doc_title` 메타 정성 평가로 false positive 모니터링
+- 색인 워커가 신규 doc 추가 시 캐시 무효화 hook 별건
+
+---
+
+## [2026-04-30] polish | UX 폴리시 묶음 + 출처 인용 강화 (0.29.0)
+
+TASK-024 스트리밍 도입 직후 사용자 검수에서 발견된 UX 마찰 5건을 일괄 정리 + 답변 출처 인용 정밀도 강화.
+
+### ① 자동 대화 제목 (`add_message`)
+- **증상**: 사이드바 모든 대화가 "(제목 없음)"으로 표시 (44건)
+- **원인**: `conversations.title`이 빈 문자열 default이고 `/query`/`/query/stream` 어디서도 갱신 0
+- **수정**: `packages/db/conversation_repository.py:add_message` — role="user" 첫 메시지 도착 시 title이 비어 있으면 60자 컷 + 말줄임표로 자동 채움. `_summarize_to_title` 헬퍼 (첫 줄 + 공백 정규화)
+- **백필**: 기존 44건 SQL UPDATE로 일괄 채움 (첫 user 메시지 기반). 잔여 빈 title 0건
+
+### ② ISSUE-012 — 채팅 입력창 하단 비고정
+- **증상**: 채팅 진입/응답 토큰 누적 시 ChatInput이 페이지 끝으로 밀려남, 스크롤해야 보임
+- **원인**: `<body className="min-h-full ...">` — 콘텐츠 길어지면 body가 100% 너머로 자라서 내부 `flex-1 min-h-0` 묶일 기준 사라짐. `<html>`도 overflow 무제약
+- **수정**: `web/app/layout.tsx` — `body min-h-full → h-full overflow-hidden`, `html h-full → h-full overflow-hidden`
+- **검증**: 메시지 영역 677px 자체 스크롤, ChatInput 65px 항상 하단 고정. document scrollable: false
+
+### ③ 자동 스크롤 (스트리밍 추적)
+- **요청**: 응답 토큰이 누적될 때 자동으로 하단을 따라가야 함
+- **수정**: `web/app/chat/page.tsx` — `scrollRef` + `stickyRef` 추가. 사용자가 하단 120px 이내일 때만 follow, 위로 스크롤하면 sticky 해제(읽기 방해 0). 새 질문 보낼 때 sticky 강제 활성화로 항상 하단 점프
+- 효과: 토큰 스트리밍 중 자동으로 하단 추적, 과거 메시지 읽기 시 방해 없음
+
+### ④ ISSUE-013 — 사이드바 제목 오른쪽 overflow
+- **증상**: 자동 제목 도입 후 긴 한국어 제목이 사이드바 256px를 넘쳐 오른쪽으로 밀림. truncate 미동작
+- **원인 (2단계)**: (1) 사이드바 root flex item이 `min-width: auto`라 `min-content`로 평가돼 콘텐츠 길이만큼 확장 (2) Radix ScrollArea viewport가 `display: table`로 자식 intrinsic 너비를 측정해 truncate 깨뜨림
+- **수정**: `web/components/sidebar.tsx` — root div에 `min-w-0` 추가. Radix ScrollArea → 일반 `<div className="flex-1 overflow-y-auto min-w-0">` 교체
+- **검증**: aside 256px / ul 240px / button 224px / label scrollW 211 vs clientW 208 → truncated: true. "종말일기_Z의 주요 내용은 무엇인가요?" 정상 `…` 처리
+
+### ⑤ 출처 인용 강화 (`packages/rag/generator.py`)
+- **계기**: 사용자가 다중턴 대화에서 "이책 제목은?" → 챕터 제목 "이아페투스의 눈"이 책 제목으로 답변되는 환각. retrieval은 정확(`2001_스페이스_오디세이` p.274/290/292/305)이었지만 답변 본문이 책 제목을 누락
+- **수정 1 (`_build_messages`)**: 컨텍스트 청크 헤더에 `출처: 『{title}』 p.{page}` 명시 prepend → LLM이 인용 시 정확한 책 제목·페이지 참조
+- **수정 2 (`SYSTEM_PROMPT_PLAIN`)**:
+  - "근거·세부 설명"에서 책 제목을 본문에 자연스럽게 포함 (예: '『2001 스페이스 오디세이』 p.274에서…')
+  - 인용 직후 inline 페이지 표기 의무화 (예: '"속이 텅 비었어" (『2001 스페이스 오디세이』 p.290)')
+  - 인용문은 청크 헤더와 정확히 일치 (추측·복사 금지)
+  - 답변 끝에 "참고 문서" 라인 신규 — 같은 책 다중 페이지면 묶어 표기
+- **검증**: "이아페투스의 눈은 어디에 언급?" → "『2001 스페이스 오디세이』의 p.274, p.290, p.292, p.305에서…" ✓. 인용 케이스 → `'...14억 5000만 킬로미터...' (『2001 스페이스 오디세이』 p.290)` ✓
+
+### 영향 페이지
+- `wiki/issues/resolved/ISSUE-012-chat-input-not-bottom-fixed.md` 신규
+- `wiki/issues/resolved/ISSUE-013-sidebar-title-overflow.md` 신규
+- `changelog.md` 0.29.0 신규
+- `index.md` ISSUE-012/013 등록 + 페이지 카운트 + 마지막 업데이트
+- `log.md` 본 항목
+
+### 변경 파일
+- `packages/db/conversation_repository.py` — `add_message` 자동 title + `_summarize_to_title`
+- `packages/rag/generator.py` — `_build_messages` 청크 헤더 + `SYSTEM_PROMPT_PLAIN` 출처 규칙 강화
+- `web/app/layout.tsx` — html/body height 정책
+- `web/app/chat/page.tsx` — `scrollRef`/`stickyRef` 자동 스크롤
+- `web/components/sidebar.tsx` — root `min-w-0` + ScrollArea 제거
+
+### 다음 단계
+- TASK-022 / TASK-023 후순위 큐 그대로 (사용자 명시까지 보류)
+- 모바일 viewport 검증 — 인증·공개배포 묶음 해제 시
+- citation 강화 후 "참고 문서" 라인의 형식 표준화 — 향후 평가 벤치 통과 여부 확인 후 결정
+
+---
+
+## [2026-04-30] impl | TASK-024 — 답변 스트리밍 SSE (ADR-033)
+
+### 배경
+- 기존 `/query`는 retrieval + rerank + generation 전부 끝나고 한 번에 JSON 응답 — 사용자 체감 latency 3~5초
+- ADR-030 후속에 큐잉돼 있던 "답변 스트리밍 SSE" 항목을 OCR 작업 완료 직후 사용자 명시 착수 (2026-04-30)
+
+### 구현
+**백엔드**:
+- `packages/rag/generator.py` — `generate_stream(llm, question, chunks, history)` (sync iterator, `llm.stream()` 감싸기) + `generate_suggestions(llm, question, answer, count)` (답변 종료 후 별도 LLM 호출). `INSUFFICIENT_MARKERS` 상수화
+- `packages/rag/pipeline.py` — `query_stream()` sync generator. yield 시퀀스: `("sources", [...]) → ("token", "...")* → ("suggestions", [...]) → ("done", {...})`. `@traceable("rag.query_stream")` + `tracing_context`로 LangSmith 메타·태그 일관성
+- `apps/routers/query.py` — `POST /query/stream` SSE 엔드포인트. 사용자 메시지 우선 commit, 어시스턴트 메시지는 스트림 종료 후 fresh session으로 commit. `text/event-stream` + `X-Accel-Buffering: no`. 예외 시 `event: error` 발급. `_sse(event, data)` 직렬화 헬퍼
+
+**프론트엔드**:
+- `web/lib/hooks/use-rag-stream.ts` (신규) — `fetch + ReadableStream + TextDecoderStream`. `\n\n` 단위 SSE 파서. `AbortController`로 중단 지원. 콜백 인터페이스 (`onMeta/onSources/onToken/onSuggestions/onDone/onError`)
+- `web/app/chat/page.tsx` — `useRagQuery` mutation → `useRagStream` send 교체. `streamingAnswer` 상태로 토큰 누적 점진 렌더. `onDone` 시 `invalidateQueries(conversations.all)` → baseMessages 업데이트되면 streamingAnswer 자동 클리어 (self-healing)
+- `web/components/chat/chat-input.tsx` — `pending && onCancel` 시 send 버튼 자리에 빨간 X(중지) 버튼
+
+### 이벤트 스키마
+```
+event: meta        → {"session_id": "..."}
+event: sources     → [{doc_id, title, page, content_type, score, excerpt}, ...]
+event: token       → "부분 텍스트"  (반복)
+event: suggestions → ["...", "..."]
+event: done        → {"latency_ms": 1234}
+event: error       → {"message": "..."}
+```
+
+### 검증
+- curl smoke test: `meta → sources → token` 정상 흐름
+- Playwright 전체 시나리오: `머신러닝이란 무엇인가?` 질의 → 답변이 정상 구조("핵심 답변 → 근거·세부 설명 → 유의사항 → 답변 가능 범위")로 점진 출력
+- DB 영속화 검증: `/conversations/{session_id}` → user + assistant 메시지 모두 정상 저장
+- TypeScript type-check clean
+
+### 영향 페이지
+- `wiki/architecture/decisions.md` ADR-033 신규 + 헤더 마지막 업데이트
+- `roadmap.md` TASK-024 status queued → completed
+- `changelog.md` 0.28.0 신규 항목
+- `index.md` 마지막 업데이트
+- `log.md` 본 항목
+
+### 다음 단계 (후속)
+- 평가 벤치(`bench_answers.py`) 회귀 검증 — `/query` 그대로 사용해 영향 0 예상이나 다음 정기 실행 시 확인
+- 모바일 SSE 호환성 검증 — 인증·공개배포 묶음 해제 시
+- suggestions inline streaming 검토 — 답변 종료 후 ~1~2초 추가 latency 개선 별건
+- AbortController로 백엔드 LLM 호출 즉시 cancel — LangChain `astream()` + asyncio task cancel 별건
+
+---
+
+## [2026-04-30] impl | ISSUE-010 — 스캔본 PDF 16건 macOS Vision OCR 재색인 + summary 재생성
+
+### 발견 경로
+- 사용자가 시리즈 `ser_f091b1e5242e`(하루하루가 세상의 종말) + "등장인물은?" 질의 시 답이 없음 보고
+- 진단: 두 권의 markdown 5~7KB → 본문 추출 사실상 0. 노출 sources excerpt = "102j2l", "182 003" (OCR 노이즈)
+- 전체 107건 휴리스틱 스캔: **16건이 동일 패턴** — 모두 소설
+
+### 식별 (1단계)
+- DB 마이그레이션 0006: `documents.extraction_quality TEXT` 컬럼 + CHECK + index
+- `scripts/classify_extraction_quality.py` 휴리스틱 백필 — markdown <30KB OR avg chunk <150B → `scan_only`
+- 결과: ok 91 / scan_only 16 / partial 0
+- NextJS 도서관 카드에 `📷 스캔` 빨간 배지 + tooltip ("검색·답변 불가") 노출
+
+### 단권 OCR 검증 (2단계)
+- macOS Vision (`ocrmac`, Docling 2.90.0 의존성에 이미 포함, 추가 설치 0)
+- `scripts/test_ocr_single.py` — `data/markdown_ocr_test/`에 결과만 떨어뜨려 production 안전
+- 단권 테스트 (하루하루가 세상의 종말 2, 81MB):
+  - 5.5KB → 532KB (~96배), 4분, 한국어 본문 자연스러운 추출 ("현창을 통해 주변을 재차 확인한 후…")
+- 권당 4분 추정 → 16권 약 1시간 예상 (실측은 더 길었음)
+
+### 일괄 재색인 (3단계)
+- `packages/loaders/docling_loader.py` — `force_full_page_ocr` flag 추가 (기본 False, 옵션 명시 시 macOS Vision OCR converter)
+- `scripts/reingest_scan_only.py` 일괄 처리 — 권당: OCR → markdown 덮어쓰기 → Qdrant 청크 삭제 → 새 청크 add → category/series payload 재적용 → DB 갱신 (chunk_count, `extraction_quality='ok'`, `summary=NULL`)
+- 첫 실행 시 doc 1에서 `set_classification_payload(category_confidence=...)` kwarg 미존재 TypeError 발견 → 즉시 수정 + doc 1만 후처리 패치 (OCR/chunks까지는 성공한 상태였음)
+- **결과**: 16/16 성공, 총 119.5분 (약 2시간), 평균 8분/권, RSS 피크 6.9GB (8GB 가드 안쪽), 에러 0
+
+### Summary 재생성 (4단계)
+- `scripts/generate_summaries.py` — `summary=NULL` 17건 (OCR 16권 + 기타 1) 자동 처리
+- 결과: 17/17 ok, 92초, gpt-4o-mini, 모두 실제 본문 기반 요약 ("종말을 맞이한 세계의 일기 형식 이야기" 등)
+- DB 분포: summary 보유 107/107 (전수)
+
+### 검증
+- 시리즈 `ser_f091b1e5242e` + "등장인물은?" 재질의:
+  - 이전: "정보가 포함되어 있지 않습니다." + sources excerpt "102j2l"
+  - 현재: "놈들·해병들·중사·FBI 요원" 등 실제 본문 인용. excerpt = "8월 11일 22시 28분 한 언덕지대라면…"
+- DB extraction_quality: ok 107/107 (전수 정상)
+
+### 영향 페이지
+- `wiki/issues/resolved/ISSUE-010-scan-only-pdf-extraction.md` 신규
+- `wiki/architecture/decisions.md` ADR-032 신규 (OCR 토글 + 스캔본 재색인 정책) + 헤더 마지막 업데이트
+- `changelog.md` 버전 항목 추가
+- `index.md` ISSUE-010 등록 + 페이지 카운트 + 마지막 업데이트
+- `log.md` 본 항목
+
+### 변경 코드/스크립트
+- `packages/db/migrations/0006_add_extraction_quality.sql` (신규)
+- `packages/db/connection.py` — sentinel 등록
+- `packages/db/models.py`, `packages/code/models.py`, `packages/db/repository.py`, `apps/schemas/documents.py` — `extraction_quality` 통과
+- `packages/loaders/docling_loader.py` — `force_full_page_ocr` flag + macOS Vision converter
+- `scripts/classify_extraction_quality.py` (신규) — 휴리스틱 백필 (`--dry-run`/`--only-empty`)
+- `scripts/test_ocr_single.py` (신규) — 단권 검증
+- `scripts/reingest_scan_only.py` (신규) — 일괄 재색인
+- `web/components/library/doc-card.tsx` — `scan_only`/`partial` 배지
+
+### 다음 단계
+- TASK-024 (스트리밍 SSE) 착수
+- 신규 스캔본 자동 감지·플래그 — TASK 별건 (indexer 워커 후처리 훅, ADR-032 후속)
+
+---
+
+## [2026-04-30] queue+fix | TASK-024 등록 + ISSUE-011 — 채팅 옵티미스틱 user 버블 누락 수정
+
+### TASK-024 (queued, 2026-04-30)
+- 답변 스트리밍 SSE — `/query/stream` 신설, NextJS chat이 토큰 누적 렌더, 첫 토큰 ~500ms로 체감 latency 5x ↓
+- ADR-030 후속에 큐잉돼 있던 "답변 스트리밍 SSE" 항목 정식 TASK 발급
+- 후속 ADR 예약 (다음 가용 ADR-033/034)
+- OCR 16권 재색인(현재 진행 중) 완료 직후 착수 합의
+
+### ISSUE-011 fix
+- **증상**: 채팅에서 질문 전송 후 사용자 말풍선이 보이지 않다가 응답 도착 시점에 user/assistant가 동시에 출현 — 사이엔 "검색 및 답변 생성 중…"만 단독으로 떠 있음
+- **원인**: `useRagQuery` mutation `onSuccess`에서 conversation 캐시 무효화 → refetch 후에만 user 메시지 렌더. 옵티미스틱 user 메시지 부재
+- **수정**: `web/app/chat/page.tsx`에 `pendingUserMessage` 상태 추가. `sendMessage` 호출 즉시 set → `messages` useMemo가 baseMessages 끝에 옵티미스틱 user 버블 append (중복 회피 포함). refetch 후 `lastBaseUser === pendingUserMessage`가 되면 useEffect가 자동 클리어. sessionId 변경 시 동기 리셋
+- **검증**: Playwright 사용자 입력 → 사용자 말풍선 즉시 출현 + 응답 도착 시 어시스턴트 답변 추가 (type-check clean)
+- **재발 방지**: 옵티미스틱 user 버블 코드는 TASK-024(스트리밍) 시에도 그대로 유지 — 토큰 누적 assistant 버블과 자연스럽게 통합
+
+### 영향 페이지
+- `wiki/issues/resolved/ISSUE-011-chat-no-optimistic-user-bubble.md` 신규
+- `roadmap.md` TASK-024 신규 섹션 + 큐 표
+- `index.md` ISSUE-011 등록 + 페이지 카운트 + 마지막 업데이트
+- `log.md` 본 항목
+
+### 다음 단계
+- OCR 16권 배치 완료 알림 도착 시 검증 질의 + summary 재생성 + ISSUE-010(스캔본 OCR) 위키 등록 + ADR-032(OCR 토글) 작성
+- 그 후 TASK-024 착수
+
+---
+
+## [2026-04-30] fix | ISSUE-009 — Clerk dev handshake 무한 루프(HTTP LAN host) 우회
+
+### 증상
+- `http://macstudio:3000/library` 접속 시 도서관 "총 0/0개 문서", 사이드바 "로딩…" 영구
+- DevTools Network: `/library → 307 → clerk handshake → 307 → /library?__clerk_handshake=... → 307` 무한 반복
+- `/api/documents` 호출이 0건 — 서버 측 `curl`은 정상(200, 107건)이라 진단 시 클라이언트 사이드 문제로 좁힘
+
+### 원인
+- Clerk dev instance handshake 응답 쿠키 `__clerk_db_jwt`가 `Secure; SameSite=None`
+- 브라우저는 HTTPS 컨텍스트에서만 Secure 쿠키 저장 (localhost는 예외, LAN hostname은 예외 아님)
+- → 쿠키 미저장 → 핸드셰이크 영구 재시도 → ClerkProvider settle 실패 → React Query queryFn 실행 흐름 막힘
+- 기존 server-only `AUTH_ENABLED` 토글은 `proxy.ts` 미들웨어만 우회 — 클라이언트 측 ClerkProvider 마운트는 못 막음 (Phase 1 토글 설계 사각)
+
+### 수정
+- `web/.env.local` — `NEXT_PUBLIC_AUTH_ENABLED=false` 추가
+- `web/lib/auth-flag.ts` 신규 — 클라이언트·서버 단일 진실 토글
+- `web/lib/api/client.ts` — `useApiClientWithAuth`/`useApiClientNoAuth` 분리, 모듈 로드 시점에 한 번 결정 (rules-of-hooks 안전)
+- `web/app/layout.tsx` — `AUTH_ENABLED=false`면 `<ClerkProvider>` 미렌더
+- `web/components/sidebar.tsx` — `AUTH_ENABLED=false`면 `<UserButton>` 미렌더
+- `web/next.config.ts` — `allowedDevOrigins`에 `macstudio` 추가 (NextJS 16 dev HMR 차단 우회)
+
+### 검증
+- Playwright `http://macstudio:3000/library` 재접속:
+  - console errors 0
+  - `/api/documents` → 200 (107건) · `/api/series` → 200 (3건) · `/api/conversations` → 200 · `/api/index/overview` → 200
+  - 도서관 그리드 정상 — "총 107/107개 문서", 카테고리 칩 8개
+
+### 영향 페이지
+- `wiki/issues/resolved/ISSUE-009-clerk-handshake-loop-http-lan.md` 신규
+- `wiki/architecture/decisions.md` ADR-030에 "Phase 1 클라이언트 측 토글 분리" 후속 섹션 추가
+- `wiki/troubleshooting/common.md`에 "NextJS 사용자 UI" 섹션 신설 (handshake 루프 + allowedDevOrigins 2건)
+- `index.md` ISSUE 표 ISSUE-009 등록 (resolved)
+- `log.md` 본 항목
+
+### 후속
+- Phase 2(인증 활성) 진입 prereq 재정의됨 — HTTPS 노출 / Clerk hosts 등록 / HTTP 차단 중 택1. 결정 시 ADR-030 본문 갱신
+- 외부 공개 묶음 보류 정책엔 영향 없음 (Phase 1 동작 그대로)
+
+---
+
 ## [2026-04-29] queue | 답변 품질 후속 — TASK-022 (heading 동반 검색) + TASK-023 (self-critique) 큐잉
 
 ### 큐잉 배경

@@ -3,10 +3,10 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { useConversations, useDeleteConversation } from "@/lib/hooks/use-conversations";
 import { UserButton } from "@clerk/nextjs";
+import { AUTH_ENABLED } from "@/lib/auth-flag";
 import { BookOpen, Plus, Trash2 } from "lucide-react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { format } from "date-fns";
@@ -33,7 +33,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   };
 
   return (
-    <div className="flex flex-1 min-h-0 flex-col">
+    <div className="flex flex-1 min-h-0 min-w-0 flex-col">
       {/* 새 대화 */}
       <div className="p-3">
         <Button onClick={handleNewChat} className="w-full justify-start" variant="default">
@@ -42,8 +42,8 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
       </div>
       <Separator />
 
-      {/* 대화 목록 */}
-      <ScrollArea className="flex-1">
+      {/* 대화 목록 — 일반 overflow-y-auto (Radix ScrollArea는 viewport가 display:table로 동작해 truncate를 깨뜨림) */}
+      <div className="flex-1 overflow-y-auto min-w-0">
         <div className="p-2 text-xs text-muted-foreground">대화 목록</div>
         {conversationsQuery.isLoading && (
           <div className="px-3 text-sm text-muted-foreground">로딩…</div>
@@ -90,7 +90,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
             );
           })}
         </ul>
-      </ScrollArea>
+      </div>
 
       <Separator />
 
@@ -105,11 +105,15 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
         >
           <BookOpen className="size-4" /> 도서관
         </Link>
-        <Separator />
-        <div className="flex items-center justify-between gap-2 px-1">
-          <UserButton />
-          <span className="text-xs text-muted-foreground">로그아웃은 아바타 메뉴에서</span>
-        </div>
+        {AUTH_ENABLED && (
+          <>
+            <Separator />
+            <div className="flex items-center justify-between gap-2 px-1">
+              <UserButton />
+              <span className="text-xs text-muted-foreground">로그아웃은 아바타 메뉴에서</span>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

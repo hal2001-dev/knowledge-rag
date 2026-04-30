@@ -1,7 +1,7 @@
 # 트러블슈팅 (Troubleshooting)
 
 **상태**: active
-**마지막 업데이트**: 2026-04-26
+**마지막 업데이트**: 2026-04-30
 **관련 페이지**: `issues/`, [setup.md](../onboarding/setup.md)
 
 이슈가 해결될 때마다 여기에 누적합니다.
@@ -224,6 +224,25 @@ with e.begin() as c:
 ```
 **참고**: 이미 hash 중복인 잡은 워커가 즉시 done 처리. retry_count=4(영구 실패)도 같은 패턴으로 일괄 reset 가능 (`status IN ('failed','in_progress')`)
 **관련**: ADR-028 후속, [ISSUE-003 후속 노트](../issues/resolved/ISSUE-003-ingest-memory-spike-system-freeze.md)
+
+---
+
+## NextJS 사용자 UI
+
+### 도서관·채팅 화면이 비어 있고 `/api/*` 호출이 0건 (HTTP LAN host 접속)
+**발생 상황**: `http://macstudio:3000/library` 같은 HTTP + LAN hostname으로 접속할 때. localhost·127.0.0.1로는 정상.
+**증상**: 도서관 "총 0/0개 문서", 사이드바 "로딩…" 영구. DevTools Network에 `/library → 307 → clerk handshake → 307 → /library?__clerk_handshake=... → 307` 패턴 무한 반복. `/api/documents` 호출 자체가 발생 안 함.
+**원인**: Clerk dev instance handshake 응답 쿠키가 `Secure; SameSite=None`. 브라우저는 HTTPS 컨텍스트에서만 Secure 쿠키 저장(localhost는 예외). LAN hostname은 예외 아님 → 쿠키 미저장 → 핸드셰이크 무한 루프 → ClerkProvider settle 안 됨 → React Query fetch 시작 못함.
+**해결**: `web/.env.local`에 `NEXT_PUBLIC_AUTH_ENABLED=false` 설정 후 `pnpm dev` 재시작. ClerkProvider/UserButton/useAuth 호출이 모두 우회됨 (Phase 1 토글 — `web/lib/auth-flag.ts` 단일 진실).
+**관련 이슈**: [ISSUE-009](../issues/resolved/ISSUE-009-clerk-handshake-loop-http-lan.md), ADR-030
+
+### NextJS dev — `Blocked cross-origin request to Next.js dev resource` 경고
+**발생 상황**: LAN hostname(macstudio 등)·Tailscale IP로 dev 서버 접속 시 webpack HMR 실패.
+**원인**: NextJS 16 dev 서버는 기본적으로 외부 origin을 차단(localhost·127.0.0.1만 허용).
+**해결**: `web/next.config.ts`의 `allowedDevOrigins`에 hostname 또는 IP 추가 후 dev 서버 재시작.
+```ts
+allowedDevOrigins: ["192.168.0.72", "100.78.13.90", "macstudio"],
+```
 
 ---
 

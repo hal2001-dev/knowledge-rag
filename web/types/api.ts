@@ -38,6 +38,37 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/query/stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Query Stream
+         * @description TASK-024: SSE 답변 스트리밍.
+         *
+         *     이벤트 시퀀스:
+         *       event: meta        → {session_id}
+         *       event: sources     → [{doc_id, title, page, ...}]
+         *       event: token       → "부분 텍스트"          (반복)
+         *       event: suggestions → [...]
+         *       event: done        → {latency_ms}
+         *       event: error       → {message}              (예외 시)
+         *
+         *     사용자 메시지는 스트림 시작 전에 commit되어 conn drop에도 보존.
+         *     어시스턴트 메시지는 스트림 종료 시 fresh DB session으로 commit.
+         */
+        post: operations["query_stream_query_stream_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/documents": {
         parameters: {
             query?: never;
@@ -544,6 +575,8 @@ export interface components {
              * @default none
              */
             series_match_status: string;
+            /** Extraction Quality */
+            extraction_quality?: string | null;
         };
         /** DocumentListResponse */
         DocumentListResponse: {
@@ -921,6 +954,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["QueryResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    query_stream_query_stream_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QueryRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */

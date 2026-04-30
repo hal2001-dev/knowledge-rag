@@ -20,6 +20,7 @@ const nextConfig: NextConfig = {
   allowedDevOrigins: [
     "192.168.0.72",   // LAN
     "100.78.13.90",   // Tailscale (사용자 환경에서 접속 중인 IP)
+    "macstudio",      // mDNS hostname
   ],
   async rewrites() {
     return [

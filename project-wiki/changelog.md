@@ -22,6 +22,93 @@
 
 ---
 
+## [0.30.0] - 2026-04-30
+
+### Added
+- **Implicit doc_filter 자동 감지** (ADR-034) — 질문 본문에 책 제목이 명시되면 substring 매칭으로 자동 doc_filter 적용. 신규 모듈 `packages/rag/title_match.py`. explicit scope 미지정 시만 동작 (ADR-029 우선순위 일관)
+- 매칭 알고리즘: 정규화(공백·언더스코어·하이픈·점 → 공백, 소문자) + 길이 ≥ 4 컷 + 가장 긴 매칭 1건 채택 + 동률 시 None
+- 모듈 레벨 캐시 (TTL 60초) — 색인 후 최대 1분 내 자동 반영
+- LangSmith 메타 `implicit_doc_title` — 트레이스에서 implicit 적용 여부 인지 가능
+
+### Changed
+- `packages/rag/pipeline.py:query` / `query_stream` — 진입 시점에 implicit detection 분기 (explicit scope 모두 None일 때만)
+
+### Fixed
+- 사용자 보고: 질문에 "2001 스페이스 오디세이" 명시했는데 다른 책 청크가 top-1로 잡히던 retrieval 문제. 검증 — top-1이 『인공생명』(각주) → 『2001_스페이스_오디세이』 p.145(원작 본문)로 교체 ✓
+
+---
+
+## [0.29.0] - 2026-04-30
+
+### Added
+- **자동 대화 제목** (`packages/db/conversation_repository.py`) — `add_message`가 첫 user 메시지 도착 시 conversation.title이 비어 있으면 60자 컷 + 말줄임표로 자동 채움 (`_summarize_to_title`). 기존 44건 SQL UPDATE로 일괄 백필
+- **자동 스크롤** (`web/app/chat/page.tsx`) — `scrollRef`/`stickyRef`로 토큰 스트리밍 시 하단 자동 추적. 사용자가 위로 스크롤(120px 이상)하면 sticky 해제(읽기 방해 0). 새 질문 보낼 때 sticky 강제 활성화
+
+### Changed
+- **출처 인용 강화** (`packages/rag/generator.py`):
+  - `_build_messages`: 컨텍스트 청크 헤더에 `출처: 『{title}』 p.{page}` 명시 prepend → LLM이 정확한 책 제목·페이지 참조 가능
+  - `SYSTEM_PROMPT_PLAIN`: 인용 시 책 제목 본문 포함, 인용 직후 inline 페이지 표기 의무화, 답변 끝에 "참고 문서" 라인 추가
+  - 효과: 검증 질의 "이아페투스의 눈은 어디에 언급?" → "『2001 스페이스 오디세이』의 p.274, p.290, p.292, p.305에서…" (이전: 책 제목 누락)
+- 채팅 레이아웃 root height 정책 (`web/app/layout.tsx`): `<html>`/`<body>` 모두 `h-full overflow-hidden`로 통일 — 뷰포트에 정확히 묶임
+
+### Fixed
+- **ISSUE-012** — 채팅 입력창이 하단에 고정되지 않음 (스크롤 내려야 보임). `body min-h-full → h-full + overflow-hidden`으로 해결
+- **ISSUE-013** — 사이드바 대화 목록 제목 오른쪽 overflow. flex item `min-w-0` + Radix ScrollArea → 일반 div 교체로 해결
+
+### Removed
+- `web/components/sidebar.tsx`에서 Radix ScrollArea import — 사이드바는 가로 truncate 우선이라 일반 overflow-y-auto가 더 적합
+
+---
+
+## [0.28.0] - 2026-04-30
+
+### Added
+- **`POST /query/stream` SSE 엔드포인트** (TASK-024, ADR-033) — 답변 토큰 스트리밍. 이벤트 시퀀스: `meta → sources → token* → suggestions → done`. 첫 토큰 ~500ms로 체감 latency 5~10x ↓
+- **`packages/rag/generator.py`** — `generate_stream(...)` sync iterator (`llm.stream()` 감싸기) + `generate_suggestions(...)` 답변 종료 후 별도 LLM 호출. `INSUFFICIENT_MARKERS` 상수화
+- **`packages/rag/pipeline.py:query_stream`** — `(event_type, data)` yield generator. `@traceable("rag.query_stream")` LangSmith 트레이스
+- **`web/lib/hooks/use-rag-stream.ts`** (신규) — `fetch + ReadableStream + TextDecoderStream` SSE 파서. `AbortController` 중단 지원
+- **채팅 중지 버튼** (`web/components/chat/chat-input.tsx`) — pending 시 send 자리에 빨간 X 버튼 (`AbortController.abort()`)
+
+### Changed
+- **`web/app/chat/page.tsx`** — `useRagQuery` mutation → `useRagStream` send 교체. `streamingAnswer` 상태로 토큰 누적 점진 렌더. `onDone` → `invalidateQueries(conversations.all)` → baseMessages 갱신 시 streamingAnswer 자동 클리어 (self-healing)
+- 기존 `POST /query` 엔드포인트는 그대로 — 평가 스크립트·기타 호출자 후방호환 100%
+
+### Architecture
+- ADR-033 신규: 답변 스트리밍 SSE (TASK-024). 신규 엔드포인트 분리 + suggestions 별도 호출 분리
+
+---
+
+## [0.27.0] - 2026-04-30
+
+### Added
+- **`documents.extraction_quality` 컬럼** (마이그레이션 0006) — NULL/`ok`/`partial`/`scan_only`. CHECK 제약 + index. 텍스트 추출 품질 추적
+- **macOS Vision OCR 토글** — `DoclingDocumentLoader(force_full_page_ocr=True, ocr_lang=("ko-KR","en-US"))`. 기본 False(후방호환), 스캔본 재색인 시점에만 ON. `ocrmac`은 Docling 2.90.0 의존성에 이미 포함 — 추가 설치 0
+- **신규 스크립트 3종**:
+  - `scripts/classify_extraction_quality.py` — 휴리스틱 백필 (markdown 크기 + chunk 평균 길이). `--dry-run`/`--only-empty` 지원
+  - `scripts/test_ocr_single.py` — 단권 OCR 검증용 (production 데이터 비건드림, `data/markdown_ocr_test/` 별도 출력)
+  - `scripts/reingest_scan_only.py` — `scan_only` 일괄 재색인 (OCR → markdown → Qdrant 청크 교체 → DB 갱신)
+- **NextJS 도서관 카드 `📷 스캔` 빨간 배지** (`web/components/library/doc-card.tsx`) — `scan_only` / `partial` 시 자동 표시 + tooltip
+- **NextJS 채팅 옵티미스틱 user 버블** (`web/app/chat/page.tsx`) — `pendingUserMessage` 상태로 mutation 발사 즉시 사용자 메시지 표시. refetch 후 자동 클리어 (self-healing)
+- **`NEXT_PUBLIC_AUTH_ENABLED` 토글** (`web/lib/auth-flag.ts`) — Clerk 클라이언트 측 우회. HTTP LAN host에서 dev handshake 무한 루프 회피 (ISSUE-009)
+- **TASK-024 (스트리밍 SSE)** roadmap 등록 — OCR 작업 직후 착수 예정
+
+### Changed
+- 스캔본 PDF 16건 본문 본격 색인됨 — markdown 평균 5KB → 200~500KB (~50~100배), 청크 70 → 800 (~10배)
+- 16건 모두 `summary` 재생성 (gpt-4o-mini, 92초, 17/17 ok). 이제 도서관 카드 요약·topics가 실제 본문 기반
+- DB extraction_quality 분포: ok 107/107 (전수)
+
+### Fixed
+- **ISSUE-009** — Clerk dev handshake 무한 루프 (HTTP LAN host에서 Secure 쿠키 미저장). `<ClerkProvider>` / `<UserButton>` / `useAuth()` 모두 토글 우회
+- **ISSUE-010** — 스캔본 PDF 16건 본문 추출 0 (Docling `force_full_page_ocr=False` 기본값 한계). macOS Vision 재색인으로 해결. 검증 질의 통과 ("등장인물은?" 시 "정보 없음" → 실제 본문 인용)
+- **ISSUE-011** — 채팅 사용자 메시지가 응답 도착 전까지 화면에 안 뜸 (옵티미스틱 렌더 누락)
+- NextJS dev 서버 `allowedDevOrigins`에 `macstudio` hostname 추가
+
+### Architecture
+- ADR-030 후속: Phase 1 클라이언트 측 토글 분리 — `NEXT_PUBLIC_AUTH_ENABLED=false`로 ClerkProvider 마운트 자체 차단
+- ADR-032 신규: 텍스트 추출 품질 추적 + 스캔본 PDF macOS Vision OCR 재색인
+
+---
+
 ## [0.26.4] - 2026-04-29
 
 ### Improved — 답변 품질 보완 (사용자 보고 "답변이 조금 빈약")

@@ -24,6 +24,8 @@ export function DocCard({ doc }: { doc: DocumentItem }) {
   const sampleQuestions = summary?.sample_questions ?? [];
   const lowConfidence =
     typeof doc.category_confidence === "number" && doc.category_confidence < 0.4;
+  const isScanOnly = doc.extraction_quality === "scan_only";
+  const isPartial = doc.extraction_quality === "partial";
 
   const askThisDoc = () => {
     router.push(`/chat?doc_filter=${encodeURIComponent(doc.doc_id)}`);
@@ -56,6 +58,24 @@ export function DocCard({ doc }: { doc: DocumentItem }) {
           {lowConfidence && (
             <Badge variant="outline" className="text-[10px]" title="자동 분류 신뢰도 낮음">
               ⚠️
+            </Badge>
+          )}
+          {isScanOnly && (
+            <Badge
+              variant="destructive"
+              className="text-[10px]"
+              title="스캔본 — 텍스트 레이어가 없어 본문이 추출되지 않았습니다. 검색·답변 불가."
+            >
+              📷 스캔
+            </Badge>
+          )}
+          {isPartial && (
+            <Badge
+              variant="outline"
+              className="text-[10px]"
+              title="텍스트 추출이 부분만 완료된 문서입니다. 검색·답변 정확도 저하 가능."
+            >
+              📷 부분
             </Badge>
           )}
         </div>
