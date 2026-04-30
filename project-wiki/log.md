@@ -5,6 +5,139 @@
 
 ---
 
+## [2026-04-30] schedule | TASK-022 안정화 후 ON 전환 PR 자동 예약 (2026-05-14)
+
+### 배경
+0.31.0이 `HEADING_EXPAND_ENABLED=false` 기본 OFF로 머지됐고, 2주 안정화 관찰 후 ON 전환을 자동화하기 위해 원격 루틴을 1회성으로 등록.
+
+### 등록 내용
+- 루틴 ID: `trig_015XSAHBQDhJGawiiN4C2Ci5`
+- 이름: `heading-expand-on-pr`
+- 발화 시각: **2026-05-14T02:00:00Z** (Asia/Seoul 11:00) 1회성
+- 모델: claude-sonnet-4-6
+- 환경: anthropic_cloud (`env_011CUWeKgNUL2b1KH2LHKAZa`)
+- 대상 repo: github.com/hal2001-dev/knowledge-rag
+- 관리: https://claude.ai/code/routines/trig_015XSAHBQDhJGawiiN4C2Ci5
+
+### 에이전트가 할 일 (요약)
+1. 현재 `.env` / `.env.example`의 `HEADING_EXPAND_ENABLED` 확인 — 이미 true면 skip 후 종료
+2. `feat/heading-expand-on` 브랜치에서 `.env.example`만 false→true로 변경 (코드 변경 0)
+3. (선택) LangSmith 활성 시 최근 7일 `expanded_chunks_count` 분포 한 줄 요약, 미활성이면 "분포 미관찰"
+4. 같은 PR에 위키 갱신 포함:
+   - `changelog.md` `[0.31.1] - 2026-05-14` Changed
+   - `log.md` `[2026-05-14] polish | TASK-022 ON 전환` 항목
+5. `gh pr create` — 제목 `feat(ADR-035): heading prefix 동반 검색 기본 ON 전환`
+
+### 가드레일 (프롬프트에 박힘)
+- Streamlit 코드 절대 수정 금지 (동결 정책)
+- 새 외부 API 키·비용 작업 금지 (LangSmith 활용만, 신규 키 X)
+- main 직접 push 금지 — PR로만
+- 한국어 응답·커밋 메시지
+
+### 후속
+- 발화 후 PR URL이 보고됨. 운영 중 ON에서 회귀 발견 시 `.env`에서 false로 즉시 복원 가능
+- 발화 전 ON 전환을 직접 진행하면 본 루틴은 1단계에서 "이미 ON" 보고하고 종료(중복 PR 방지)
+
+---
+
+## [2026-04-30] impl | TASK-022 완료 — heading prefix 동반 검색 (ADR-035, 0.31.0)
+
+### 결과
+- 단위 테스트 5/5 통과 (`tests/unit/test_retriever_heading_expand.py`) — disabled / 정상 동반·마킹 / depth=0 noop / 빈 heading_path skip / 중복·exclude 처리
+- 기본 OFF로 머지(`HEADING_EXPAND_ENABLED=false`) — 안정화 후 별도 PR로 ON 전환
+- 응답 sources에선 companion 제외 → 사용자 화면·`/query` 응답 스키마 변경 0
+- LangSmith 메타 `expanded_chunks_count`로 동반 분포 추후 관찰 가능
+
+### 변경 파일
+- `packages/vectorstore/qdrant_store.py` — `_ensure_payload_indexes()`에 `metadata.heading_path` 추가 + `scroll_by_heading_prefix` 신설
+- `packages/rag/retriever.py` — `retrieve()`에 expand 옵션 3종 추가, reranker 결과 뒤에 companion append 로직(중복·exclude·heading 비어있는 hit skip)
+- `packages/rag/pipeline.py` — `query` / `query_stream`에 settings 전파 + sources에서 companion 제외 + `expanded_chunks_count` 메타
+- `apps/config.py`, `.env.example` — `heading_expand_enabled / prefix_depth / neighbors` 토글
+- `tests/unit/test_retriever_heading_expand.py` — 신규 5케이스
+
+### ADR 번호 정정
+- 합의 단계에서 ADR-032로 예약했으나 충돌 발견(이미 OCR 재색인이 사용 중) → **ADR-035로 변경**. 코드 주석·env·테스트·위키 모두 정정
+
+### 회귀 영향
+- 기본 OFF로 0.30.1 동작 100% 보존 — 회귀 0
+- payload index 추가는 try/except idempotent — 기존 데이터 무영향
+- companion=True 마킹은 sources에서 제외되므로 ON 전환 시에도 응답 스키마 변경 0
+
+### 한계 (ADR-035 본문 참조)
+- heading 없는 청크(평문 PDF) → 동반 0
+- depth=1 prefix가 너무 광범위한 짧은 책 → 의미적 인접성 보장 X (neighbors=2 cap으로 폭발만 방지)
+- LLM 컨텍스트 +10 청크(top_k=5 × 2) — gpt-4o-mini 128k 한도 대비 미미하나 비용 미세 증가
+
+### 후속
+- 안정화 후 별도 PR — `HEADING_EXPAND_ENABLED=true` 전환 + LangSmith 분포 관찰
+- false positive 누적 시 prefix_depth=2 옵션 가이드 정리
+
+### 영향 페이지
+- `architecture/decisions.md` ADR-035 신규 + 헤더 마지막 업데이트
+- `data/schema.md` payload 인덱스 표에 `metadata.heading_path` 추가
+- `features/retrieval.md` 신규(검색 파이프라인 hub)
+- `index.md` retrieval.md 활성화
+- `changelog.md` [0.31.0]
+- `roadmap.md` / `overview.md` TASK-022 ✅ 전환
+
+---
+
+## [2026-04-30] task-start | TASK-022 착수 — heading prefix 동반 검색 (ADR-035 신규)
+
+### 배경
+0.30.0 implicit doc_filter로 책 단위 자동 라우팅까지는 처리됐지만, 같은 책 내에서 검색 hit가 흩어진 페이지에서 잡히면 LLM이 같은 챕터 흐름을 끊고 답하는 한계가 남음. hit 청크의 `metadata.heading_path` prefix를 공유하는 인접 청크를 자동 동반시켜 답변 일관성을 올린다.
+
+### 합의 범위 (do)
+- `packages/vectorstore/qdrant_store.py` — `_ensure_payload_indexes()`에 `metadata.heading_path` keyword 인덱스 추가, `scroll_by_heading_prefix(doc_id, prefix_tokens, exclude_chunk_ids, limit)` 신설
+- `packages/rag/retriever.py` — `retrieve()`에 `expand_enabled / expand_prefix_depth / expand_neighbors` 추가. reranker 통과 top_n 결정 후 hit별로 같은 doc_id + heading_path[:depth] 매칭 청크 N개 회수 → score=0.0의 companion으로 list 끝 append, `metadata.companion=True` 마킹. `(doc_id, chunk_index)` 중복 제거
+- `packages/rag/pipeline.py` — `query` / `query_stream`이 settings에서 expand 파라미터 읽어 retriever에 전달. sources 빌드 시 companion 제외(LLM 컨텍스트만 들어감). LangSmith 메타 `expanded_chunks_count` 기록
+- `packages/rag/generator.py` — companion·hit 동일 가중으로 컨텍스트 주입(prompt 별도 표기 X)
+- `apps/config.py` + `.env.example` — `heading_expand_enabled` (기본 false), `heading_expand_prefix_depth` (기본 1), `heading_expand_neighbors` (기본 2)
+- `tests/packages/rag/test_retriever_heading_expand.py` — 5케이스 (prefix 매칭 OK / depth 0/1/2 / exclude 동작 / 빈 heading_path hit는 동반 0 / 중복 제거)
+
+### 의도적 제외 (don't)
+- "이 섹션 전체 보기" UI — NextJS 별건 후속
+- 섹션 단위 검색 엔드포인트 — 별건
+- LLM prompt에서 companion 가중치 별도 표기 — 단순화로 동일 가중
+- Streamlit UI 변경 0 (동결 정책)
+- companion chunk를 reranker에 통과시키는 안 — 비용 이유 채택 안 함
+
+### 완료 기준
+- `HEADING_EXPAND_ENABLED=true`로 vi 매크로 류 질의 시 LangSmith 트레이스에 hit 5 + companion ≤ 10 들어감
+- `HEADING_EXPAND_ENABLED=false`에서 0.30.1 동작 100% 보존(회귀 테스트 통과)
+- 답변 sources는 hit만 노출(companion 미노출)
+- ADR-032 문서화, changelog 0.31.0, retrieval.md/schema.md 갱신
+
+### 산정·기본값 결정
+- ~80~150줄 + 테스트 5케이스, 1.5~2시간
+- 기본값 false: 신규 동작 안정화 후 별도 PR로 true 전환 — 회귀 리스크 0으로 유지
+- prefix_depth=1: 책 한 권 안에서 챕터 단위 매칭(과도하게 좁히면 동반 0건). neighbors=2: 동반 폭발 방지
+
+### 위키 갱신
+- `roadmap.md` 실행 큐 — TASK-022를 ⚙️ in-progress로 이동
+- `overview.md` 다음 할 일 표 — in-progress + 합의 범위 명시
+- `log.md` 본 항목
+
+---
+
+## [2026-04-30] polish | 사이드바 대화 항목 — trash 아이콘 자리 예약 (0.30.1)
+
+### 증상
+사용자 보고: 사이드바 대화 목록에서 제목이 길어 truncate 되면, 호버 시 나타나는 삭제 아이콘과 말줄임표가 시각적으로 너무 가깝게 붙음. ISSUE-013에서 가로 overflow 자체는 해결됐으나, trash 아이콘이 절대 위치(`right-1 top-1`)로 떠 있고 항목 버튼은 `px-2` 좌우 동일 패딩이라 우측 아이콘 영역만큼 텍스트 자리가 비워지지 않은 상태.
+
+### 수정
+- `web/components/sidebar.tsx:65-68` — 항목 버튼 className `px-2` → `pl-2 pr-8`. 우측 패딩 32px로 trash 아이콘(`right-1` + `p-1` + `size-3.5` ≈ 24px)이 차지할 영역을 항상 예약. 호버 여부와 무관하게 일정한 패딩 유지 → 레이아웃 시프트 0
+- 호버 시 패딩을 토글하지 않은 이유: `group-hover:pr-8` 방식은 마우스 진입 시 텍스트 위치가 흔들려 truncate 끝점이 시각적으로 점프. 항상 예약하는 편이 안정적
+
+### 영향
+- 다른 변경 0. ISSUE-013(가로 overflow) 해결책은 그대로 유효
+- 위키: changelog.md 0.30.1, ISSUE-013 후속 폴리시 노트 추가
+
+### 후속
+- 빈 우측 8px 공간이 비호버 시 살짝 더 비어 보일 수 있으나 호버 시 일관성 우선 → 추가 조정은 사용자 피드백 대기
+
+---
+
 ## [2026-04-30] feat | 질문 본문에서 책 제목 매칭 → implicit doc_filter (ADR-034)
 
 ### 발견 경로

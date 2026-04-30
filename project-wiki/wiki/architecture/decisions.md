@@ -1,6 +1,6 @@
 # Architecture Decision Records (ADR)
 
-**마지막 업데이트**: 2026-04-30 (ADR-034 신규 — 질문 본문에서 책 제목 매칭 → implicit doc_filter)
+**마지막 업데이트**: 2026-04-30 (ADR-035 신규 — heading prefix 동반 검색)
 
 설계에서 중요한 결정을 내릴 때마다 여기에 기록합니다.
 "왜 이렇게 했지?" 를 나중에 찾아보기 위한 파일입니다.
@@ -1806,3 +1806,90 @@ event: error       → {"message": "..."}
 - TASK-022 (heading prefix 동반 검색) — implicit doc_filter와 함께 적용 시 같은 챕터 인접 청크가 자동 동반되어 답변 일관성 추가 ↑
 - title cache 갱신 전략 — 색인 워커가 신규 doc 추가 시 캐시 무효화 hook 추가 별건. 현 TTL로 충분
 - false positive 모니터링 — LangSmith `implicit_doc_title` 메타로 적용 빈도/정확도 관찰 (정성 평가)
+
+---
+
+## ADR-035: heading prefix 동반 검색 — 같은 섹션 인접 청크 자동 동반
+
+**날짜**: 2026-04-30
+**상태**: accepted (적용 완료, 기본 OFF — 안정화 후 별도 PR로 ON 전환)
+**관련**: ADR-034(implicit doc_filter), ADR-029(스코프 우선순위), 0.26.4 답변 빈약 보완 후속 옵션 C, 사용자 query(2026-04-28 "검색에서 청크를 찾고 난 후 상위 섹터를 검색할 수 있나?")
+
+### 배경
+- 현 retriever는 점수 기준 top_n만 반환. hit 청크가 흩어진 페이지(예: 매크로 관련 청크가 116·107·75에서 단편적으로 잡힘)에서 골라지면 LLM이 같은 챕터 흐름을 끊고 답함
+- ADR-034의 implicit doc_filter로 책 단위 자동 라우팅까지는 처리됐지만, 같은 책 안에서 같은 섹션의 인접 청크를 자동으로 묶어주는 단계가 빠져 있음
+- chunk metadata에는 이미 `heading_path: list[str]`(상위→하위) + `chunk_index`가 적재돼 있어 인덱스만 추가하면 cheap하게 같은 prefix 청크를 회수할 수 있음
+
+### 선택지
+1. **hit 청크 heading_path[:depth] prefix 공유 청크 N개를 companion으로 동반** — 채택
+2. **chunk_index ±k 이웃 N개 동반** — 단순하나 같은 chunk 인덱스 거리가 같은 섹션을 보장하지 않음(테이블·이미지 청크가 끼면 의미적 인접성 깨짐). heading 기준이 더 정확
+3. **rerank 단계에서 같은 heading_path 청크에 boost** — 처음부터 후보군에 들어 있어야 효과. 후보 밖 인접 청크는 끌어올 수 없음
+4. **섹션 단위 검색 엔드포인트 신설** — 별건 작업, 현재 query/query_stream 단일 진입점 정책과 맞지 않음
+5. **LLM에게 "이 섹션 전체 보여줘" 호출 권한 부여(tool use)** — 비용·latency 추가, 단순 매칭으로 충분
+
+### 결정
+**옵션 1**. 이유:
+- **이미 적재된 metadata만으로 동작** — schema 변경 0, payload 인덱스만 추가
+- **hit 점수 자체는 영향 0** — reranker 통과 결과를 그대로 두고 뒤에 score=0의 companion만 append. 회귀 영향 최소
+- env 토글 1줄(`HEADING_EXPAND_ENABLED=false`)로 즉시 회귀 가능
+- companion은 `metadata.companion=True`로 마킹돼 응답 sources에선 제외 → **사용자 화면 변경 0**, LLM 컨텍스트만 풍부해짐
+
+### 매칭·동반 알고리즘
+```
+1. similarity_search → reranker로 top_n 결정 (기존 동작, 변경 0)
+2. expand_enabled=true이고 expand_prefix_depth ≥ 1이고 expand_neighbors ≥ 1일 때만 진행
+3. 각 hit 청크에 대해:
+   - heading_path가 비어 있으면 skip (자연 회피)
+   - prefix_tokens = heading_path[:expand_prefix_depth] (공백 제거)
+   - prefix_tokens가 비면 skip
+   - 같은 doc_id + heading_path가 prefix_tokens 모두 포함하는 청크를 expand_neighbors개 scroll
+   - exclude: 이미 hits·companions에 들어간 (doc_id, chunk_index) 전부
+   - 회수된 청크에 metadata.companion=True 마킹, score=0.0, list 끝에 append
+4. 중복 키 (doc_id, chunk_index)는 set으로 1차 차단
+```
+
+**왜 prefix 공유 + 동률 동등 처리?**
+- prefix_tokens AND 매칭은 Qdrant array keyword 인덱스가 자동 처리(원소 단위 매칭)
+- depth=1: 책 한 권에서 "장" 단위로 묶임 → 동반 폭이 적당. 너무 좁히면 동반 0건
+- depth=2: "장+절" 단위로 좁아져 동반 0건이 흔함 → 기본은 1
+- neighbors=2: 폭발 방지(top_k=5 × 2 = +10이 LLM 컨텍스트에 추가, gpt-4o-mini 128k 한도 대비 무시 가능)
+- companion 가중치 별도 표기 X(prompt 단순화) — LLM이 같은 가중으로 읽도록 둠
+
+### 구현 위치
+- `packages/vectorstore/qdrant_store.py`
+  - `_ensure_payload_indexes()`에 `metadata.heading_path` keyword 인덱스 추가 (idempotent)
+  - `scroll_by_heading_prefix(doc_id, prefix_tokens, exclude_chunk_indices, limit)` 신설
+- `packages/rag/retriever.py`
+  - `retrieve()` 시그니처에 `expand_enabled / expand_prefix_depth / expand_neighbors` 추가
+  - reranker 결과 뒤에 companion append 로직 (~30줄)
+- `packages/rag/pipeline.py`
+  - `query` / `query_stream` — settings 3종을 retriever에 전달, sources 빌드 시 `metadata.companion=True` 제외
+  - LangSmith 메타에 `expanded_chunks_count` 기록(0이면 미기록)
+- `apps/config.py` + `.env.example` — 토글 3종 (기본 false / 1 / 2)
+- `tests/unit/test_retriever_heading_expand.py` — 5케이스(disabled / 정상 동반·마킹 / depth 0 noop / 빈 heading_path skip / 중복·exclude 처리)
+
+### 회귀 전략
+- env `HEADING_EXPAND_ENABLED=false`(기본): retriever가 reranker 결과만 반환 — 0.30.x 동작 100% 보존
+- payload index 추가는 try/except로 idempotent — 기존 데이터·트래픽 무영향
+- companion 마킹이 sources에서 제외되므로 ON 전환 시에도 사용자 화면·`/query` 응답 스키마 변경 0
+
+### 적용 결과
+- 단위 테스트 5/5 통과 (mock 기반 — Qdrant 실호출은 인덱스 추가 후 다음 부팅 시 자연 검증)
+- 실 트래픽 검증은 별도 PR에서 `HEADING_EXPAND_ENABLED=true` 전환 후 LangSmith `expanded_chunks_count` 메타로 동반 분포 관찰
+
+### 한계
+- **heading 없는 청크**(평문 PDF 등): heading_path 빈 리스트 → 자연 동반 0. 효과는 heading이 잡히는 문서에 한정
+- **prefix 매칭이 너무 광범위한 경우**: depth=1로 "1장" prefix가 책 절반을 매칭하는 짧은 책에선 neighbors가 우연한 청크로 채워질 수 있음. neighbors=2 cap으로 폭발은 막지만, 의미적 인접성은 보장 X. 운영 관찰 후 depth 조정 가이드 정리 별건
+- **LLM 컨텍스트 토큰 추가**: top_k=5 × 2 = +10 청크. 평균 청크 1KB 가정 시 ~10KB 추가 — gpt-4o-mini 128k 한도 대비 영향 미미하나 비용 미세 증가
+
+### 의도적 제외
+- "이 섹션 전체 보기" UI 노출 — NextJS 별건 후속
+- 섹션 단위 검색 엔드포인트 — 본 ADR 범위 외
+- LLM prompt에서 hit·companion 가중치 별도 표기 — 단순화. 운영 데이터로 효과 부족 시 재검토
+- companion chunk를 reranker에 통과시키는 안 — reranker 호출 비용 증가 + companion이 hit를 밀어내는 역효과 우려. 채택 안 함
+- Streamlit UI 측 변경 0 (동결 정책)
+
+### 후속
+- 안정화 후 별도 PR — `HEADING_EXPAND_ENABLED=true` 전환 + LangSmith `expanded_chunks_count` 분포 관찰
+- false positive(엉뚱한 인접 청크 동반) 누적 시 prefix_depth=2 옵션 가이드 정리
+- TASK-023(self-critique) 진행 시 critique 단계가 companion을 활용해 답변 보강 가능

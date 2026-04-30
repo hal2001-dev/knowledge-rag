@@ -106,6 +106,7 @@
 | TASK-011 | 하이브리드 검색 (Qdrant sparse BM25 + dense + RRF, Kiwi 한국어 전처리) | ADR-023 |
 | TASK-020 | Series/묶음 문서 1급 시민 (휴리스틱 자동 묶기 + 사후 검수, 검색·도서관 통합, NextJS 시리즈 카드·스코프 배지) | ADR-029 |
 | TASK-021 | 프로젝트 프로세스 정기 모니터링 + 워커 RSS 가드 (launchd 5분 스냅샷 + 30초 가드) | ADR-031 |
+| TASK-022 | heading prefix 동반 검색 — hit 청크의 `heading_path[:depth]` 공유 인접 청크 N개를 companion으로 LLM 컨텍스트에 동반 (기본 OFF, sources 미노출) | ADR-035 (0.31.0) |
 
 ### 🎯 다음 (예정, 순서대로)
 
@@ -114,8 +115,7 @@
 | **TASK-019** | 사용자 UI NextJS 분리 + Clerk 인증 (관리자 UI는 Streamlit 잔류·동결) | ⚙️ **Phase B 진행 중 (2026-04-28)** — Phase 1 백엔드 토대 ✅ (0.23.0) · Phase 1 hotfix ✅ (0.23.1) · Phase A NextJS 셋업 ✅ (0.23.2) · Phase B WIP ✅ (3bdfca9 — chat/library/AppShell + Playwright 셋업) · Phase B 진전 ✅ (0.24.1 — proxy.ts AUTH 토글 + Playwright Phase 1/2 분리 + category_filter Qdrant 검증) · Phase B 잔여 정리 ✅ (0.24.2 — chat 라이브 sources 머지 + Playwright Phase 1/2 실 실행 통과 9+10) · Clerk JWT 실 검증 ✅ (0.25.0 — PyJWT+JWKS, RS256·iss·sub, 9/9 회귀 통과) · **남은 것**: 운영 `AUTH_ENABLED=true` 전환 |
 | **TASK-012** | Cloudflare Tunnel + Access 외부 노출 게이트웨이 | 🕐 **후순위 큐잉 (2026-04-23)** — 사용자 도메인 Cloudflare 이전 후 "착수" 지시 대기. 앱 코드 0줄, 운영 문서 중심 |
 | **TASK-013** | MkDocs Material + GitHub Pages 문서 사이트 | 🕐 **후순위 큐잉 (2026-04-23)** — 현 위키 구조 유지, GitHub Actions로 자동 배포. "착수" 지시 대기 |
-| **TASK-022** | heading prefix 동반 검색 (검색 hit 청크의 같은 섹션 인접 청크 자동 동반, 답변 일관성 ↑) | 🕐 **후순위 큐잉 (2026-04-29)** — 0.26.4 답변 보완 후속 옵션 C. ADR-032 예약. 산정 1.5~2시간. "착수" 지시 대기 |
-| **TASK-023** | 답변 self-critique step (1차 답변 후 LLM 자체 검토·보강, 비용·latency 2x 트레이드오프) | 🕐 **후순위 큐잉 (2026-04-29)** — 옵션 D. ADR-033 예약. 토글로만 활성, 산정 1~1.5시간. TASK-022 후 진행 권장. "착수" 지시 대기 |
+| **TASK-023** | 답변 self-critique step (1차 답변 후 LLM 자체 검토·보강, 비용·latency 2x 트레이드오프) | 🕐 **후순위 큐잉 (2026-04-29)** — 옵션 D. 토글로만 활성, 산정 1~1.5시간. ADR 번호는 착수 시 가용 번호로 부여(033 스트리밍·035 heading expand 사용 중 → 다음 가용 ADR-036). "착수" 지시 대기 |
 
 ### 🛑 보류 (사용자 지시 대기)
 

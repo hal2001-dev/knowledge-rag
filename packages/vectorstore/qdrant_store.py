@@ -156,6 +156,10 @@ class QdrantDocumentStore:
             "metadata.tags",
             # TASK-020 (ADR-029): series_filter 검색 + 도서관 그룹화
             "metadata.series_id",
+            # TASK-022 (ADR-035): heading prefix 동반 검색.
+            # array 타입 keyword 인덱스 — Qdrant는 array 원소 단위 매칭을 지원하므로
+            # heading_path[i] 단일 값 매칭으로 prefix 첫 토큰을 골라낼 수 있다.
+            "metadata.heading_path",
         ]
         for field_name in targets:
             try:
@@ -412,6 +416,62 @@ class QdrantDocumentStore:
         except Exception as e:  # noqa: BLE001
             logger.warning(f"set_series_payload 실패 docs={doc_ids}: {e}")
             return False
+
+    def scroll_by_heading_prefix(
+        self,
+        doc_id: str,
+        prefix_tokens: list[str],
+        exclude_chunk_indices: Optional[list[int]] = None,
+        limit: int = 10,
+    ) -> list[ScoredChunk]:
+        """TASK-022 (ADR-035): heading prefix 동반 검색.
+
+        같은 doc_id 안에서 `metadata.heading_path` 가 prefix_tokens 모두를 포함하는
+        청크를 limit개 스크롤한다. heading_path는 list[str] payload이고 Qdrant는 array
+        원소 단위 매칭을 지원하므로, prefix_tokens 각각을 must FieldCondition로 AND한다.
+
+        prefix_tokens가 비어 있으면 빈 리스트 반환(전체 doc 청크 회수는 의도 아님).
+        exclude_chunk_indices에 든 chunk_index는 결과에서 제외(self·중복 회피용).
+        """
+        if not prefix_tokens:
+            return []
+
+        must = [FieldCondition(key="metadata.doc_id", match=MatchValue(value=doc_id))]
+        for tok in prefix_tokens:
+            must.append(FieldCondition(key="metadata.heading_path", match=MatchValue(value=tok)))
+
+        try:
+            result, _ = self._client.scroll(
+                collection_name=self._collection,
+                scroll_filter=Filter(must=must),
+                limit=max(limit + len(exclude_chunk_indices or []), limit),
+                with_payload=True,
+                with_vectors=False,
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.warning(
+                f"scroll_by_heading_prefix 실패 doc_id={doc_id} prefix={prefix_tokens}: {e}"
+            )
+            return []
+
+        excluded = set(exclude_chunk_indices or [])
+        chunks: list[ScoredChunk] = []
+        for p in result:
+            payload = p.payload or {}
+            metadata = payload.get("metadata", {})
+            ci = metadata.get("chunk_index")
+            if ci in excluded:
+                continue
+            chunks.append(
+                ScoredChunk(
+                    content=payload.get("page_content", ""),
+                    metadata=metadata,
+                    score=0.0,
+                )
+            )
+            if len(chunks) >= limit:
+                break
+        return chunks
 
     def scroll_by_doc_id(self, doc_id: str, limit: int = 10) -> list[ScoredChunk]:
         """특정 doc_id의 청크를 chunk_index 순으로 스크롤. 관리자 UI용."""

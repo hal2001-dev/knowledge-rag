@@ -44,7 +44,7 @@
 |--------|------|------|
 | [ingestion.md](wiki/features/ingestion.md) | 문서 수집 및 전처리 (bulk_ingest.py 사용법) | active |
 | `embedding.md` _(미작성)_ | 임베딩 모델 및 벡터 저장 | - |
-| `retrieval.md` _(미작성)_ | 검색 로직 (FAISS, 유사도) | - |
+| [retrieval.md](wiki/features/retrieval.md) | 검색 파이프라인 hub — implicit doc_filter / 하이브리드 / reranker / heading 동반 검색(ADR-035) | active |
 | `generation.md` _(미작성)_ | LLM 연동 및 답변 생성 | - |
 | [evaluation.md](wiki/features/evaluation.md) | 성능 평가 지표 및 실험 기록 | active |
 | [admin_ui.md](wiki/features/admin_ui.md) | 관리자 UI 기능 명세 (1·2·3단계) | draft |

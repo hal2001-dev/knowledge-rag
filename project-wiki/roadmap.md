@@ -37,7 +37,7 @@
 → 🕐 TASK-012 (후순위, 2026-04-23 큐잉) — Cloudflare Tunnel + Access 외부 노출 게이트웨이 (코드 0줄, 운영 문서 중심)
 → 🕐 TASK-013 (후순위, 2026-04-23 큐잉) — MkDocs Material + GitHub Pages 문서 사이트 (현재 project-wiki/ 구조 유지, CI 자동 배포)
 → ✅ TASK-020 (2026-04-28 완료) — Series/묶음 문서 1급 시민 (ADR-029, changelog 0.26.0)
-→ 🕐 TASK-022 (후순위, 2026-04-29 큐잉) — heading prefix 동반 검색 (검색 hit 청크가 속한 같은 섹션 인접 청크 자동 동반, 답변 일관성 ↑)
+→ ✅ TASK-022 (2026-04-30 완료) — heading prefix 동반 검색 (ADR-035, 0.31.0). 기본 OFF 머지, 안정화 후 별도 PR로 ON 전환
 → 🕐 TASK-023 (후순위, 2026-04-29 큐잉) — 답변 self-critique step (1차 답변 후 LLM이 자체 검토·보강. 비용·latency 2x 트레이드오프)
 → ✅ TASK-024 (완료, 2026-04-30) — 답변 스트리밍 SSE (첫 토큰 ~500ms, 체감 latency 5x ↓). ADR-033, 0.28.0 릴리즈
 → 🛑 인증·공개배포 전체 묶음 (사용자 지시까지 전부 보류, 2026-04-22)

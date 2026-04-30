@@ -63,7 +63,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
             return (
               <li key={sid} className="group relative">
                 <button
-                  className={`flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors ${
+                  className={`flex w-full items-start gap-2 rounded-md py-1.5 pl-2 pr-8 text-left text-sm transition-colors ${
                     isActive ? "bg-accent text-accent-foreground" : "hover:bg-accent/50"
                   }`}
                   onClick={() => handlePickSession(sid)}

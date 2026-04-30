@@ -200,6 +200,7 @@ pending ──claim──▶ in_progress ──ok──▶ done
 | `metadata.category` | 카테고리 단일 문자열 필터 |
 | `metadata.tags` | 태그 배열 (Qdrant keyword 인덱스가 array 자동 지원) |
 | `metadata.series_id` | TASK-020 series_filter + 도서관 그룹화 |
+| `metadata.heading_path` | TASK-022 (ADR-035) heading prefix 동반 검색 — array 원소 단위 매칭으로 prefix AND 필터링 |
 
 ### Payload 스키마 (각 포인트)
 

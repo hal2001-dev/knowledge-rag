@@ -164,6 +164,9 @@ class RAGPipeline:
                 doc_id=doc_filter,
                 category=effective_category,
                 series_id=effective_series,
+                expand_enabled=self._settings.heading_expand_enabled,
+                expand_prefix_depth=self._settings.heading_expand_prefix_depth,
+                expand_neighbors=self._settings.heading_expand_neighbors,
             )
 
         if not chunks:
@@ -173,6 +176,11 @@ class RAGPipeline:
                 "latency_ms": int((time.monotonic() - start) * 1000),
                 "suggestions": [],
             }
+
+        # TASK-022: companion 청크 카운트는 LangSmith 트레이스에 기록.
+        expanded_count = sum(1 for c in chunks if c.metadata.get("companion"))
+        if expanded_count and parent_run is not None:
+            parent_run.add_metadata({"expanded_chunks_count": expanded_count})
 
         gen_result = generate(
             llm=self._llm,
@@ -186,6 +194,7 @@ class RAGPipeline:
         suggestions = gen_result.get("suggestions", [])
         latency_ms = int((time.monotonic() - start) * 1000)
 
+        # sources에는 hit만 노출. companion은 LLM 컨텍스트에만 들어가고 사용자 화면 미노출.
         sources = [
             {
                 "doc_id": c.metadata.get("doc_id"),
@@ -196,6 +205,7 @@ class RAGPipeline:
                 "excerpt": c.content[:200],
             }
             for c in chunks
+            if not c.metadata.get("companion")
         ]
 
         logger.info(
@@ -287,7 +297,15 @@ class RAGPipeline:
                 doc_id=doc_filter,
                 category=effective_category,
                 series_id=effective_series,
+                expand_enabled=self._settings.heading_expand_enabled,
+                expand_prefix_depth=self._settings.heading_expand_prefix_depth,
+                expand_neighbors=self._settings.heading_expand_neighbors,
             )
+
+        # TASK-022: companion은 LangSmith 메타에 기록, 응답 sources에선 제외.
+        expanded_count = sum(1 for c in chunks if c.metadata.get("companion"))
+        if expanded_count and parent_run is not None:
+            parent_run.add_metadata({"expanded_chunks_count": expanded_count})
 
         sources = [
             {
@@ -299,6 +317,7 @@ class RAGPipeline:
                 "excerpt": c.content[:200],
             }
             for c in chunks
+            if not c.metadata.get("companion")
         ]
         yield ("sources", sources)
 

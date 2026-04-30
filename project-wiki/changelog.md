@@ -22,6 +22,33 @@
 
 ---
 
+## [0.31.0] - 2026-04-30
+
+### Added
+- **heading prefix 동반 검색** (TASK-022, ADR-035) — 검색 hit 청크의 `metadata.heading_path[:depth]` prefix를 공유하는 같은 doc_id 인접 청크 N개를 companion으로 LLM 컨텍스트에 동반. 답변 일관성 ↑, 응답 sources에서는 제외(사용자 화면 변경 0)
+- 신규 payload index `metadata.heading_path` (Qdrant array keyword 인덱스) — `_ensure_payload_indexes()` idempotent 적용
+- 신규 메서드 `QdrantDocumentStore.scroll_by_heading_prefix(doc_id, prefix_tokens, exclude_chunk_indices, limit)` — array 원소 단위 AND 매칭 + exclude로 중복 회피
+- 환경 변수 3종: `HEADING_EXPAND_ENABLED` (기본 false), `HEADING_EXPAND_PREFIX_DEPTH` (기본 1), `HEADING_EXPAND_NEIGHBORS` (기본 2)
+- LangSmith 메타 `expanded_chunks_count` — 동반 분포 관찰
+- `tests/unit/test_retriever_heading_expand.py` — 5케이스 (disabled / 정상 동반·마킹 / depth=0 noop / 빈 heading_path skip / 중복·exclude)
+
+### Changed
+- `packages/rag/retriever.py:retrieve()` — `expand_enabled / expand_prefix_depth / expand_neighbors` 인자 추가. reranker 결과 뒤에 score=0.0의 companion append (`metadata.companion=True` 마킹)
+- `packages/rag/pipeline.py:query` / `query_stream` — settings에서 expand 파라미터 읽어 retriever에 전달, sources 빌드 시 `metadata.companion=True` 제외
+
+### 회귀
+- `HEADING_EXPAND_ENABLED=false`(기본): 0.30.x 동작 100% 보존. payload index 추가는 idempotent로 트래픽 무영향. 응답 스키마 변경 0(companion이 sources에서 제외)
+- 안정화 후 별도 PR로 `true` 전환 + LangSmith `expanded_chunks_count` 분포 관찰 예정
+
+---
+
+## [0.30.1] - 2026-04-30
+
+### Fixed
+- **사이드바 대화 항목 — 제목 truncate가 호버 시 삭제 아이콘과 시각적으로 붙던 문제** (ISSUE-013 후속 폴리시). `web/components/sidebar.tsx` 항목 버튼 `px-2` → `pl-2 pr-8`로 우측 패딩만 확장해 절대 위치 trash 아이콘 자리(약 24px)를 항상 예약. 호버 시 아이콘이 나타나도 말줄임표가 더 이상 겹치지 않음. 호버 패딩 변동이 없어 레이아웃 시프트 0
+
+---
+
 ## [0.30.0] - 2026-04-30
 
 ### Added

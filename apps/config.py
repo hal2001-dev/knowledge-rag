@@ -59,6 +59,14 @@ class Settings(BaseSettings):
     search_mode: str = "vector"
     sparse_model_name: str = "Qdrant/bm25"
 
+    # heading prefix 동반 검색 (TASK-022, ADR-035)
+    # enabled=false 기본 — 안정화 후 별도 PR로 true 전환. retriever가 hit 청크의
+    # heading_path[:prefix_depth]를 공유하는 같은 doc_id 인접 청크를 neighbors개 회수해
+    # companion으로 LLM 컨텍스트에 동반(sources에는 노출 안 됨).
+    heading_expand_enabled: bool = False
+    heading_expand_prefix_depth: int = 1
+    heading_expand_neighbors: int = 2
+
     # Reranker — flashrank(영어) | bge-m3(다국어)
     reranker_backend: str = "flashrank"
     reranker_model_name: str = ""  # 빈 값이면 각 백엔드 기본 모델 사용
