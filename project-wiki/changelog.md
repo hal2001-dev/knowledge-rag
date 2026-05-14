@@ -22,6 +22,13 @@
 
 ---
 
+## [0.31.1] - 2026-05-14
+
+### Changed
+- heading prefix 동반 검색(ADR-035) 기본 ON 전환 — HEADING_EXPAND_ENABLED=false → true. 0.31.0 머지 후 2주 안정화 관찰 완료. 회귀 시 false로 즉시 복원 가능
+
+---
+
 ## [0.31.0] - 2026-04-30
 
 ### Added

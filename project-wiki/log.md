@@ -5,6 +5,10 @@
 
 ---
 
+## [2026-05-14] polish | TASK-022 ON 전환 — .env.example HEADING_EXPAND_ENABLED=false→true 변경. LangSmith LANGCHAIN_TRACING_V2=false로 expanded_chunks_count 분포 미관찰. 회귀 시 .env에서 false로 즉시 복원 가능(payload index idempotent, 재색인 불필요).
+
+---
+
 ## [2026-04-30] schedule | TASK-022 안정화 후 ON 전환 PR 자동 예약 (2026-05-14)
 
 ### 배경
