@@ -1893,3 +1893,68 @@ event: error       → {"message": "..."}
 - 안정화 후 별도 PR — `HEADING_EXPAND_ENABLED=true` 전환 + LangSmith `expanded_chunks_count` 분포 관찰
 - false positive(엉뚱한 인접 청크 동반) 누적 시 prefix_depth=2 옵션 가이드 정리
 - TASK-023(self-critique) 진행 시 critique 단계가 companion을 활용해 답변 보강 가능
+
+---
+
+## ADR-036: RAG 컴포넌트 부팅 워밍업 확장 — sparse(Kiwi+BM25) 포함
+
+**날짜**: 2026-05-14
+**상태**: accepted
+**관련 TASK**: TASK-025
+**관련 ADR**: ADR-012 (BGE reranker), ADR-023 (hybrid 검색)
+
+### 결정
+
+`apps/main.py` lifespan에서 `RERANKER_WARMUP=true`일 때 reranker만 워밍업하던 것을, **sparse(Kiwi+BM25)와 dense embedding HTTP 풀까지** 동일 토글로 확장한다. `search_mode=hybrid`이면 sparse warmup 1회를 추가하고, embedding은 try/except로 1회 더미 호출한다.
+
+### 배경
+
+- `scripts/profile_query.py`로 같은 질의를 2회 연속 측정한 결과 cold/warm 격차가 큼
+  - cold run: rerank 6130ms, embed_sparse 810ms (Kiwi 첫 토크나이즈), total 11964ms
+  - warm run: rerank 151ms, embed_sparse 1ms, total 5759ms
+- 사용자 LangSmith trace에서 첫 질의 11411ms 관찰. bench q01 outlier 20489ms도 같은 메커니즘
+- 기존 워밍업 코드(`if settings.reranker_warmup: r.rerank(...)`)는 BGE forward만 활성화하고 Kiwi+BM25 첫 토크나이즈 비용(약 800ms)은 첫 사용자 질의에 그대로 부과 — 절반만 워밍업한 셈
+
+### 옵션 비교
+
+| 옵션 | 장점 | 단점 |
+|---|---|---|
+| A. 새 환경변수(`SPARSE_WARMUP`) 추가 | 토글 입도 ↑ | 운영자가 관리할 토글 수 증가, 의미 분할 과도 |
+| B. 기존 `RERANKER_WARMUP` 토글 의미 확장 | 추가 학습 비용 0 | 이름과 실제 동작이 살짝 어긋남 |
+| C. 새 umbrella 토글(`RAG_WARMUP`)로 통일 | 의미 정합 | 기존 `.env` 호환 깨짐. 단일 사용자 환경이지만 이전 toggle을 마이그레이션해야 함 |
+
+채택: **B**. 1인 운영·간단함 우선. `RERANKER_WARMUP`을 "RAG 부팅 워밍업 전체"로 의미 확장하고, 코드 주석·`.env.example` 코멘트에 명시.
+
+### 적용 내용
+
+`apps/main.py` lifespan의 워밍업 블록 확장:
+
+1. reranker (기존 유지)
+2. **sparse**(`search_mode=hybrid`일 때만): `SparseEmbedder(...).embed_query("워밍업")` 호출 — Kiwi 한국어 토큰 활성 + BM25 인코더 첫 forward
+3. **embedding**(선택, try/except graceful): `embeddings.embed_query("warmup")` 1회 — OpenAI HTTP 풀 핸드셰이크. 실패해도 부팅 계속
+
+`apps/config.py` `reranker_warmup` 기본값 `False → True`로 변경. 신규 환경에서도 첫 질의 cold 비용 자동 회피.
+
+### 완료 기준 및 측정
+
+- 같은 프로세스 부팅 직후 첫 질의 latency
+  - before(현재 워밍업 reranker만): 11~20s outlier
+  - after(reranker + sparse + embed 워밍업): warm steady-state 수준 (≤6s 목표)
+- 검증: `scripts/profile_query.py` 또는 `scripts/bench_retrieval.py` q01 latency
+
+### 회귀 전략
+
+- `RERANKER_WARMUP=false`로 워밍업 전체 비활성. 부팅 시간 +5~10초가 부담되는 dev 사이클에서 끄고 사용
+- 워밍업 각 단계는 try/except로 감싸 부팅 자체를 막지 않음 — sparse 또는 embed 워밍업 실패 시 warning 로그만
+
+### 의도적 제외
+
+- 시스템 프롬프트 출력 포맷 완화 (steady-state generate 단축) — 별건, 답변 스타일 변경 검토 선행
+- `generate` + `generate_suggestions` 병렬화 — 별건, generator 비동기 구조 확인 선행
+- reranker 모델 교체(bge-m3 → flashrank) — 별건, 한국어 품질 회귀 측정 필요
+- BGE-M3 임베딩 백엔드 워밍업(`embedding_warmup`)은 본 ADR 범위 외. 별도 토글 유지
+
+### 리스크
+
+- 부팅 시간 +5~10초 (BGE 첫 forward + Kiwi 로드). uvicorn `--reload` 빈도 높은 dev에서 체감
+- 워밍업 더미 입력이 실 사용 패턴과 다르면 일부 비용 잔존. 단 BGE/Kiwi 첫 forward는 입력 의존 없이 1회면 해소되므로 영향 미미

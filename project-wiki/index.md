@@ -1,6 +1,6 @@
 # Wiki Index
 
-**마지막 업데이트**: 2026-04-30 (0.30.0 — 질문 본문 책 제목 매칭으로 implicit doc_filter 자동 적용 + ADR-034. 이전: 0.29.0 UX 폴리시 묶음)
+**마지막 업데이트**: 2026-05-14 (TASK-025 큐잉 — RAG 컴포넌트 부팅 워밍업. 이전: 2026-04-30 0.30.0 implicit doc_filter)
 **총 페이지 수**: 39 (루트 9 + wiki/ 17 + issues/open/ 7 + issues/resolved/ 6)
 
 ---

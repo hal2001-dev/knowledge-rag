@@ -5,6 +5,17 @@
 
 ---
 
+## [2026-05-14] queue | TASK-025 — RAG 컴포넌트 부팅 워밍업 큐잉
+
+- 배경: profile_query.py 측정 결과 cold run에서 bge-m3 reranker 첫 forward 6130ms + Kiwi+BM25 첫 토크나이즈 +800ms 누적, 사용자 LangSmith 트레이스 첫 질의 11411ms 관찰. warm run에선 latency의 92%가 LLM generate
+- 범위: apps/api 부팅 시 reranker.rerank + sparse.embed_query 더미 호출 1회. (선택) OpenAI dense embed 1회. `RERANKER_WARMUP` env 토글
+- 의도적 제외: 시스템 프롬프트 출력 포맷 완화·suggestions 병렬화·reranker 모델 교체는 별도
+- 완료 기준: 부팅 직후 첫 질의 latency before 11~20s → after ≤6s. profile_query 또는 bench_retrieval q01 검증
+- 실행 큐: TASK-001~TASK-024 ✅ → **TASK-025 (다음)**. TASK-019는 인증·공개배포 묶음 보류 일환으로 🛑 동기화
+- 반영: roadmap(실행 큐·TASK-025 상세 정의·TASK-019 ⚙️→🛑), overview(TASK-019 동기화·TASK-025 행 추가·마지막 업데이트 2026-05-14)
+
+---
+
 ## [2026-04-30] schedule | TASK-022 안정화 후 ON 전환 PR 자동 예약 (2026-05-14)
 
 ### 배경

@@ -33,13 +33,14 @@
 → ✅ TASK-017 (2026-04-25 완료, ADR-027) — 랜딩 카드 v2 (카테고리 분포·주제 칩·최근 문서 카드)
 → ✅ TASK-018 (2026-04-25 완료, ADR-028) — 색인 워커 분리 (Postgres `ingest_jobs` 큐 + indexer 프로세스, SKIP LOCKED claim, advisory lock 마이그레이션 race 해소)
 → ✅ TASK-021 (2026-04-28 완료, ADR-031) — 프로젝트 프로세스 정기 모니터링 + 워커 RSS 가드 (launchd 5분 스냅샷 + 30초 가드, ISSUE-005 누명 사건 후속, 모의 SIGTERM 테스트 통과)
-→ ⚙️ TASK-019 (Phase A 완료·Phase B 재개 차례, 2026-04-28) — 사용자 UI NextJS 분리 + Clerk 인증. ADR-030
+→ 🛑 TASK-019 (Phase A 완료·Phase B는 인증·공개배포 묶음 보류 일환, 2026-04-28) — 사용자 UI NextJS 분리 + Clerk 인증. ADR-030
 → 🕐 TASK-012 (후순위, 2026-04-23 큐잉) — Cloudflare Tunnel + Access 외부 노출 게이트웨이 (코드 0줄, 운영 문서 중심)
 → 🕐 TASK-013 (후순위, 2026-04-23 큐잉) — MkDocs Material + GitHub Pages 문서 사이트 (현재 project-wiki/ 구조 유지, CI 자동 배포)
 → ✅ TASK-020 (2026-04-28 완료) — Series/묶음 문서 1급 시민 (ADR-029, changelog 0.26.0)
 → ✅ TASK-022 (2026-04-30 완료) — heading prefix 동반 검색 (ADR-035, 0.31.0). 기본 OFF 머지, 안정화 후 별도 PR로 ON 전환
 → 🕐 TASK-023 (후순위, 2026-04-29 큐잉) — 답변 self-critique step (1차 답변 후 LLM이 자체 검토·보강. 비용·latency 2x 트레이드오프)
 → ✅ TASK-024 (완료, 2026-04-30) — 답변 스트리밍 SSE (첫 토큰 ~500ms, 체감 latency 5x ↓). ADR-033, 0.28.0 릴리즈
+→ 🎯 TASK-025 (다음, 2026-05-14 큐잉) — RAG 컴포넌트 부팅 워밍업 (bge-m3 + Kiwi+BM25 더미 호출 1회). 첫 질의 cold latency 11~20s → ≤6s 목표. ADR-036 (예정)
 → 🛑 인증·공개배포 전체 묶음 (사용자 지시까지 전부 보류, 2026-04-22)
      · ISSUE-001 (모바일 업로드) · 관리자 UI 2단계 · HTTPS 배포 · 앱 내 API 키/OAuth · 관리자 전용 UI 버튼
 → 🔄 장기 검토: Graph RAG, MCP 재개, 대화 요약, 스트리밍, L2 중복 감지
@@ -1320,6 +1321,48 @@ TASK-015 (분류)  ─┘
 - **앞부분 편향** — 책 서문이 일반적이면 요약 빈약. 100+ 청크 긴 문서엔 후속 hierarchical TASK 필요
 - **API 장애·rate limit** — 배치 재시도, 일 cost cap 설정
 - **품질 편차** — 한국어 전문 서적은 맥락 누락 가능, 검수 + 프롬프트 튜닝 1~2회 필요
+
+---
+
+## TASK-025: RAG 컴포넌트 부팅 워밍업 — 첫 질의 cold latency 제거
+
+**상태**: queued (2026-05-14 큐잉)
+**우선순위**: 다음 — 사용자 체감 첫 질의 11~20s outlier 직접 해소
+**관련**: ADR-036 (예정), TASK-024(스트리밍 SSE) 후속 사용자 체감 latency 추가 개선
+
+### 배경
+- `scripts/profile_query.py` 측정: 같은 질의 2회 연속 실행 시 cold/warm 격차가 큼
+  - cold run: rerank 6130ms, embed_sparse 810ms (Kiwi 첫 토크나이즈), total 11964ms
+  - warm run: rerank 151ms, embed_sparse 1ms, total 5759ms
+- 사용자 LangSmith 트레이스에서 첫 질의 latency 11411ms 관찰. bench q01 outlier 20489ms도 동일 메커니즘
+- 워밍업 후 latency의 92%가 LLM generate. 부팅 단계에서 BGE/Kiwi/BM25를 미리 활성화하면 첫 질의 cold cost 제거 가능
+
+### 범위
+- `apps/api` 부팅 시점(또는 컴포넌트 build 직후)에 워밍업 1회 실행:
+  - `Reranker.rerank` 더미 입력 1쌍 호출 (BGE forward path 활성)
+  - `SparseEmbedder.embed_query` 더미 문자열 호출 (Kiwi + BM25 첫 토크나이즈·인코딩)
+  - (선택) `embeddings.embed_query` 더미 호출 (OpenAI HTTP 풀 핸드셰이크)
+- 환경변수 토글: `RERANKER_WARMUP=1` 기본 ON, `=0`이면 skip
+
+### 의도적 제외
+- 시스템 프롬프트 출력 포맷 완화 — 별도 (steady-state generate 시간 단축, 답변 스타일 변경 검토 필요)
+- suggestions 병렬화 — 별도 (generator 비동기 구조 조사 선행)
+- reranker 모델 교체 (bge-m3 → flashrank) — 별도 TASK 후보 (품질 회귀 측정 필요)
+
+### 완료 기준
+- 부팅 직후 첫 질의 latency:
+  - before: 11~20s (q01 outlier, profile cold run)
+  - after: ≤6s (warm steady-state 수준)
+- 검증: 동일 프로세스에서 `profile_query.py` 1회차 latency로 측정. 또는 `bench_retrieval.py` q01 latency
+- 부팅 시간 증가량 기록 (수 초 이내 허용)
+
+### 회귀 전략
+- `RERANKER_WARMUP=0` env로 워밍업 비활성. 워밍업이 부팅을 무한 대기시키는 회귀 발생 시 즉시 차단 가능
+- 워밍업 실패는 경고만 남기고 서비스 부팅은 계속(graceful) — 워밍업 자체가 서비스 가용성을 떨어뜨리지 않도록
+
+### 리스크
+- 부팅 시간이 첫 모델 로드 비용만큼 늘어남. uvicorn reload 빈도 높은 dev 환경에서 체감 가능 — dev 토글 권장
+- 워밍업 더미 입력이 실제 사용 패턴과 다르면 첫 실제 질의에서 일부 비용이 잔존할 수 있음
 
 ---
 

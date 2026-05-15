@@ -1,7 +1,7 @@
 # Project Overview
 
 **상태**: active
-**마지막 업데이트**: 2026-04-28
+**마지막 업데이트**: 2026-05-14
 **관련 페이지**: `pipeline.md` _(미작성)_, [stack.md](wiki/architecture/stack.md)
 
 ---
@@ -112,7 +112,8 @@
 
 | # | 제목 | 범위·상태 |
 |---|------|---|
-| **TASK-019** | 사용자 UI NextJS 분리 + Clerk 인증 (관리자 UI는 Streamlit 잔류·동결) | ⚙️ **Phase B 진행 중 (2026-04-28)** — Phase 1 백엔드 토대 ✅ (0.23.0) · Phase 1 hotfix ✅ (0.23.1) · Phase A NextJS 셋업 ✅ (0.23.2) · Phase B WIP ✅ (3bdfca9 — chat/library/AppShell + Playwright 셋업) · Phase B 진전 ✅ (0.24.1 — proxy.ts AUTH 토글 + Playwright Phase 1/2 분리 + category_filter Qdrant 검증) · Phase B 잔여 정리 ✅ (0.24.2 — chat 라이브 sources 머지 + Playwright Phase 1/2 실 실행 통과 9+10) · Clerk JWT 실 검증 ✅ (0.25.0 — PyJWT+JWKS, RS256·iss·sub, 9/9 회귀 통과) · **남은 것**: 운영 `AUTH_ENABLED=true` 전환 |
+| **TASK-019** | 사용자 UI NextJS 분리 + Clerk 인증 (관리자 UI는 Streamlit 잔류·동결) | 🛑 **인증·공개배포 묶음 보류 일환 (2026-05-14)** — Phase A 완료, Phase B 잔여(`AUTH_ENABLED=true` 전환)는 인증·공개배포 묶음 보류 정책에 묶임. 사용자 명시 지시까지 재개 안 함. Phase 1 백엔드 토대 ✅ (0.23.0) · hotfix ✅ (0.23.1) · Phase A NextJS 셋업 ✅ (0.23.2) · Phase B 진전 ✅ (0.24.1~0.24.2) · Clerk JWT 실 검증 ✅ (0.25.0) |
+| **TASK-025** | RAG 컴포넌트 부팅 워밍업 (bge-m3 reranker + Kiwi+BM25 더미 호출) | 🎯 **다음 (2026-05-14 큐잉)** — 첫 질의 cold latency 11~20s → ≤6s 목표. profile_query 측정으로 병목 확인(BGE 6130ms, Kiwi 첫 토크나이즈 +800ms). ADR-036 예정 |
 | **TASK-012** | Cloudflare Tunnel + Access 외부 노출 게이트웨이 | 🕐 **후순위 큐잉 (2026-04-23)** — 사용자 도메인 Cloudflare 이전 후 "착수" 지시 대기. 앱 코드 0줄, 운영 문서 중심 |
 | **TASK-013** | MkDocs Material + GitHub Pages 문서 사이트 | 🕐 **후순위 큐잉 (2026-04-23)** — 현 위키 구조 유지, GitHub Actions로 자동 배포. "착수" 지시 대기 |
 | **TASK-023** | 답변 self-critique step (1차 답변 후 LLM 자체 검토·보강, 비용·latency 2x 트레이드오프) | 🕐 **후순위 큐잉 (2026-04-29)** — 옵션 D. 토글로만 활성, 산정 1~1.5시간. ADR 번호는 착수 시 가용 번호로 부여(033 스트리밍·035 heading expand 사용 중 → 다음 가용 ADR-036). "착수" 지시 대기 |
