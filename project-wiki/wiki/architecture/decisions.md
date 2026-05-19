@@ -1958,3 +1958,76 @@ event: error       → {"message": "..."}
 
 - 부팅 시간 +5~10초 (BGE 첫 forward + Kiwi 로드). uvicorn `--reload` 빈도 높은 dev에서 체감
 - 워밍업 더미 입력이 실 사용 패턴과 다르면 일부 비용 잔존. 단 BGE/Kiwi 첫 forward는 입력 의존 없이 1회면 해소되므로 영향 미미
+
+---
+
+## ADR-037: 후속 질문 청크 근거 grounding — evidence 검증·폐기
+
+**날짜**: 2026-05-19
+**상태**: accepted
+**관련 TASK**: TASK-026
+**관련 ADR**: ADR-019 (후속 질문 LLM JSON 통합), ADR-033 (스트리밍 답변/제안 분리)
+
+### 결정
+
+답변 아래 후속 질문(suggestions)을 **retrieve된 청크 본문에 grounding**한다. LLM이 각 후속 질문과 함께 `source`(출처 헤더)·`evidence`(청크에서 그대로 복사한 근거 구절)를 출력하게 하고, 호출 측이 `evidence`를 청크 본문과 대조해 검증한다. 검증을 통과하지 못한 질문은 폐기한다.
+
+### 배경
+
+- 사용자 관찰: 후속 질문이 문서 내용에 입각하기보다 "LLM이 일반적으로 만들어낸" 느낌.
+- 원인 진단:
+  - **재료 손실** — 스트리밍 경로 `generate_suggestions()`는 청크 없이 `question + answer`만 입력받음. 답변은 이미 청크의 추상화 결과 → 2차 추상화로 책 고유 디테일(인물·사건·개념)이 소실.
+  - **프롬프트가 상상을 요구** — `_SUGGESTIONS_SYSTEM`·`SYSTEM_PROMPT_WITH_SUGGESTIONS`가 "a user might naturally ask next" 표현으로 LLM의 통념을 요청.
+- ISSUE-007(EmptyState 예시 질문 ↔ retrieval 불일치)과 동일한 근본 문제: LLM이 상상한 질문 ≠ retrieval이 답할 수 있는 청크.
+
+### 옵션 비교
+
+| 옵션 | 장점 | 단점 |
+|---|---|---|
+| A. 프롬프트 어휘만 grounding으로 교체 | 비용 0, 즉시 | 청크를 줘도 grounding을 검증할 장치가 없음 — "지어낸 질문"이 그대로 통과 |
+| B. A + `{q,source,evidence}` 스키마 + evidence 청크 대조 검증·폐기 | grounding을 구조적으로 강제·검증, 로그로 디버깅 가능 | 출력 토큰 ↑, 폐기로 노출 개수가 줄 수 있음 |
+| C. B + 생성 질문을 retrieval에 재투입해 점수 미달 폐기 | 클릭 후 답변 가능성까지 보장 | 질문당 검색 1회 추가 — 지연·비용 큼 |
+
+채택: **B**. evidence 폐기만으로 "청크에 실재하는 근거"가 보장돼 사용자 불만("지어낸 느낌")에 정확히 대응한다. C는 질문당 검색 1회 추가라 비용 대비 한계효용이 작아 제외 — 보완 후에도 부족하면 별건 TASK.
+
+### 적용 내용
+
+`packages/rag/generator.py`:
+- `generate_suggestions()`에 `chunks` 인자 추가. 청크는 `pipeline.py`의 `retrieve()` 로컬 변수를 재사용 — 재검색·재랭킹 없음.
+- `_SUGGESTIONS_SYSTEM`·`SYSTEM_PROMPT_WITH_SUGGESTIONS`를 grounding 프롬프트로 교체. 후속 질문 출력을 `{"q","source","evidence"}` 객체 배열로.
+- `_ground_suggestions()` 신설 — `evidence`를 공백 무시 정규화 후 청크 본문에 부분 일치하는지 검증, 통과한 `q`만 반환. evidence가 5자 미만(`_MIN_EVIDENCE_LEN`)이면 우연 매칭 위험으로 폐기. 스키마를 벗어난 평문 항목도 폐기.
+- 폐기 대비 `suggestions_count + 1`개 생성 요청 후 통과분에서 상위 N개.
+- 비스트리밍 `generate()`도 동일 스키마·검증으로 통일.
+- INSUFFICIENT 가드 유지 — 답변이 "정보 없음" 류면 청크가 있어도 suggestion 비움.
+
+`packages/rag/pipeline.py`: 스트리밍 경로 `generate_suggestions` 호출에 `chunks` 전달.
+
+응답 인터페이스(`QueryResponse.suggestions: list[str]`, SSE `suggestions` 이벤트)는 **변경 없음** — `source`/`evidence`는 generator 내부 검증·로그용이고 UI엔 `q`만 노출.
+
+### 완료 기준 및 측정
+
+- 후속 질문이 청크 `evidence`로 검증되고, 미검증 질문은 노출되지 않음
+- `scripts/bench_answers.py`에 grounding 지표(`suggestions_grounded_mean`, `suggestions_fill_rate`) 추가 — 적용 전후 비교로 "지어낸 느낌"을 수치화
+- 후속 질문 칩 노출 지연 +2초 이내
+
+### 비용·성능
+
+- 스트리밍 경로 `generate_suggestions` 별도 호출: 청크 입력만큼 입력 토큰 증가. 실측(`answers_2026-05-14`, gpt-4o-mini) 기준 호출당 ~$0.00022 → ~$0.00082 (+$0.0006, 약 3.7배). 절대값 작음 — 1,000질의/일에도 월 +$18.
+- 비스트리밍 `generate()`: 청크가 이미 context에 있어 추가 비용 ≈ 0.
+- 지연: 청크 prefill +0.3~0.5초, 출력 토큰 증가가 주 요인. `evidence` 길이 제한·폐기 여유분 최소화로 +2초 이내.
+
+### 회귀 전략
+
+- `SUGGESTIONS_ENABLED=false`로 후속 질문 전체 비활성
+- 프롬프트·스키마 변경이라 롤백은 `generator.py` 되돌리기 — 다른 코드 영향 없음
+
+### 의도적 제외
+
+- 레버 C(생성 질문 retrieval 재검증) — 비용 대비 한계효용 작음
+- ISSUE-007의 EmptyState 예시 질문 — 별 경로(`/index/overview`), 본 ADR 범위 외
+
+### 리스크
+
+- evidence 폐기로 노출 개수가 `suggestions_count` 미만 — `count+1` 여유 생성으로 보완, 부족하면 count 상향
+- gpt-4o-mini가 JSON 안에서 `evidence`를 청크와 정확히 일치시키지 못할 수 있음 — 공백 무시 부분 매칭으로 흡수, 프롬프트 1~2회 튜닝
+- response_format 미지원 모델(GLM 등)은 스키마를 못 지켜 전량 폐기될 수 있음 — 현 운영(gpt-4o-mini)은 JSON 모드 지원, 로그로 관찰

@@ -70,7 +70,7 @@ class Settings(BaseSettings):
     # Reranker — flashrank(영어) | bge-m3(다국어)
     reranker_backend: str = "flashrank"
     reranker_model_name: str = ""  # 빈 값이면 각 백엔드 기본 모델 사용
-    reranker_warmup: bool = False  # True면 startup에서 모델 preload
+    reranker_warmup: bool = True   # ADR-036: RAG 부팅 워밍업 마스터 토글 (reranker + sparse + embed). 끄려면 false
 
     # LangSmith (LangChain이 os.environ을 직접 읽으므로 필드는 관측·검증용)
     langchain_tracing_v2: bool = False

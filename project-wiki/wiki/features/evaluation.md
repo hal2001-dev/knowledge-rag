@@ -1,7 +1,7 @@
 # 성능 평가 (Evaluation)
 
 **상태**: active
-**마지막 업데이트**: 2026-04-22
+**마지막 업데이트**: 2026-05-19
 **관련 페이지**: `retrieval.md` _(미작성)_, `embedding.md` _(미작성)_, [decisions.md](../architecture/decisions.md)
 
 ---
@@ -53,7 +53,12 @@
 
 # 스모크 (약 30초)
 .venv/bin/python scripts/bench_answers.py --limit 3
+
+# latency만 측정 (Ragas 생략 — retrieve+generate p50/p95·쿼리별 출력)
+.venv/bin/python scripts/bench_answers.py --skip-ragas
 ```
+
+`SUGGESTIONS_ENABLED=true`이면 두 모드 모두 후속 질문 grounding 지표(`suggestions_grounded_mean`·`suggestions_fill_rate`)를 함께 출력한다 (TASK-026).
 
 결과는 `data/eval_runs/{retrieval|answers}_<timestamp>.json`에 저장. LangSmith 활성 시 대시보드 `knowledge-rag` 프로젝트에 run이 자동 누적.
 
@@ -139,6 +144,14 @@
 | context_recall | 0.942 | 0.917 | −3% |
 
 - **결론**: **OpenAI 기본 유지 + BGE-M3 토글 확보** (ADR-016). Retrieval 지표 동률 + Answer 소폭 하락. 전환 이득 없음. 한국어 중심 dataset이 새로 들어오면 재평가.
+
+### 실험 2026-05-19: 후속 질문 grounding 강화 (TASK-026, ADR-037)
+
+- **변경**: 후속 질문(suggestions)을 청크 근거 기반으로 전환 — `{q,source,evidence}` 스키마 + `evidence` 청크 대조 검증·미검증 폐기 (`packages/rag/generator.py`)
+- **이유**: 후속 질문이 문서 내용에 입각하지 않고 "LLM이 지어낸" 느낌이라는 사용자 관찰. 스트리밍 경로가 청크 없이 답변만 보던 구조가 원인
+- **측정 지표**: `bench_answers.py`에 `suggestions_grounded_mean`(쿼리당 evidence 검증 통과 개수)·`suggestions_fill_rate`(요청 `suggestions_count` 대비 충족률) 추가
+- **결과**: 적용 전후 비교 미실행 — LLM 호출 비용 발생分이라 사용자 합의 후 측정. 코드·단위 테스트는 완료(generator 12개 통과)
+- **결론**: 측정 후 확정
 
 ---
 

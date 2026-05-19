@@ -40,7 +40,8 @@
 → ✅ TASK-022 (2026-04-30 완료) — heading prefix 동반 검색 (ADR-035, 0.31.0). 기본 OFF 머지, 안정화 후 별도 PR로 ON 전환
 → 🕐 TASK-023 (후순위, 2026-04-29 큐잉) — 답변 self-critique step (1차 답변 후 LLM이 자체 검토·보강. 비용·latency 2x 트레이드오프)
 → ✅ TASK-024 (완료, 2026-04-30) — 답변 스트리밍 SSE (첫 토큰 ~500ms, 체감 latency 5x ↓). ADR-033, 0.28.0 릴리즈
-→ 🎯 TASK-025 (다음, 2026-05-14 큐잉) — RAG 컴포넌트 부팅 워밍업 (bge-m3 + Kiwi+BM25 더미 호출 1회). 첫 질의 cold latency 11~20s → ≤6s 목표. ADR-036 (예정)
+→ ⚙️ TASK-025 (in-progress, 2026-05-15) — RAG 컴포넌트 부팅 워밍업 (bge-m3 + Kiwi+BM25 + dense embed 더미 호출 1회). 구현 완료·미커밋, AFTER latency 검증 TODO. ADR-036 (accepted)
+→ ⚙️ TASK-026 (in-progress, 2026-05-19) — 후속 질문 grounding 강화 (청크 근거 기반 재생성 + source/evidence 검증·폐기). 코드·테스트 완료·미커밋, bench 적용 전후 비교 TODO. ADR-037 (accepted)
 → 🛑 인증·공개배포 전체 묶음 (사용자 지시까지 전부 보류, 2026-04-22)
      · ISSUE-001 (모바일 업로드) · 관리자 UI 2단계 · HTTPS 배포 · 앱 내 API 키/OAuth · 관리자 전용 UI 버튼
 → 🔄 장기 검토: Graph RAG, MCP 재개, 대화 요약, 스트리밍, L2 중복 감지
@@ -1326,9 +1327,14 @@ TASK-015 (분류)  ─┘
 
 ## TASK-025: RAG 컴포넌트 부팅 워밍업 — 첫 질의 cold latency 제거
 
-**상태**: queued (2026-05-14 큐잉)
+**상태**: in-progress (2026-05-14 큐잉 → 2026-05-15 구현)
 **우선순위**: 다음 — 사용자 체감 첫 질의 11~20s outlier 직접 해소
-**관련**: ADR-036 (예정), TASK-024(스트리밍 SSE) 후속 사용자 체감 latency 추가 개선
+**관련**: ADR-036 (accepted), TASK-024(스트리밍 SSE) 후속 사용자 체감 latency 추가 개선
+
+### 진행 현황 (2026-05-15)
+- 구현 완료·**미커밋**: `apps/main.py` lifespan 워밍업 블록을 reranker → reranker + sparse(`search_mode=hybrid` 한정) + dense embed로 확장(각 단계 try/except graceful), `apps/config.py` `reranker_warmup` 기본값 `False→True`, `.env.example` 주석 보강
+- 진단 도구 신설: `scripts/profile_query.py`(단발 구간별 ms·cold/warm 2회 비교), `scripts/bench_answers.py --skip-ragas`(Ragas 생략 latency만)
+- **남은 일(TODO)**: 완료 기준의 AFTER latency 검증(워밍업 적용 후 첫 질의 ≤6s) 미수행. 검증 통과 후 done 마감 + changelog 버전 항목 추가
 
 ### 배경
 - `scripts/profile_query.py` 측정: 같은 질의 2회 연속 실행 시 cold/warm 격차가 큼
@@ -1363,6 +1369,70 @@ TASK-015 (분류)  ─┘
 ### 리스크
 - 부팅 시간이 첫 모델 로드 비용만큼 늘어남. uvicorn reload 빈도 높은 dev 환경에서 체감 가능 — dev 토글 권장
 - 워밍업 더미 입력이 실제 사용 패턴과 다르면 첫 실제 질의에서 일부 비용이 잔존할 수 있음
+
+---
+
+## TASK-026: 후속 질문 grounding 강화 — LLM 추론 → 청크 근거 기반
+
+**상태**: in-progress (2026-05-19 큐잉 → 당일 구현)
+**우선순위**: TASK-025 다음 — 사용자 직접 관찰 품질 이슈
+**관련**: TASK-007 Phase 1(후속 질문 제안, ADR-019) 후속, TASK-024(스트리밍 답변/제안 분리), ISSUE-007과 동일 근본 문제. ADR-037 (accepted). 설계 검토: [meetings/2026-05-19](wiki/meetings/2026-05-19-후속질문-grounding-설계검토.md)
+
+### 진행 현황 (2026-05-19)
+- 구현 완료·**미커밋**: `generator.py` grounding 프롬프트 + `{q,source,evidence}` 스키마 + `_ground_suggestions()` evidence 검증, `pipeline.py` 스트리밍 호출부에 청크 전달, `bench_answers.py` grounding 지표
+- `tests/unit/test_generator.py` 갱신 — `generate` dict 반환 반영(기존부터 깨져 있던 단언 수정) + grounding 단위 테스트 추가, generator 테스트 12개 전부 통과
+- ADR-037 accepted
+- **남은 일(TODO)**: `bench_answers.py`로 적용 전후 grounding 비교(`suggestions_fill_rate`) 미수행 — LLM 호출 비용 발생分이라 사용자 합의 후 실행. changelog 버전 항목은 검증·릴리즈 시점으로 보류
+
+### 배경
+사용자 관찰: 답변 아래 후속 질문이 문서 내용에 입각하기보다 "LLM이 일반적으로 만들어낸" 느낌. 원인 진단:
+- **재료 손실** — 스트리밍 경로 `generate_suggestions()`(`generator.py:187`)는 청크를 받지 않고 `question + answer`만 입력받음. 답변은 이미 책 본문을 추상화한 결과 → 거기서 질문을 파생하면 2차 추상화로 책 고유 디테일(인물·사건·개념)이 소실.
+- **프롬프트가 상상을 요구** — `_SUGGESTIONS_SYSTEM`·`SYSTEM_PROMPT_WITH_SUGGESTIONS` 모두 "a user might naturally ask next" 표현. grounding이 아니라 LLM의 통념적 상상을 시킴. 비스트리밍 경로는 청크가 context에 있어도 활용 지시가 없음.
+- ISSUE-007(EmptyState 예시 질문 ↔ retrieval 불일치)과 동일한 근본 문제: LLM이 상상한 질문 ≠ retrieval이 실제 답할 수 있는 청크.
+
+### 목표
+후속 질문을 retrieve된 청크 본문에 grounding. 각 질문이 청크의 구체적 사실·개념·인물·사건을 직접 겨냥하고, 청크만으로 답할 수 있도록 강제.
+
+### 설계 결정 (초안, 2026-05-19 설계 검토)
+- **재료** — `generate_suggestions()`에 `chunks` 인자 추가. 청크는 `pipeline.py:290` `retrieve()`로 만들어진 로컬 변수를 그대로 재사용 → **재검색·재랭킹 없음, 추가 지연 0**. 호출부(`pipeline.py:343`)는 인자 1개 추가.
+- **프롬프트 교체** — "자연스럽게 물어볼 질문" → "제공된 청크의 구체적 사실·개념·인물·사건을 직접 겨냥하고, 청크만으로 답할 수 있는 질문".
+- **출력 스키마 확장** — `{"q","source","evidence"}`. `source`=출처 책·페이지, `evidence`=청크 속 근거 구절(10~20자 제한). `evidence`가 실제 청크 텍스트에 없으면 그 질문 **폐기** → "만들어낸 질문" 필터. UI엔 `q`만 노출, `source`/`evidence`는 로그에만 남겨 grounding 검증 가능.
+- **두 경로 통일** — 비스트리밍 `generate()`도 동일 프롬프트·스키마 적용 (청크가 이미 context에 있어 추가 토큰 0).
+- **INSUFFICIENT 가드 유지** — 답변이 "정보 없음"류면 청크가 있어도 suggestion 비움 (실패 루프 방지).
+- **레버 C(생성 질문 retrieval 재검증) 제외** — 질문당 검색 1회 추가 → 지연·비용 큼. `evidence` 폐기로 grounding이 보장되므로 한계효용 작음. 보완 후에도 부족하면 별건 TASK.
+- 폐기 대비 `suggestions_count + 1` 생성 후 상위 N개 노출.
+
+### 비용·성능 추정 (실측 기반 — `answers_2026-05-14`, 12쿼리, gpt-4o-mini)
+- 베이스라인: 답변 median 615자, retrieve 청크 4개·총 1,625자.
+- 스트리밍 경로 `generate_suggestions` 별도 호출: 현재 ~$0.00022/호출 → 보완 후 ~$0.00082/호출 (**+$0.0006, 약 3.7배**). 절대값은 작아 1,000질의/일에도 월 +$18, 100질의/일이면 월 +$1.8. 새 API 키·새 모델 없음.
+- 비스트리밍 경로: 청크가 이미 context에 있어 추가 비용 ≈ 0.
+- 지연: 청크 입력 prefill +0.3~0.5초. 주 요인은 출력 토큰 증가(source/evidence) — 후속 질문 칩 노출이 "답변 후 +1~2초" → "+3~5초". `evidence` 10~20자 제한 + 폐기 여유분 최소화로 +2초 이내 목표. 답변 본문은 이미 스트리밍돼 체감 완화.
+
+### 범위
+- [x] `generator.py` — `_SUGGESTIONS_SYSTEM` grounding 어휘 교체, `generate_suggestions()`에 `chunks` 인자, JSON 스키마 `{q,source,evidence}`
+- [x] `generator.py` — `SYSTEM_PROMPT_WITH_SUGGESTIONS` 동일 스키마로 통일
+- [x] `evidence` 검증·폐기 후처리 — `_ground_suggestions()`, 공백 무시 부분 매칭, 5자 미만 evidence 폐기, 폐기 로깅
+- [x] `pipeline.py` 스트리밍 호출부에 `chunks` 전달
+- [x] `apps/schemas/query.py` — 검토 결과 **변경 불필요**: `source`/`evidence`는 generator 내부 검증·로그용, 응답·SSE는 `q`만(`list[str]`) 유지
+- [x] `tests/unit/test_generator.py` — `generate` dict 반환 반영 + grounding 단위 테스트 추가 (12개 통과)
+- [x] `scripts/bench_answers.py` 확장 — grounding 지표(`suggestions_grounded_mean`, `suggestions_fill_rate`)
+- [x] ADR-037 작성 (grounding 방식·출력 스키마·레버 C 제외 근거)
+- [x] log.md impl 항목, 위키 동기화
+- [ ] `bench_answers.py`로 적용 전후 비교 실행 + changelog 버전 항목 (검증·릴리즈 시점)
+
+### 완료 기준
+- 후속 질문이 청크 `evidence`로 검증되고, 미검증 질문은 노출되지 않음
+- bench로 적용 전후 grounding 품질 비교 — 사용자가 말한 "느낌"을 수치로 확인
+- 후속 질문 칩 지연 +2초 이내
+
+### 회귀 전략
+- `suggestions_enabled=False`로 즉시 비활성
+- 프롬프트·스키마 변경이라 롤백은 `generator.py` 되돌리기 — 다른 코드 영향 없음
+
+### 리스크
+- `evidence` 폐기로 노출 개수가 3개 미만 — `count+1` 여유 생성으로 보완, 그래도 부족하면 count 상향
+- gpt-4o-mini가 JSON 안에서 `evidence`를 청크와 정확히 일치 못 시킬 수 있음 — 부분 매칭 허용·정규화로 흡수, 프롬프트 1~2회 튜닝
+- 청크 토큰 증가로 스트리밍 후속 질문 지연 — `evidence` 길이 제한으로 억제
 
 ---
 

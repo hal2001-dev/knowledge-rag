@@ -340,8 +340,9 @@ class RAGPipeline:
         suggestions: list[str] = []
         if self._settings.suggestions_enabled and full_answer:
             with tracing_context(tags=scope_tag_list + ["suggestions:true"], metadata=scope_metadata):
+                # TASK-026: 청크 본문을 함께 넘겨 후속 질문을 근거 기반으로 생성·검증.
                 suggestions = generate_suggestions(
-                    self._llm, question, full_answer, self._settings.suggestions_count
+                    self._llm, question, full_answer, chunks, self._settings.suggestions_count
                 )
         yield ("suggestions", suggestions)
 

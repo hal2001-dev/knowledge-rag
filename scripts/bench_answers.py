@@ -62,11 +62,15 @@ def _build_stack(settings):
 
 
 def _collect_samples(store, llm, reranker, dataset: list[dict], settings) -> list[dict]:
-    """각 질의에 대해 (question, answer, full-context chunks, reference) 수집.
+    """각 질의에 대해 (question, answer, full-context chunks, suggestions, reference) 수집.
 
     pipeline.query를 쓰면 sources에 200자 excerpt만 남아 Ragas faithfulness가
     context 부족으로 낮게 평가된다. 여기서는 retrieve/generate를 직접 호출해
     전체 청크 content를 Ragas에 전달한다.
+
+    TASK-026: generate는 {"answer","suggestions"} dict를 반환한다. suggestions를
+    청크 근거 기반으로 생성하므로 suggestions_enabled를 전달하고, evidence 검증을
+    통과한 후속 질문 개수(`suggestions_grounded`)를 함께 기록한다.
     """
     import time
     samples = []
@@ -83,8 +87,18 @@ def _collect_samples(store, llm, reranker, dataset: list[dict], settings) -> lis
         if not chunks:
             answer = "관련 문서를 찾지 못했습니다."
             full_contexts = []
+            suggestions = []
         else:
-            answer = generate(llm=llm, question=row["question"], chunks=chunks, history=None)
+            gen = generate(
+                llm=llm,
+                question=row["question"],
+                chunks=chunks,
+                history=None,
+                suggestions_enabled=settings.suggestions_enabled,
+                suggestions_count=settings.suggestions_count,
+            )
+            answer = gen["answer"]
+            suggestions = gen["suggestions"]
             full_contexts = [c.content for c in chunks]
         latency_ms = int((time.monotonic() - t0) * 1000)
 
@@ -98,6 +112,8 @@ def _collect_samples(store, llm, reranker, dataset: list[dict], settings) -> lis
             "expected_doc_ids": row["expected_doc_ids"],
             "language": row.get("language"),
             "latency_ms": latency_ms,
+            "suggestions": suggestions,
+            "suggestions_grounded": len(suggestions),
         })
     return samples
 
@@ -149,6 +165,8 @@ def main():
     parser.add_argument("--limit", type=int, default=None, help="처음 N개만 평가 (스모크용)")
     parser.add_argument("--judge-model", default="gpt-4o-mini")
     parser.add_argument("--out-dir", default=str(ROOT / "data/eval_runs"))
+    parser.add_argument("--skip-ragas", action="store_true",
+                        help="Ragas 품질 평가 생략 — retrieve+generate latency만 측정")
     args = parser.parse_args()
 
     # Ragas가 LangSmith 트레이스를 자동 집계하도록 env 확인
@@ -173,24 +191,58 @@ def main():
     print("샘플 수집 중...")
     samples = _collect_samples(store, llm, reranker, dataset, settings)
 
-    print(f"Ragas 평가 실행 중 (LLM call ≈ {len(samples) * 10}회)...")
-    scores = _ragas_evaluate(samples, judge_model=args.judge_model)
-
-    # 평균 집계 (NaN 제외)
     import math
     def _mean(xs):
         vals = [x for x in xs if isinstance(x, (int, float)) and not math.isnan(x)]
         return round(sum(vals) / len(vals), 4) if vals else None
 
-    aggregate = {}
-    for col, vals in scores.items():
-        if col in ("user_input", "response", "retrieved_contexts", "reference"):
-            continue
-        aggregate[col] = _mean(vals)
+    if args.skip_ragas:
+        scores = {}
+        aggregate = {}
+        lats = [s["latency_ms"] for s in samples]
+        lats_sorted = sorted(lats)
+        n = len(lats_sorted)
+        def _pct(p):
+            if not lats_sorted:
+                return None
+            idx = min(n - 1, max(0, int(round((p / 100) * (n - 1)))))
+            return lats_sorted[idx]
+        print("\n=== Latency (retrieve + generate) ===")
+        print(f"  N         : {n}")
+        print(f"  mean (ms) : {_mean(lats)}")
+        print(f"  p50  (ms) : {_pct(50)}")
+        print(f"  p95  (ms) : {_pct(95)}")
+        print(f"  min/max   : {min(lats) if lats else None} / {max(lats) if lats else None}")
+        print("\n=== Per-query latency ===")
+        for s in samples:
+            print(f"  {s['id']:<5} {s['latency_ms']:>6}ms  {s['user_input'][:60]}")
+    else:
+        print(f"Ragas 평가 실행 중 (LLM call ≈ {len(samples) * 10}회)...")
+        scores = _ragas_evaluate(samples, judge_model=args.judge_model)
 
-    print("\n=== 집계 ===")
-    for k, v in aggregate.items():
-        print(f"  {k}: {v}")
+        aggregate = {}
+        for col, vals in scores.items():
+            if col in ("user_input", "response", "retrieved_contexts", "reference"):
+                continue
+            aggregate[col] = _mean(vals)
+
+        print("\n=== 집계 ===")
+        for k, v in aggregate.items():
+            print(f"  {k}: {v}")
+
+    # TASK-026: 후속 질문 grounding 요약 — evidence 검증 통과율로 "근거 기반" 정도를 정량화.
+    # 적용 전후 이 지표를 비교하면 "LLM이 지어낸 질문" 개선을 수치로 확인할 수 있다.
+    if settings.suggestions_enabled and samples:
+        g = [s["suggestions_grounded"] for s in samples]
+        requested = settings.suggestions_count
+        fill_rate = round(sum(g) / (len(g) * requested), 4) if requested else None
+        aggregate["suggestions_grounded_mean"] = _mean(g)
+        aggregate["suggestions_fill_rate"] = fill_rate
+        print("\n=== 후속 질문 grounding (TASK-026) ===")
+        print(f"  쿼리당 요청 개수      : {requested}")
+        print(f"  쿼리당 grounded 평균  : {_mean(g)}")
+        print(f"  전체 fill rate        : {fill_rate}")
+        print(f"  grounded 0개 쿼리     : {sum(1 for x in g if x == 0)} / {len(g)}")
 
     # 저장
     run_id = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H%M%SZ")

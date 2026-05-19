@@ -5,6 +5,41 @@
 
 ---
 
+## [2026-05-19] impl | TASK-026 — 후속 질문 grounding 강화 (ADR-037, in-progress)
+
+- `packages/rag/generator.py` — 후속 질문을 청크 근거 기반으로 전환. `_SUGGESTIONS_SYSTEM`·`SYSTEM_PROMPT_WITH_SUGGESTIONS`를 grounding 프롬프트로 교체, 출력을 `{q,source,evidence}` 객체 배열로. `generate_suggestions()`에 `chunks` 인자 추가
+- `_ground_suggestions()` 신설 — LLM이 낸 `evidence`(청크에서 복사한 구절)를 공백 무시 정규화 후 청크 본문과 대조, 미검증·5자 미만·평문 항목 폐기. "LLM이 지어낸" 질문을 거르는 핵심 장치. 폐기 대비 `count+1` 생성
+- 비스트리밍 `generate()`도 동일 스키마·검증으로 통일. 응답 인터페이스(`QueryResponse.suggestions: list[str]`, SSE)는 변경 없음 — `source`/`evidence`는 내부 검증·로그용
+- `packages/rag/pipeline.py` — 스트리밍 경로 `generate_suggestions` 호출에 `chunks`(retrieve 로컬 변수 재사용, 재검색 없음) 전달
+- `scripts/bench_answers.py` — `generate` dict 반환 정합화 + `suggestions_enabled` 전달, grounding 지표(`suggestions_grounded_mean`, `suggestions_fill_rate`) 추가
+- `tests/unit/test_generator.py` — `generate` dict 반환 반영(TASK-007 이후 깨져 있던 단언 수정) + grounding 단위 테스트 추가. generator 테스트 12개 전부 통과
+- 상태: 코드·테스트 완료·**미커밋**. `bench_answers.py` 적용 전후 grounding 비교는 LLM 호출 비용 발생分 — 사용자 합의 후 실행. changelog 버전 항목은 검증·릴리즈 시점으로 보류
+- 관련 페이지: architecture/decisions.md (ADR-037), roadmap.md, overview.md
+
+---
+
+## [2026-05-19] queue | TASK-026 — 후속 질문 grounding 강화
+
+- 사용자 관찰: 답변 아래 후속 질문이 문서 내용에 입각하기보다 "LLM이 일반적으로 만들어낸" 느낌
+- 원인 진단: 스트리밍 경로 `generate_suggestions()`가 청크 미참조(`question + answer`만 입력), 프롬프트가 grounding 아닌 통념적 상상을 요구. ISSUE-007(예시 질문 ↔ retrieval 불일치)과 동일 근본 문제
+- 결정(설계 검토 세션): `generate_suggestions`에 청크 인자 추가(재검색 없이 `pipeline.py:290` 로컬 변수 재사용) + 프롬프트 grounding 교체 + `{q,source,evidence}` 스키마로 evidence 검증·미검증 질문 폐기 + 비스트리밍/스트리밍 두 경로 통일. 레버 C(생성 질문 retrieval 재검증)는 제외
+- 비용·성능 추정(실측 answers_2026-05-14, 12쿼리, gpt-4o-mini): 스트리밍 호출당 ~$0.00022 → ~$0.00082 (+$0.0006, 월 +$2~18), 후속 질문 칩 지연 +2초 이내 목표
+- 신규 ADR-037 (착수 시 확정). 상태 queued — TASK-025 done 마감 후 착수
+- 영향받은 페이지: roadmap.md, overview.md, index.md, raw/meetings/2026-05-19-후속질문-grounding-설계검토.md, wiki/meetings/2026-05-19-후속질문-grounding-설계검토.md
+
+---
+
+## [2026-05-15] impl | TASK-025 — RAG 컴포넌트 부팅 워밍업 (ADR-036, in-progress)
+
+- `apps/main.py` lifespan 워밍업 블록 확장: reranker 단독 → reranker + sparse(Kiwi+BM25, `search_mode=hybrid`일 때만) + dense embed. 각 단계를 try/except로 감싸 워밍업 실패가 부팅을 막지 않도록 graceful 처리
+- `apps/config.py` `reranker_warmup` 기본값 `False → True` — 신규 환경도 첫 질의 cold 비용 자동 회피
+- `.env.example` `RERANKER_WARMUP` 주석 보강 — 마스터 토글 의미(reranker+sparse+embed)와 "부팅 +5~10초 ↔ cold latency 11~20s 제거" 트레이드오프 명시
+- 진단 도구: `scripts/profile_query.py`(단발 구간별 ms 측정, cold/warm 2회 비교) 신설, `scripts/bench_answers.py`에 `--skip-ragas` 플래그(Ragas 생략, retrieve+generate latency만 측정·p50/p95 출력) 추가
+- 상태: 코드 구현 완료·**미커밋**. 완료 기준의 AFTER latency 검증(워밍업 적용 후 첫 질의 ≤6s)은 **미수행 — TODO**. TASK-025는 `in-progress`로 유지, changelog 버전 항목은 검증·릴리즈 시점으로 보류
+- 관련 페이지: architecture/decisions.md (ADR-036), roadmap.md, overview.md, features/evaluation.md
+
+---
+
 ## [2026-05-14] queue | TASK-025 — RAG 컴포넌트 부팅 워밍업 큐잉
 
 - 배경: profile_query.py 측정 결과 cold run에서 bge-m3 reranker 첫 forward 6130ms + Kiwi+BM25 첫 토크나이즈 +800ms 누적, 사용자 LangSmith 트레이스 첫 질의 11411ms 관찰. warm run에선 latency의 92%가 LLM generate

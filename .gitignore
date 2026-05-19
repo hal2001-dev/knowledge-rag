@@ -15,6 +15,7 @@ data/uploads/
 data/markdown/
 data/markdown_ocr_test/
 data/faiss_index/
+data/diag/
 
 # Python 캐시
 __pycache__/

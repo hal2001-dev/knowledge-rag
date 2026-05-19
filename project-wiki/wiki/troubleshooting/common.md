@@ -1,7 +1,7 @@
 # 트러블슈팅 (Troubleshooting)
 
 **상태**: active
-**마지막 업데이트**: 2026-04-30
+**마지막 업데이트**: 2026-05-19
 **관련 페이지**: `issues/`, [setup.md](../onboarding/setup.md)
 
 이슈가 해결될 때마다 여기에 누적합니다.
@@ -243,6 +243,24 @@ with e.begin() as c:
 ```ts
 allowedDevOrigins: ["192.168.0.72", "100.78.13.90", "macstudio"],
 ```
+
+---
+
+## 개발 도구 (Claude Code 세션)
+
+### Claude Code 도구 호출 결과 누락 — `Tool result missing due to internal error`
+**발생 상황**: 2026-05-19 TASK-026 작업 세션. FastAPI 서버 기동 후 health 확인·query 테스트 진행 중. 도구 호출 6건 중 3건이 결과 누락.
+**에러 메시지**: 도구 결과 자리에 `[Tool result missing due to internal error]` 표시
+**증상·패턴**:
+- 누락 발생: **복합·멀티라인 Bash 명령**(여러 줄 `echo`+`curl`+`lsof`+`tail`, `curl`+`python` heredoc 조합), **백그라운드 폴링 Bash**(`until curl …; do sleep; done`)
+- 정상 동작: **단일·단순 Bash 명령**(`curl` 한 줄), **`Read` 도구**, 백그라운드 작업 시작
+**원인**: Claude Code 하네스(도구 결과 회수·전달 인프라)의 일시적 오류로 추정. **knowledge-rag 코드·서버와 무관** — 근거: 같은 시점에 단일 `curl`이 서버에서 `HTTP 200` 정상 응답, `Read`로 서버 로그상 `Application startup complete` 확인됨.
+**영향**: `result missing`은 일반적으로 명령 실행은 되고 결과 회수만 실패. 단 이번 세션에서 `curl -o` 출력 파일이 생성조차 안 된 미실행 사례도 관찰됨 → 실행 여부는 케이스별로 출력 파일·서버 로그로 별도 확인 필요.
+**해결·회피**:
+- 복합·멀티라인 Bash를 피하고 **단일 명령으로 분리**
+- 명령 출력을 **파일로 저장**(`curl -o file`, `> file`)한 뒤 안정적인 **`Read` 도구로 회수**
+- 백그라운드 폴링 대신 단발 확인 + 필요 시 재시도
+**비고**: 코드 수정 불필요 — 도구 사용 패턴 조정으로 회피. 재발 빈도가 높아지면 Claude Code 측 이슈로 별도 보고.
 
 ---
 

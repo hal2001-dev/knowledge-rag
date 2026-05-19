@@ -41,15 +41,36 @@ async def lifespan(app: FastAPI):
     from packages.db.connection import get_engine
     Base.metadata.create_all(bind=get_engine())
 
-    # Reranker 미리 로드 (첫 질의 지연 최소화)
+    # RAG 컴포넌트 워밍업 (ADR-036) — reranker + sparse(Kiwi+BM25) + dense embed
+    # RERANKER_WARMUP 토글이 전체 워밍업의 마스터 스위치. 각 단계는 try/except로 부팅을 막지 않음.
     if settings.reranker_warmup:
         from packages.code.models import ScoredChunk
         from packages.rag.reranker import get_reranker
         logger.info(f"Reranker warm-up 시작: backend={settings.reranker_backend}")
-        r = get_reranker(settings.reranker_backend, settings.reranker_model_name or None)
-        dummy = [ScoredChunk(content="warmup", metadata={}, score=0.0)]
-        r.rerank(query="warmup", candidates=dummy, top_n=1)
-        logger.info("Reranker warm-up 완료")
+        try:
+            r = get_reranker(settings.reranker_backend, settings.reranker_model_name or None)
+            dummy = [ScoredChunk(content="warmup", metadata={}, score=0.0)]
+            r.rerank(query="warmup", candidates=dummy, top_n=1)
+            logger.info("Reranker warm-up 완료")
+        except Exception as e:
+            logger.warning(f"Reranker warm-up 실패 (부팅 계속): {type(e).__name__}: {e}")
+
+        if settings.search_mode == "hybrid":
+            from packages.rag.sparse import SparseEmbedder
+            logger.info(f"Sparse warm-up 시작: model={settings.sparse_model_name}")
+            try:
+                SparseEmbedder(model_name=settings.sparse_model_name).embed_query("워밍업")
+                logger.info("Sparse warm-up 완료")
+            except Exception as e:
+                logger.warning(f"Sparse warm-up 실패 (부팅 계속): {type(e).__name__}: {e}")
+
+        try:
+            from packages.llm.embeddings import build_embeddings
+            logger.info(f"Embedding warm-up 시작: backend={settings.embedding_backend}")
+            build_embeddings(settings).embed_query("warmup")
+            logger.info("Embedding warm-up 완료")
+        except Exception as e:
+            logger.warning(f"Embedding warm-up 실패 (부팅 계속): {type(e).__name__}: {e}")
 
     yield
 
