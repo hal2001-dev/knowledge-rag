@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Knowledge RAG</title>
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              brand: {
+                bg: "#ffffff",
+                fg: "#0f172a",
+                muted: "#64748b",
+                border: "#e2e8f0",
+                accent: "#f1f5f9",
+                primary: "#0f172a",
+                "primary-fg": "#f8fafc",
+                danger: "#dc2626",
+                sidebar: "#f8fafc",
+              },
+            },
+            fontFamily: {
+              sans: [
+                "ui-sans-serif",
+                "system-ui",
+                "-apple-system",
+                "Segoe UI",
+                "Roboto",
+                "Apple SD Gothic Neo",
+                "Noto Sans KR",
+                "sans-serif",
+              ],
+            },
+          },
+        },
+      };
+    </script>
+
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11.10.0/styles/github.min.css"
+    />
+    <link rel="stylesheet" href="./app.css" />
+  </head>
+  <body class="bg-brand-bg text-brand-fg font-sans">
+    <!-- 앱 셸: [사이드바][리사이저][본문]. 사이드바 폭은 --sidebar-w 변수로 제어. -->
+    <div id="app" class="app-shell">
+      <!-- ─────────── 사이드바 ─────────── -->
+      <aside id="sidebar" class="sidebar" aria-label="대화 목록">
+        <div class="sidebar-head">
+          <button id="new-chat" class="new-chat-btn" type="button">
+            <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 5v14M5 12h14" />
+            </svg>
+            <span>새 대화</span>
+          </button>
+        </div>
+
+        <nav id="convo-list" class="sidebar-list" aria-label="저장된 대화"></nav>
+
+        <div class="sidebar-foot">
+          <span id="convo-count" class="text-xs text-brand-muted"></span>
+        </div>
+      </aside>
+
+      <!-- ─────────── 리사이저 ─────────── -->
+      <div
+        id="resizer"
+        class="resizer"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="사이드바 폭 조절"
+        tabindex="0"
+        title="드래그로 폭 조절 · 더블클릭으로 초기화"
+      ></div>
+
+      <!-- ─────────── 본문 ─────────── -->
+      <main class="main">
+        <header class="main-head">
+          <button id="sidebar-toggle" class="icon-btn" type="button" aria-label="사이드바 열기/닫기">
+            <svg viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M3 12h18M3 6h18M3 18h18" />
+            </svg>
+          </button>
+          <h1 class="font-semibold tracking-tight">Knowledge RAG</h1>
+          <span id="session-pill" class="text-xs text-brand-muted"></span>
+        </header>
+
+        <div id="scroll" class="flex-1 overflow-y-auto px-3 py-4">
+          <div class="max-w-4xl mx-auto">
+            <div id="empty" class="py-20 text-center text-brand-muted">
+              <p class="text-lg mb-1">무엇이든 물어보세요.</p>
+              <p class="text-sm">색인된 문서를 바탕으로 답변합니다.</p>
+            </div>
+            <div id="messages" class="space-y-4"></div>
+            <div id="status" class="mt-4 text-sm italic text-brand-muted hidden">
+              검색 중…
+            </div>
+            <div id="error" class="mt-4 text-sm text-brand-danger hidden"></div>
+          </div>
+        </div>
+
+        <form id="form" class="border-t border-brand-border bg-brand-bg p-3 shrink-0">
+          <div class="flex items-end gap-2 max-w-4xl mx-auto">
+            <textarea
+              id="input"
+              rows="1"
+              placeholder="문서에 대해 질문하세요..."
+              class="flex-1 min-h-[40px] max-h-[200px] resize-none rounded-md border border-brand-border bg-brand-bg px-3 py-2 text-sm leading-6 focus:outline-none focus:ring-2 focus:ring-brand-primary/30"
+            ></textarea>
+            <button
+              id="send"
+              type="submit"
+              aria-label="보내기"
+              class="h-10 w-10 inline-flex items-center justify-center rounded-md bg-brand-primary text-brand-primary-fg hover:opacity-90 disabled:opacity-40 transition"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                class="w-4 h-4"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M22 2 11 13" />
+                <path d="M22 2 15 22 11 13 2 9z" />
+              </svg>
+            </button>
+            <button
+              id="cancel"
+              type="button"
+              aria-label="중지"
+              class="hidden h-10 w-10 inline-flex items-center justify-center rounded-md bg-brand-danger text-white hover:opacity-90 transition"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                class="w-4 h-4"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+              >
+                <path d="M18 6 6 18M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </form>
+      </main>
+    </div>
+
+    <!-- 모바일 드로어용 백드롭 -->
+    <div id="backdrop" class="backdrop hidden"></div>
+
+    <script src="https://cdn.jsdelivr.net/npm/marked@14.1.3/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.7/dist/purify.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.10.0/lib/highlight.min.js"></script>
+    <script src="./app.js"></script>
+  </body>
+</html>
